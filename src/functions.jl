@@ -76,6 +76,9 @@ end
 # Training (ParameterHandling + Optim)
 # ==============================================================================
 
+# NOTE(rg): unlike the production implementations in the GPDimer / GPstuff
+# basically those use the MAP estimate with analytical gradients and the SCG
+# here for pedagogical purposes simply use the MLE with the Nelder-Mead
 function train_model!(model::GPModel{Tk}; iterations = 1000) where {Tk}
     # 1. Define Initial Parameters (Structured)
     # Warm start from current model values as the starting point.
