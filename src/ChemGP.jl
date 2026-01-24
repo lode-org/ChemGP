@@ -20,6 +20,6 @@ export GPModel
 export train_model!, predict
 
 # Re-export the custom kernel
-export MolInvDistSE, kernel_blocks
+export MolInvDistSE, MolInvDistMatern52, kernel_blocks
 
 end
