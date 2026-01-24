@@ -76,7 +76,7 @@ end
 # Training (ParameterHandling + Optim)
 # ==============================================================================
 
-function train_model!(model::GPModel; iterations = 1000)
+function train_model!(model::GPModel{Tk}; iterations = 1000) where {Tk}
     # 1. Define Initial Parameters (Structured)
     # Warm start from current model values as the starting point.
     # ParameterHandling.positive ensures they stay > 0 during optimization.
@@ -98,7 +98,7 @@ function train_model!(model::GPModel; iterations = 1000)
     # 3. Define Objective Function
     function objective(params::NamedTuple)
         # Reconstruct kernel from structured parameters
-        k = MolecularKernel(params.signal_var, params.inv_lengthscales, frozen, feat_map)
+        k = Tk(params.signal_var, params.inv_lengthscales, frozen, feat_map)
 
         # Build Covariance
         K = build_full_covariance(k, model.X, params.noise, params.grad_noise, model.jitter)
@@ -126,12 +126,8 @@ function train_model!(model::GPModel; iterations = 1000)
     # 5. Update Model with Best Parameters
     best_params = unflatten(Optim.minimizer(res))
 
-    model.kernel = MolecularKernel(
-        best_params.signal_var,
-        best_params.inv_lengthscales,
-        frozen,
-        feat_map,
-    )
+    model.kernel =
+        Tk(best_params.signal_var, best_params.inv_lengthscales, frozen, feat_map)
     model.noise_var = best_params.noise
     model.grad_noise_var = best_params.grad_noise
 

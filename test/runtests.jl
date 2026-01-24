@@ -45,7 +45,7 @@ end
         y_full = [(y_vals .- y_mean) ./ y_std; y_grads ./ y_std]
 
         # Train
-        k_init = MolecularKernel(1.0, [1.0], Float64[])
+        k_init = MolInvDistSE(1.0, [1.0], Float64[])
         model = GPModel(k_init, X_train, y_full; noise_var = 1e-4, grad_noise_var = 1e-4)
         train_model!(model; iterations = 100)
 
