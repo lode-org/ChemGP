@@ -4,7 +4,7 @@
 
 mutable struct GPModel{Tk<:Kernel}
     kernel::Tk
-    X::Matrix{Float64}       # Inputs (D x N)
+    X::AbstractMatrix{Float64}       # Inputs (D x N)
     y::Vector{Float64}       # Targets [Energies; Gradients]
     noise_var::Float64       # Energy noise variance (σ_n^2)
     grad_noise_var::Float64  # Gradient noise variance (σ_g^2)
@@ -12,56 +12,7 @@ mutable struct GPModel{Tk<:Kernel}
 end
 
 function GPModel(kernel, X, y; noise_var = 1e-6, grad_noise_var = 1e-6, jitter = 1e-6)
-    return GPModel(kernel, X, y, noise_var, grad_noise_var, jitter)
-end
-
-# ==============================================================================
-# Generic Derivative Block Logic (ForwardDiff + KernelFunctions)
-# ==============================================================================
-
-function kernel_val(k::Kernel, x1, x2)
-    return k(x1, x2)
-end
-
-
-"""
-    kernel_blocks(k::MolecularKernel, x1, x2)
-
-Computes the full block covariance for Energy and Forces.
-Uses automatic differentiation.
-
-Returns:
-- k_ee: Energy-Energy (scalar)
-- k_ef: Energy-Force  (1 x D)
-- k_fe: Force-Energy  (D x 1)
-- k_ff: Force-Force   (D x D)
-"""
-function kernel_blocks(k::Kernel, x1::AbstractVector, x2::AbstractVector)
-    # 1. Energy-Energy
-    k_ee = kernel_val(k, x1, x2)
-
-    # 2. Force(x2) - Energy(x1): d/dx' k(x, x')
-    g_x2 = ForwardDiff.gradient(x -> kernel_val(k, x1, x), x2)
-
-    # 3. Force(x1) - Energy(x2): d/dx k(x, x')
-    g_x1 = ForwardDiff.gradient(x -> kernel_val(k, x, x2), x1)
-
-    # 4. Force(x1) - Force(x2): d2/dx dx' k(x, x')
-    H_cross =
-        ForwardDiff.jacobian(x -> ForwardDiff.gradient(y -> kernel_val(k, x, y), x2), x1)
-
-    # ==========================================================================
-    # PHYSICS CONVENTION
-    # ==========================================================================
-    # Forces are Negative Gradients: F = -dV/dx
-    # Cov(F, F) = Cov(-dE/dx, -dE/dx') = d2k/dxdx' (Negatives cancel)
-    # Cov(E, F) = Cov(E, -dE/dx')      = -dk/dx'   (One negative remains)
-    # ==========================================================================
-    k_ef = -g_x2'  # Transpose to 1xD Row Vector
-    k_fe = -g_x1   # Dx1 Col Vector
-    k_ff = H_cross # DxD Matrix
-
-    return k_ee, k_ef, k_fe, k_ff
+    return GPModel(kernel, Matrix(X), y, noise_var, grad_noise_var, jitter)
 end
 
 # ==============================================================================
@@ -126,68 +77,63 @@ end
 # ==============================================================================
 
 function train_model!(model::GPModel; iterations = 1000)
-    D = size(model.X, 1)
-
-    # 1. Initialize Parameters using Inverse Lengthscales
-    # We use 'positive' to ensure 1/ℓ > 0
-    initial_theta = (
-        signal_var = positive(1.0),
-        inv_lengthscales = positive(ones(D)),
+    # 1. Define Initial Parameters (Structured)
+    # Warm start from current model values as the starting point.
+    # ParameterHandling.positive ensures they stay > 0 during optimization.
+    raw_initial_params = (
+        signal_var = positive(model.kernel.signal_variance),
+        inv_lengthscales = positive(model.kernel.inv_lengthscales),
         noise = positive(model.noise_var),
         grad_noise = positive(model.grad_noise_var),
     )
 
-    flat_theta, unflatten = flatten(initial_theta)
+    # 2. Flatten parameters into a vector for Optim.jl
+    # 'unflatten' is a function that converts the vector back to the NamedTuple
+    flat_initial_params, unflatten = ParameterHandling.value_flatten(raw_initial_params)
 
-    # 2. Define Cost Function
-    function cost(theta_flat)
-        # Unwrap parameters and get values
-        params_wrapped = unflatten(theta_flat)
-        params = ParameterHandling.value(params_wrapped)
+    # Preserve structural info not being optimized
+    frozen = model.kernel.frozen_coords
+    feat_map = model.kernel.feature_params_map
 
-        # Construct our CUSTOM KERNEL
-        k_custom = MolecularKernel(params.signal_var, params.inv_lengthscales)
+    # 3. Define Objective Function
+    function objective(params::NamedTuple)
+        # Reconstruct kernel from structured parameters
+        k = MolecularKernel(params.signal_var, params.inv_lengthscales, frozen, feat_map)
 
-        # Build Matrix
-        K = build_full_covariance(
-            k_custom,
-            model.X,
-            params.noise,
-            params.grad_noise,
-            model.jitter,
-        )
+        # Build Covariance
+        K = build_full_covariance(k, model.X, params.noise, params.grad_noise, model.jitter)
 
+        # Compute NLL
         L = try
             cholesky(K)
         catch
-            return 1e10
+            return Inf # Signal failure to Optim
         end
 
-        alpha = L \ model.y
-        nll = 0.5 * dot(model.y, alpha) + logdet(L) + 0.5 * length(model.y) * log(2π)
-
-        return (isnan(nll) || isinf(nll)) ? 1e10 : nll
+        return 0.5 * dot(model.y, L \ model.y) + logdet(L) + 0.5 * length(model.y) * log(2π)
     end
 
-    if cost(flat_theta) >= 1e10
-        @warn "Initial parameters unstable. Boosting jitter."
-        model.jitter = 1e-4
-    end
-
-    res = optimize(
-        cost,
-        flat_theta,
+    # 4. Run Optimization
+    # We use NelderMead because build_full_covariance uses mutation (not Zygote-compatible).
+    # 'objective ∘ unflatten' composes the functions so Optim sees a vector input.
+    res = Optim.optimize(
+        objective ∘ unflatten,
+        flat_initial_params,
         NelderMead(),
         Optim.Options(iterations = iterations, show_trace = true),
     )
 
-    # 3. Update Model
-    final_params_wrapped = unflatten(Optim.minimizer(res))
-    final_params = ParameterHandling.value(final_params_wrapped)
+    # 5. Update Model with Best Parameters
+    best_params = unflatten(Optim.minimizer(res))
 
-    model.kernel = MolecularKernel(final_params.signal_var, final_params.inv_lengthscales)
-    model.noise_var = final_params.noise
-    model.grad_noise_var = final_params.grad_noise
+    model.kernel = MolecularKernel(
+        best_params.signal_var,
+        best_params.inv_lengthscales,
+        frozen,
+        feat_map,
+    )
+    model.noise_var = best_params.noise
+    model.grad_noise_var = best_params.grad_noise
 
     @printf("Optimization Complete. Final NLL: %.4f\n", Optim.minimum(res))
     return model
