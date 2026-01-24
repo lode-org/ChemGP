@@ -8,15 +8,18 @@ using ForwardDiff
 using KernelFunctions
 using ParameterHandling
 
-# Include core logic
-include("functions.jl")
+# 1. Include the Kernel Module
 include("MolecularKernel.jl")
+using .MolecularKernels
 
-# Export public API
+# 2. Include the Training/Prediction Logic
+include("functions.jl")
+
+# 3. Exports
 export GPModel
 export train_model!, predict
 
-# Export the custom kernel
-export MolecularKernel
+# Re-export the custom kernel
+export MolecularKernel, kernel_blocks
 
 end
