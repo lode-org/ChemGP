@@ -10,6 +10,12 @@ max_1d_log_distance
 rmsd_distance
 ```
 
+## Earth Mover's Distance
+
+```@docs
+emd_distance
+```
+
 ## Sampling
 
 ```@docs

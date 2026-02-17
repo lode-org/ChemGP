@@ -42,6 +42,7 @@ include("functions.jl")
 # Distance metrics and sampling
 # ==============================================================================
 include("distances.jl")
+include("distances_emd.jl")
 include("sampling.jl")
 
 # ==============================================================================
@@ -49,6 +50,7 @@ include("sampling.jl")
 # ==============================================================================
 include("oracles/lennard_jones.jl")
 include("oracles/muller_brown.jl")
+include("oracles/leps.jl")
 
 # RPC oracle: connect to remote potential servers via rgpot
 include("oracles/rpc.jl")
@@ -83,6 +85,7 @@ export kernel_blocks, compute_inverse_distances
 
 # Distance metrics
 export interatomic_distances, max_1d_log_distance, rmsd_distance
+export emd_distance
 
 # Sampling
 export farthest_point_sampling, prune_training_data!
@@ -91,6 +94,8 @@ export farthest_point_sampling, prune_training_data!
 export lj_energy_gradient, random_cluster
 export muller_brown_energy_gradient
 export MULLER_BROWN_MINIMA, MULLER_BROWN_SADDLES
+export leps_energy_gradient, leps_energy_gradient_2d
+export LEPS_REACTANT, LEPS_PRODUCT
 
 # RPC oracle (rgpot integration)
 export RpcPotential, RpcPotentialCore, make_rpc_oracle
