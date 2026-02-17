@@ -24,6 +24,7 @@ include("kernels/MolInvDistMat3_2.jl")
 # Additional kernels for composition
 include("kernels/ConstantKernel.jl")
 include("kernels/SumKernel.jl")
+include("kernels/ProductKernel.jl")
 
 # ==============================================================================
 # GP core
@@ -80,7 +81,7 @@ export train_model!, predict, predict_with_variance, build_full_covariance
 # Kernels
 export AbstractMoleculeKernel
 export MolInvDistSE, MolInvDistMatern52, MolInvDistMatern32
-export OffsetKernel, MolSumKernel
+export OffsetKernel, MolSumKernel, MolProductKernel
 export kernel_blocks, compute_inverse_distances
 
 # Distance metrics
