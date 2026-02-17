@@ -38,6 +38,10 @@ println("Final energy: ", result.E_final)
 println("Oracle calls: ", result.oracle_calls)
 ```
 
+## Architecture Overview
+
+![Module Structure](assets/diagrams/module_structure.svg)
+
 ## Contents
 
 ```@contents

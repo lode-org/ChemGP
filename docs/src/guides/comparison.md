@@ -2,6 +2,14 @@
 
 Mapping between ChemGP (Julia), gpr\_dimer\_matlab (MATLAB), and gpr\_optim (C++).
 
+## ChemGP Type Hierarchy
+
+![Type Hierarchy](../assets/diagrams/type_hierarchy.svg)
+
+## Test Coverage Map
+
+![Test Coverage](../assets/diagrams/test_coverage.svg)
+
 ## Kernel Functions
 
 | ChemGP | MATLAB | C++ |

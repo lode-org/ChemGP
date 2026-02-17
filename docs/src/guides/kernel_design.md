@@ -3,6 +3,10 @@
 Practical guidance for choosing, configuring, and debugging molecular kernels
 in ChemGP.
 
+## Kernel Composition & Feature Pipeline
+
+![Kernel Composition](../assets/diagrams/kernel_composition.svg)
+
 ## Choosing SE vs Matern 5/2
 
 | Property | [`MolInvDistSE`](@ref) | [`MolInvDistMatern52`](@ref) |
