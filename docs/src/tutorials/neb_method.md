@@ -139,6 +139,14 @@ The [`NEBConfig`](@ref) struct controls all parameters:
 | `gp_train_iter` | 300 | GP hyperparameter optimization iterations |
 | `max_outer_iter` | 50 | Max outer iterations (GP-NEB) |
 
+## Further Reading
+
+- Goswami, Gunde & Jónsson (2026) [arXiv:2601.12630](https://arxiv.org/abs/2601.12630) — enhanced CI-NEB with Hessian eigenmode alignment
+- Goswami et al., *J. Chem. Theory Comput.* (2025) [doi:10.1021/acs.jctc.5c00866](https://doi.org/10.1021/acs.jctc.5c00866) — efficient GP-accelerated saddle point searches
+- Goswami, *Efficient exploration of chemical kinetics* (2025) [arXiv:2510.21368](https://arxiv.org/abs/2510.21368) — thesis
+- Koistinen et al., *J. Chem. Phys.* 147, 152720 (2017) — GP-NEB
+- Henkelman, Uberuaga & Jonsson, *J. Chem. Phys.* 113, 9901 (2000) — climbing image NEB
+
 ## Next Steps
 
 - [GP-Guided Minimization](@ref): Understand GP surrogate optimization

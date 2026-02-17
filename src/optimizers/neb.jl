@@ -8,6 +8,16 @@
 # 3. gp_neb_oie      — GP-NEB with One Image Evaluated (max uncertainty)
 #
 # Reference:
+#   Goswami, R. et al. (2025). Efficient implementation of Gaussian process
+#   regression accelerated saddle point searches with application to molecular
+#   reactions. J. Chem. Theory Comput., doi:10.1021/acs.jctc.5c00866.
+#
+#   Goswami, R., Gunde, M. & Jónsson, H. (2026). Enhanced climbing image nudged
+#   elastic band method with Hessian eigenmode alignment. arXiv:2601.12630.
+#
+#   Goswami, R. (2025). Efficient exploration of chemical kinetics. PhD thesis,
+#   University of Iceland. arXiv:2510.21368.
+#
 #   Koistinen, O.-P. et al. (2017). Nudged elastic band calculations
 #   accelerated with Gaussian process regression. J. Chem. Phys., 147, 152720.
 

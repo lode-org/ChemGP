@@ -24,6 +24,9 @@
 #
 # Reference: Henkelman & Jonsson, J. Chem. Phys. 111, 7010 (1999)
 # GP-Dimer: Koistinen et al., J. Chem. Theory Comput. 16, 499 (2020)
+# Implementation: Goswami et al., J. Chem. Theory Comput. (2025), doi:10.1021/acs.jctc.5c00866
+# Pruning: Goswami & Jónsson, ChemPhysChem (2025), doi:10.1002/cphc.202500730
+# Thesis: Goswami, Efficient exploration of chemical kinetics (2025), arXiv:2510.21368
 
 # ==============================================================================
 # Types

@@ -12,6 +12,17 @@
 # 5. Enhanced stopping criteria and convergence monitoring
 #
 # Reference:
+#   Goswami, R. et al. (2025). Efficient implementation of Gaussian process
+#   regression accelerated saddle point searches with application to molecular
+#   reactions. J. Chem. Theory Comput., doi:10.1021/acs.jctc.5c00866.
+#
+#   Goswami, R. & Jónsson, H. (2025). Adaptive pruning for increased robustness
+#   and reduced computational overhead in Gaussian process accelerated saddle
+#   point searches. ChemPhysChem, doi:10.1002/cphc.202500730.
+#
+#   Goswami, R. (2025). Efficient exploration of chemical kinetics. PhD thesis,
+#   University of Iceland. arXiv:2510.21368.
+#
 #   Koistinen, O.-P. et al. (2020). Minimum mode saddle point searches using
 #   Gaussian process surfaces. J. Chem. Theory Comput., 16, 499-509.
 

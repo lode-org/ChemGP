@@ -157,6 +157,9 @@ The [`DimerResult`](@ref) contains:
 
 ## Further Reading
 
+- Goswami et al., *J. Chem. Theory Comput.* (2025) [doi:10.1021/acs.jctc.5c00866](https://doi.org/10.1021/acs.jctc.5c00866) — efficient GP-accelerated saddle point searches
+- Goswami & Jónsson, *ChemPhysChem* (2025) [doi:10.1002/cphc.202500730](https://doi.org/10.1002/cphc.202500730) — adaptive pruning
+- Goswami, *Efficient exploration of chemical kinetics* (2025) [arXiv:2510.21368](https://arxiv.org/abs/2510.21368) — thesis
 - Henkelman & Jonsson, *J. Chem. Phys.* 111, 7010 (1999) — original dimer method
 - Koistinen et al., *J. Chem. Theory Comput.* 16, 499 (2020) — GP-Dimer
 
