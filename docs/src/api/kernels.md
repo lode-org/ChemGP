@@ -21,6 +21,7 @@ MolInvDistMatern32
 ```@docs
 OffsetKernel
 MolSumKernel
+MolProductKernel
 ```
 
 ## Feature Computation

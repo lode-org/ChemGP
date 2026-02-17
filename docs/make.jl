@@ -27,6 +27,8 @@ makedocs(;
         "Guides" => [
             "Kernel Design" => "guides/kernel_design.md",
             "Trust Regions" => "guides/trust_regions.md",
+            "Algorithm Pseudocode" => "guides/algorithms.md",
+            "Codebase Comparison" => "guides/comparison.md",
         ],
         "API Reference" => [
             "GP Core" => "api/gp_core.md",
