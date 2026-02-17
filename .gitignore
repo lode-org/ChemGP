@@ -6,3 +6,6 @@
 # Documenter.jl build output
 docs/build/
 docs/Manifest.toml
+
+# Temporary/cache
+.cache/
