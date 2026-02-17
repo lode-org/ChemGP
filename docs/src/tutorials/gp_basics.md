@@ -97,5 +97,7 @@ intelligent exploration of the configuration space.
 
 ## Further Reading
 
+- Goswami et al., *J. Chem. Theory Comput.* (2025) [doi:10.1021/acs.jctc.5c00866](https://doi.org/10.1021/acs.jctc.5c00866) — efficient GP-accelerated saddle point searches
+- Goswami, *Efficient exploration of chemical kinetics* (2025) [arXiv:2510.21368](https://arxiv.org/abs/2510.21368) — thesis
 - [Molecular Kernels](@ref): How to define the kernel ``k`` for molecular systems
 - [References](@ref references): Rasmussen & Williams (2006), Solak et al. (2003)

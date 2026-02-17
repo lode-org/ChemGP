@@ -5,6 +5,14 @@
 # This integrates ChemGP with the rgpot library (OmniPotentRPC), allowing
 # GP-guided optimization to call potentials served over Cap'n Proto RPC.
 #
+# Reference:
+#   Bigi, F. et al. (2026). metatensor and metatomic: foundational libraries
+#   for interoperable atomistic machine learning. J. Chem. Phys., 164(6),
+#   064113. doi:10.1063/5.0304911.
+#
+#   Goswami, R. (2025). Efficient exploration of chemical kinetics. PhD thesis,
+#   University of Iceland. arXiv:2510.21368.
+#
 # In a typical workflow:
 #   1. A server runs a potential (e.g., metatensor, EAM, ML potential):
 #        ./potserv 12345 CuH2

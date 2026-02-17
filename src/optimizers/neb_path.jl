@@ -9,6 +9,12 @@
 # bisection tangents.
 #
 # Reference:
+#   Goswami, R., Gunde, M. & Jónsson, H. (2026). Enhanced climbing image nudged
+#   elastic band method with Hessian eigenmode alignment. arXiv:2601.12630.
+#
+#   Goswami, R. (2025). Efficient exploration of chemical kinetics. PhD thesis,
+#   University of Iceland. arXiv:2510.21368.
+#
 #   Henkelman, G., Uberuaga, B. P. & Jonsson, H. (2000).
 #   A climbing image nudged elastic band method for finding saddle points
 #   and minimum energy paths. J. Chem. Phys., 113, 9901-9904.

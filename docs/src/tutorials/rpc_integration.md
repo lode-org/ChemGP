@@ -2,7 +2,9 @@
 
 This tutorial explains how to connect ChemGP to external potential energy
 calculators served over RPC using the [rgpot](https://github.com/OmniPotentRPC/rgpot)
-library.
+library. The RPC integration is designed to work with interoperable atomistic
+machine learning frameworks such as
+[metatensor](https://doi.org/10.1063/5.0304911) (Bigi et al. 2026).
 
 ## Overview
 
