@@ -1,3 +1,38 @@
+"""
+    MolInvDistSE{T,V,F} <: AbstractMoleculeKernel
+
+Squared Exponential (SE) kernel on inverse interatomic distance features.
+
+Computes `k(x, y) = σ² exp(-Σᵢ (θᵢ (fᵢ(x) - fᵢ(y)))²)` where `fᵢ` are
+inverse interatomic distances (`1/rᵢⱼ`) and `θᵢ` are inverse lengthscales.
+
+The SE kernel is infinitely differentiable, producing very smooth GP surfaces.
+For rougher potentials, consider [`MolInvDistMatern52`](@ref).
+
+# Constructors
+- `MolInvDistSE(signal, inv_ls, frozen)`: Isotropic — single lengthscale for all pairs
+- `MolInvDistSE(signal, inv_ls, frozen, mov_types, fro_types, pair_map)`: Type-aware —
+  different lengthscales per atom-type pair
+
+# Fields
+- `signal_variance::T`: Output variance σ²
+- `inv_lengthscales::V`: Inverse lengthscale(s) θ
+- `frozen_coords::F`: Flat coordinates of frozen atoms (empty if none)
+- `feature_params_map::Vector{Int}`: Maps each feature to its lengthscale index
+  (empty for isotropic mode)
+
+# Example
+```julia
+# Isotropic kernel for a 3-atom cluster (no frozen atoms)
+k = MolInvDistSE(1.0, [0.5], Float64[])
+
+# Type-aware kernel: 2 moving Cu atoms, 1 frozen H
+k = MolInvDistSE(1.0, [0.5, 0.3], frozen_coords,
+                 [1, 1], [2], [1 2; 2 1])
+```
+
+See also: [`MolInvDistMatern52`](@ref), [`compute_inverse_distances`](@ref)
+"""
 struct MolInvDistSE{T,V,F} <: AbstractMoleculeKernel
     signal_variance::T
     inv_lengthscales::V
