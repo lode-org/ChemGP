@@ -79,3 +79,52 @@ function farthest_point_sampling(
 
     return selected_indices
 end
+
+"""
+    prune_training_data!(td::TrainingData, x_current::Vector{Float64},
+                         max_points::Int; distance_fn=max_1d_log_distance)
+
+Prune the training data to keep at most `max_points` closest to `x_current`.
+
+When the training set grows large, GP inference becomes expensive (O(N^3)).
+This function retains the most relevant points by sorting by distance to
+the current dimer position and keeping only the closest ones.
+
+If `max_points <= 0` or `npoints(td) <= max_points`, no pruning is performed.
+
+Returns the number of points removed.
+"""
+function prune_training_data!(
+    td::TrainingData,
+    x_current::Vector{Float64},
+    max_points::Int;
+    distance_fn::Function = max_1d_log_distance,
+)
+    N = npoints(td)
+    if max_points <= 0 || N <= max_points
+        return 0
+    end
+
+    D = size(td.X, 1)
+
+    # Compute distances from each training point to current position
+    dists = [distance_fn(td.X[:, i], x_current) for i in 1:N]
+
+    # Sort by distance, keep closest max_points
+    keep_idx = sortperm(dists)[1:max_points]
+    sort!(keep_idx)  # Maintain original order
+
+    td.X = td.X[:, keep_idx]
+    td.energies = td.energies[keep_idx]
+
+    # Gradients are stored as a flat vector of length D*N
+    new_grads = Float64[]
+    for i in keep_idx
+        s = (i - 1) * D + 1
+        e = i * D
+        append!(new_grads, td.gradients[s:e])
+    end
+    td.gradients = new_grads
+
+    return N - max_points
+end
