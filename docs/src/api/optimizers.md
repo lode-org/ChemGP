@@ -42,4 +42,5 @@ ChemGP.reset!
 ```@docs
 min_distance_to_data
 check_interatomic_ratio
+remove_rigid_body_modes!
 ```

@@ -102,6 +102,6 @@ export dimer_images, curvature, rotational_force, translational_force
 export LBFGSHistory, push_pair!, compute_direction
 
 # Trust region utilities
-export min_distance_to_data, check_interatomic_ratio
+export min_distance_to_data, check_interatomic_ratio, remove_rigid_body_modes!
 
 end
