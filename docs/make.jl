@@ -17,6 +17,7 @@ makedocs(;
             "Quick Start" => "tutorials/quickstart.md",
             "GP Basics" => "tutorials/gp_basics.md",
             "Molecular Kernels" => "tutorials/molecular_kernels.md",
+            "Kernel Comparison" => "tutorials/kernel_comparison.md",
             "Minimization" => "tutorials/minimization.md",
             "Dimer Method" => "tutorials/dimer_method.md",
             "RPC Integration" => "tutorials/rpc_integration.md",

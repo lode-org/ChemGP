@@ -11,5 +11,6 @@ and `feature_params_map` fields for compatibility with [`train_model!`](@ref).
 # Subtypes
 - [`MolInvDistSE`](@ref): Squared exponential kernel on inverse distances
 - [`MolInvDistMatern52`](@ref): Matern 5/2 kernel on inverse distances
+- [`MolInvDistMatern32`](@ref): Matern 3/2 kernel on inverse distances
 """
 abstract type AbstractMoleculeKernel <: KernelFunctions.Kernel end

@@ -9,6 +9,14 @@ lj_energy_gradient
 random_cluster
 ```
 
+## Muller-Brown
+
+```@docs
+muller_brown_energy_gradient
+MULLER_BROWN_MINIMA
+MULLER_BROWN_SADDLES
+```
+
 ## RPC Potentials
 
 ```@docs
