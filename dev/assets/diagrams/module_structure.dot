@@ -1,0 +1,137 @@
+digraph module_structure {
+    rankdir=TB;
+    fontname="Helvetica";
+    node [fontname="Helvetica", fontsize=10, style=filled, shape=box, margin="0.15,0.07"];
+    edge [fontname="Helvetica", fontsize=8];
+    label="ChemGP Module Structure";
+    labelloc=t;
+    fontsize=14;
+    compound=true;
+
+    // External dependencies
+    subgraph cluster_external {
+        label="External Dependencies";
+        style=dashed;
+        color="#999999";
+        node [fillcolor="#e8e8e8"];
+        KernelFunctions [label="KernelFunctions\n(Kernel abstract type)"];
+        ForwardDiff [label="ForwardDiff\n(AD)"];
+        Optim [label="Optim\n(Nelder-Mead)"];
+        ParameterHandling [label="ParameterHandling\n(pack/unpack)"];
+        LinearAlgebra [label="LinearAlgebra"];
+    }
+
+    // Kernel infrastructure
+    subgraph cluster_kernels {
+        label="Kernel Infrastructure";
+        style=filled;
+        color="#dceefb";
+        fillcolor="#f0f7ff";
+        node [fillcolor="#b3d9ff"];
+
+        abstract_jl [label="kernels/abstract.jl\nAbstractMoleculeKernel"];
+        invdist_jl [label="invdist.jl\ncompute_inverse_distances"];
+        SE [label="kernels/MolInvDistSE.jl"];
+        Mat52 [label="kernels/MolInvDistMat5_2.jl"];
+        Mat32 [label="kernels/MolInvDistMat3_2.jl"];
+        Const [label="kernels/ConstantKernel.jl\nOffsetKernel"];
+        Sum [label="kernels/SumKernel.jl\nMolSumKernel"];
+        Prod [label="kernels/ProductKernel.jl\nMolProductKernel"];
+    }
+
+    // GP Core
+    subgraph cluster_gp {
+        label="GP Core";
+        style=filled;
+        color="#d5e8d4";
+        fillcolor="#f0fff0";
+        node [fillcolor="#a8d5a2"];
+
+        derivatives [label="derivatives.jl\nkernel_blocks"];
+        types [label="types.jl\nGPModel, TrainingData"];
+        functions [label="functions.jl\ntrain_model!, predict"];
+    }
+
+    // Distance & Sampling
+    subgraph cluster_distance {
+        label="Distance & Sampling";
+        style=filled;
+        color="#fff2cc";
+        fillcolor="#fffef0";
+        node [fillcolor="#ffe599"];
+
+        distances [label="distances.jl\nmax_1d_log_distance\nrmsd_distance"];
+        emd [label="distances_emd.jl\nemd_distance"];
+        sampling [label="sampling.jl\nFPS, prune"];
+    }
+
+    // Oracles
+    subgraph cluster_oracles {
+        label="Oracles";
+        style=filled;
+        color="#f8cecc";
+        fillcolor="#fff5f5";
+        node [fillcolor="#f5b7b1"];
+
+        lj [label="oracles/lennard_jones.jl\nlj_energy_gradient"];
+        mb [label="oracles/muller_brown.jl\nmuller_brown_energy_gradient"];
+        leps [label="oracles/leps.jl\nleps_energy_gradient"];
+        rpc [label="oracles/rpc.jl\nRpcPotential"];
+    }
+
+    // Optimizers
+    subgraph cluster_optimizers {
+        label="Optimization Methods";
+        style=filled;
+        color="#e1d5e7";
+        fillcolor="#f9f5ff";
+        node [fillcolor="#d5b8e8"];
+
+        lbfgs [label="optimizers/lbfgs.jl\nLBFGSHistory"];
+        trust [label="optimizers/trust_region.jl\nmin_distance_to_data"];
+        minimize [label="optimizers/minimize.jl\ngp_minimize"];
+        dimer [label="optimizers/dimer.jl\ngp_dimer"];
+        neb_types [label="optimizers/neb_types.jl\nNEBPath, NEBConfig"];
+        neb_path [label="optimizers/neb_path.jl\ntangent, spring, force"];
+        neb [label="optimizers/neb.jl\nneb_optimize\ngp_neb_aie, gp_neb_oie"];
+        otgpd [label="optimizers/otgpd.jl\notgpd"];
+    }
+
+    // Include order (defines type availability)
+    abstract_jl -> invdist_jl -> SE -> Mat52 -> Mat32 -> Const -> Sum -> Prod [style=dotted, color="#999999"];
+    Prod -> derivatives [style=dotted, color="#999999", ltail=cluster_kernels];
+    derivatives -> types -> functions [style=dotted, color="#999999"];
+
+    // Functional dependencies
+    KernelFunctions -> abstract_jl [color="#666666"];
+    ForwardDiff -> derivatives [color="#666666"];
+    Optim -> functions [color="#666666"];
+    ParameterHandling -> functions [color="#666666"];
+
+    SE -> derivatives [color="#3366cc", label="kernel eval"];
+    Mat52 -> derivatives [color="#3366cc"];
+    Mat32 -> derivatives [color="#3366cc"];
+
+    types -> minimize [color="#339933"];
+    types -> dimer [color="#339933"];
+    types -> neb [color="#339933"];
+    types -> otgpd [color="#339933"];
+    functions -> minimize [color="#339933"];
+    functions -> dimer [color="#339933"];
+    functions -> neb [color="#339933"];
+    functions -> otgpd [color="#339933"];
+
+    lbfgs -> minimize [color="#993399"];
+    lbfgs -> dimer [color="#993399"];
+    trust -> minimize [color="#993399"];
+    trust -> dimer [color="#993399"];
+    trust -> otgpd [color="#993399"];
+
+    neb_types -> neb_path -> neb [color="#993399"];
+    dimer -> otgpd [color="#993399", label="extends"];
+
+    distances -> sampling [color="#cc9900"];
+    distances -> trust [color="#cc9900"];
+    emd -> sampling [color="#cc9900", style=dashed];
+    sampling -> otgpd [color="#cc9900", label="pruning"];
+}

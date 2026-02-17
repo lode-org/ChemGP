@@ -1,0 +1,108 @@
+digraph ci_workflows {
+    rankdir=LR;
+    fontname="Helvetica";
+    node [fontname="Helvetica", fontsize=10, style=filled, margin="0.15,0.07"];
+    edge [fontname="Helvetica", fontsize=8];
+    label="GitHub Actions CI/CD Pipeline";
+    labelloc=t;
+    fontsize=14;
+
+    // Triggers
+    subgraph cluster_triggers {
+        label="Triggers";
+        style=filled;
+        color="#e8e8e8";
+        fillcolor="#f5f5f5";
+
+        push_main [label="push to main", shape=ellipse, fillcolor="#e8e8e8"];
+        push_tag [label="push tag", shape=ellipse, fillcolor="#e8e8e8"];
+        pull_request [label="pull_request", shape=ellipse, fillcolor="#e8e8e8"];
+        schedule [label="weekly\ncron", shape=ellipse, fillcolor="#e8e8e8"];
+        workflow_dispatch [label="manual\ndispatch", shape=ellipse, fillcolor="#e8e8e8"];
+    }
+
+    // CI workflow
+    subgraph cluster_ci {
+        label="CI.yml";
+        style=filled;
+        color="#d5e8d4";
+        fillcolor="#f0fff0";
+
+        ci_matrix [label="Matrix:\nJulia 1.10, 1.12, pre\nubuntu, macos\nx64", shape=box, fillcolor="#a8d5a2"];
+        ci_build [label="julia-buildpkg", shape=box, fillcolor="#a8d5a2"];
+        ci_test [label="julia-runtest\n(14 test files)", shape=box, fillcolor="#a8d5a2"];
+    }
+
+    // Documentation workflow
+    subgraph cluster_docs {
+        label="Documentation.yml";
+        style=filled;
+        color="#dceefb";
+        fillcolor="#f0f7ff";
+
+        doc_install [label="Install deps\nPkg.develop + instantiate", shape=box, fillcolor="#b3d9ff"];
+        doc_build [label="Documenter.jl\nbuild + deploy", shape=box, fillcolor="#b3d9ff"];
+        doc_artifact [label="Upload artifact\ndocs/build", shape=box, fillcolor="#b3d9ff"];
+        doc_pages [label="GitHub Pages\nlode-org.github.io\n/ChemGP.jl", shape=box3d, fillcolor="#99ccff"];
+    }
+
+    // Doc commenter
+    subgraph cluster_commenter {
+        label="ci_doc_commenter.yml";
+        style=filled;
+        color="#e1d5e7";
+        fillcolor="#f9f5ff";
+
+        commenter_trigger [label="workflow_run:\nDocumentation\ncompleted", shape=box, fillcolor="#d5b8e8"];
+        commenter_action [label="HaoZeke/\ndoc-previewer\n@v0.0.1", shape=box, fillcolor="#d5b8e8"];
+        pr_comment [label="PR comment\nwith doc preview\nlink", shape=box3d, fillcolor="#ce93d8"];
+    }
+
+    // Pre-commit workflow
+    subgraph cluster_precommit {
+        label="pre_commit.yml";
+        style=filled;
+        color="#fff2cc";
+        fillcolor="#fffef0";
+
+        pc_pixi [label="setup-pixi\nactivate env", shape=box, fillcolor="#ffe599"];
+        pc_prek [label="pipx run prek\nrun -a", shape=box, fillcolor="#ffe599"];
+        pc_hooks [label="Hooks:\ntrailing-whitespace\nend-of-file-fixer\ncheck-yaml\ncheck-added-large-files\njulia-formatter", shape=box, fillcolor="#ffe599"];
+    }
+
+    // Automation workflows
+    subgraph cluster_auto {
+        label="Automation";
+        style=filled;
+        color="#fce4ec";
+        fillcolor="#fff5f5";
+
+        compat [label="CompatHelper.yml\nauto-update\ndependency bounds", shape=box, fillcolor="#f5b7b1"];
+        tagbot [label="TagBot.yml\nauto-create\nGitHub releases", shape=box, fillcolor="#f5b7b1"];
+    }
+
+    // Trigger edges
+    push_main -> ci_matrix;
+    push_main -> doc_install;
+    push_main -> pc_pixi;
+    push_tag -> ci_matrix;
+    push_tag -> doc_install;
+    push_tag -> tagbot;
+    pull_request -> ci_matrix;
+    pull_request -> doc_install;
+    pull_request -> pc_pixi;
+    schedule -> doc_install;
+    workflow_dispatch -> ci_matrix;
+
+    // CI flow
+    ci_matrix -> ci_build -> ci_test;
+
+    // Docs flow
+    doc_install -> doc_build -> doc_artifact;
+    doc_build -> doc_pages [label="main/tags\nonly"];
+    doc_artifact -> commenter_trigger [style=dashed, label="triggers"];
+    commenter_trigger -> commenter_action -> pr_comment;
+
+    // Pre-commit flow
+    pc_pixi -> pc_prek -> pc_hooks;
+}
