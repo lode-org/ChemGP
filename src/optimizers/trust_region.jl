@@ -49,6 +49,11 @@ function check_interatomic_ratio(
     X_train::Matrix{Float64},
     ratio_limit::Float64,
 )
+    # Skip check for non-molecular inputs (< 2 atoms = < 6 coordinates)
+    if length(x_new) < 6
+        return true
+    end
+
     threshold = abs(log(ratio_limit))
     for k in 1:size(X_train, 2)
         d = max_1d_log_distance(x_new, X_train[:, k])

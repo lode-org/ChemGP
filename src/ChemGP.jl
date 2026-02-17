@@ -63,6 +63,7 @@ include("optimizers/dimer.jl")
 include("optimizers/neb_types.jl")
 include("optimizers/neb_path.jl")
 include("optimizers/neb.jl")
+include("optimizers/otgpd.jl")
 
 # ==============================================================================
 # Exports
@@ -84,7 +85,7 @@ export kernel_blocks, compute_inverse_distances
 export interatomic_distances, max_1d_log_distance, rmsd_distance
 
 # Sampling
-export farthest_point_sampling
+export farthest_point_sampling, prune_training_data!
 
 # Oracles
 export lj_energy_gradient, random_cluster
@@ -108,6 +109,9 @@ export LBFGSHistory, push_pair!, compute_direction
 export NEBPath, NEBConfig, NEBResult
 export linear_interpolation, path_tangent, spring_force, neb_force
 export neb_optimize, gp_neb_aie, gp_neb_oie
+
+# OTGPD (Optimal Transport GP Dimer)
+export otgpd, OTGPDConfig, OTGPDResult
 
 # Trust region utilities
 export min_distance_to_data, check_interatomic_ratio, remove_rigid_body_modes!

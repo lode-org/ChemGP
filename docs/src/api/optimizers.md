@@ -43,6 +43,20 @@ spring_force
 neb_force
 ```
 
+## OTGPD (Optimal Transport GP Dimer)
+
+```@docs
+otgpd
+OTGPDConfig
+OTGPDResult
+```
+
+## Sampling and Data Management
+
+```@docs
+prune_training_data!
+```
+
 ## L-BFGS Optimizer
 
 ```@docs

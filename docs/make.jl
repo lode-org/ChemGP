@@ -21,6 +21,7 @@ makedocs(;
             "Minimization" => "tutorials/minimization.md",
             "Dimer Method" => "tutorials/dimer_method.md",
             "NEB Method" => "tutorials/neb_method.md",
+            "OTGPD" => "tutorials/otgpd.md",
             "RPC Integration" => "tutorials/rpc_integration.md",
         ],
         "Guides" => [
