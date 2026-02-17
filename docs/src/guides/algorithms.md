@@ -2,6 +2,14 @@
 
 Pseudocode for all GP-guided optimization methods in ChemGP.
 
+## Optimizer Data Flow
+
+![Optimizer Flow](../assets/diagrams/optimizer_flow.svg)
+
+## GP Training & Prediction Pipeline
+
+![GP Pipeline](../assets/diagrams/gp_pipeline.svg)
+
 ## GP Minimization ([`gp_minimize`](@ref))
 
 ```
@@ -71,6 +79,10 @@ Phase 2 — Main GP Loop:
     Oracle evaluation (+ image 1 if eval_image1)
     Check: |F_true| < T_dimer AND C < 0 → CONVERGED
 ```
+
+## NEB Variants Overview
+
+![NEB Variants](../assets/diagrams/neb_variants.svg)
 
 ## Standard NEB ([`neb_optimize`](@ref))
 

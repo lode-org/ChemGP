@@ -1,0 +1,129 @@
+digraph optimizer_flow {
+    rankdir=TB;
+    fontname="Helvetica";
+    node [fontname="Helvetica", fontsize=10, style=filled, margin="0.15,0.07"];
+    edge [fontname="Helvetica", fontsize=8];
+    label="Optimization Algorithm Data Flow";
+    labelloc=t;
+    fontsize=14;
+    splines=true;
+
+    // Shared components
+    oracle [label="Oracle\n(true potential)", shape=doubleoctagon, fillcolor="#f5b7b1"];
+    gp [label="GP Surrogate\ntrain_model! / predict", shape=box3d, fillcolor="#a8d5a2"];
+    lbfgs [label="L-BFGS\ncompute_direction", shape=component, fillcolor="#ffd9b3"];
+    trust [label="Trust Region\nmin_distance_to_data\ncheck_interatomic_ratio\nremove_rigid_body_modes!", shape=component, fillcolor="#ffd9b3"];
+
+    // gp_minimize
+    subgraph cluster_minimize {
+        label="gp_minimize";
+        style=filled;
+        color="#d5e8d4";
+        fillcolor="#f0fff0";
+
+        min_init [label="Initial perturbations\nn_initial_perturb", shape=box, fillcolor="#a8d5a2"];
+        min_train [label="Train GP on\naccumulated data", shape=box, fillcolor="#a8d5a2"];
+        min_opt [label="Optimize on GP surface\n+ soft trust penalty\nE_gp + \u03bb\u00b7max(0,d-r)\u00b2", shape=box, fillcolor="#a8d5a2"];
+        min_eval [label="Oracle at\nproposed minimum", shape=box, fillcolor="#a8d5a2"];
+        min_check [label="||G_true|| < tol?", shape=diamond, fillcolor="#d5e8d4"];
+        min_result [label="MinimizationResult", shape=box, fillcolor="#c8e6c9"];
+    }
+
+    // gp_dimer
+    subgraph cluster_dimer {
+        label="gp_dimer";
+        style=filled;
+        color="#dceefb";
+        fillcolor="#f0f7ff";
+
+        dim_init [label="Initialize DimerState\nR, orient, sep", shape=box, fillcolor="#b3d9ff"];
+        dim_outer [label="OUTER: Oracle eval\nat midpoint + images", shape=box, fillcolor="#b3d9ff"];
+        dim_train [label="Train GP", shape=box, fillcolor="#b3d9ff"];
+        dim_rotate [label="INNER: Rotate on GP\n:simple / :lbfgs / :cg\nalign to lowest curvature", shape=box, fillcolor="#b3d9ff"];
+        dim_translate [label="INNER: Translate on GP\n:simple / :lbfgs\nmodified force", shape=box, fillcolor="#b3d9ff"];
+        dim_check [label="||F_true|| < tol?", shape=diamond, fillcolor="#dceefb"];
+        dim_result [label="DimerResult", shape=box, fillcolor="#bbdefb"];
+    }
+
+    // otgpd
+    subgraph cluster_otgpd {
+        label="otgpd";
+        style=filled;
+        color="#e1d5e7";
+        fillcolor="#f9f5ff";
+
+        ot_init_rot [label="Initial rotation\non TRUE potential\n(optional)", shape=box, fillcolor="#d5b8e8"];
+        ot_outer [label="OUTER: Oracle eval\n+ optional image1", shape=box, fillcolor="#d5b8e8"];
+        ot_adapt [label="Adaptive threshold\nT_gp = T_init/(1+iter/div)", shape=box, fillcolor="#d5b8e8"];
+        ot_inner [label="INNER: Rotate + Translate\non GP (up to 10000 steps)", shape=box, fillcolor="#d5b8e8"];
+        ot_prune [label="Prune training data\nkeep closest points", shape=box, fillcolor="#d5b8e8"];
+        ot_check [label="||F_true|| < T_dimer?", shape=diamond, fillcolor="#e1d5e7"];
+        ot_result [label="OTGPDResult\n+ history", shape=box, fillcolor="#ce93d8"];
+    }
+
+    // neb
+    subgraph cluster_neb {
+        label="NEB Variants";
+        style=filled;
+        color="#fff2cc";
+        fillcolor="#fffef0";
+
+        neb_init [label="Linear interpolation\nN images", shape=box, fillcolor="#ffe599"];
+        neb_std [label="neb_optimize\noracle at ALL images\nevery iteration", shape=box, fillcolor="#ffcc80"];
+        neb_aie [label="gp_neb_aie\noracle at ALL images\nper outer iter\nGP relax inner", shape=box, fillcolor="#ffe599"];
+        neb_oie [label="gp_neb_oie\noracle at 1 image\n(max uncertainty)\nGP relax rest", shape=box, fillcolor="#fff9c4"];
+        neb_forces [label="NEB forces:\ntangent + spring\n+ climbing image", shape=box, fillcolor="#ffe599"];
+        neb_check [label="max ||F|| < tol?", shape=diamond, fillcolor="#fff2cc"];
+        neb_result [label="NEBResult", shape=box, fillcolor="#fff59d"];
+    }
+
+    // Connections to shared components
+    oracle -> min_eval;
+    oracle -> dim_outer;
+    oracle -> ot_outer;
+    oracle -> ot_init_rot;
+    oracle -> neb_std;
+    oracle -> neb_aie;
+    oracle -> neb_oie;
+
+    gp -> min_train [dir=back];
+    gp -> dim_train [dir=back];
+    gp -> ot_inner;
+    gp -> neb_aie;
+    gp -> neb_oie;
+
+    lbfgs -> min_opt;
+    lbfgs -> dim_rotate;
+    lbfgs -> dim_translate;
+
+    trust -> min_opt;
+    trust -> dim_outer;
+    trust -> ot_outer;
+
+    // Minimize flow
+    min_init -> min_train -> min_opt -> min_eval -> min_check;
+    min_check -> min_train [label="no", style=dashed];
+    min_check -> min_result [label="yes"];
+
+    // Dimer flow
+    dim_init -> dim_outer -> dim_train -> dim_rotate -> dim_translate;
+    dim_translate -> dim_rotate [label="inner\nloop", style=dashed];
+    dim_translate -> dim_check [label="GP converged"];
+    dim_check -> dim_outer [label="no", style=dashed];
+    dim_check -> dim_result [label="yes"];
+
+    // OTGPD flow
+    ot_init_rot -> ot_outer -> ot_adapt -> ot_inner -> ot_prune -> ot_check;
+    ot_check -> ot_outer [label="no", style=dashed];
+    ot_check -> ot_result [label="yes"];
+
+    // NEB flow
+    neb_init -> neb_std;
+    neb_init -> neb_aie;
+    neb_init -> neb_oie;
+    neb_std -> neb_forces -> neb_check;
+    neb_aie -> neb_forces;
+    neb_oie -> neb_forces;
+    neb_check -> neb_result [label="yes"];
+    neb_check -> neb_std [label="no", style=dashed];
+}
