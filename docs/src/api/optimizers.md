@@ -28,6 +28,15 @@ rotational_force
 translational_force
 ```
 
+## L-BFGS Optimizer
+
+```@docs
+LBFGSHistory
+push_pair!
+compute_direction
+ChemGP.reset!
+```
+
 ## Trust Region
 
 ```@docs

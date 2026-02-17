@@ -13,6 +13,7 @@ AbstractMoleculeKernel
 ```@docs
 MolInvDistSE
 MolInvDistMatern52
+MolInvDistMatern32
 ```
 
 ## Composition Kernels

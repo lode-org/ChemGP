@@ -16,9 +16,10 @@ include("kernels/abstract.jl")
 # Feature computation (used by molecular kernels)
 include("invdist.jl")
 
-# Molecular kernels (SE and Matern 5/2 on inverse distances)
+# Molecular kernels (SE, Matern 5/2, Matern 3/2 on inverse distances)
 include("kernels/MolInvDistSE.jl")
 include("kernels/MolInvDistMat5_2.jl")
+include("kernels/MolInvDistMat3_2.jl")
 
 # Additional kernels for composition
 include("kernels/ConstantKernel.jl")
@@ -47,6 +48,7 @@ include("sampling.jl")
 # Oracles (pedagogical test potentials)
 # ==============================================================================
 include("oracles/lennard_jones.jl")
+include("oracles/muller_brown.jl")
 
 # RPC oracle: connect to remote potential servers via rgpot
 include("oracles/rpc.jl")
@@ -54,6 +56,7 @@ include("oracles/rpc.jl")
 # ==============================================================================
 # Optimization methods
 # ==============================================================================
+include("optimizers/lbfgs.jl")
 include("optimizers/trust_region.jl")
 include("optimizers/minimize.jl")
 include("optimizers/dimer.jl")
@@ -70,7 +73,7 @@ export train_model!, predict, predict_with_variance, build_full_covariance
 
 # Kernels
 export AbstractMoleculeKernel
-export MolInvDistSE, MolInvDistMatern52
+export MolInvDistSE, MolInvDistMatern52, MolInvDistMatern32
 export OffsetKernel, MolSumKernel
 export kernel_blocks, compute_inverse_distances
 
@@ -82,6 +85,8 @@ export farthest_point_sampling
 
 # Oracles
 export lj_energy_gradient, random_cluster
+export muller_brown_energy_gradient
+export MULLER_BROWN_MINIMA, MULLER_BROWN_SADDLES
 
 # RPC oracle (rgpot integration)
 export RpcPotential, RpcPotentialCore, make_rpc_oracle
@@ -92,6 +97,9 @@ export gp_minimize, MinimizationConfig, MinimizationResult
 # Dimer saddle point search
 export gp_dimer, DimerState, DimerConfig, DimerResult
 export dimer_images, curvature, rotational_force, translational_force
+
+# L-BFGS optimizer
+export LBFGSHistory, push_pair!, compute_direction
 
 # Trust region utilities
 export min_distance_to_data, check_interatomic_ratio

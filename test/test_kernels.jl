@@ -7,7 +7,7 @@ function morse(r)
 end
 
 @testset "Molecular Kernels" begin
-    kernels_to_test = [MolInvDistSE, MolInvDistMatern52]
+    kernels_to_test = [MolInvDistSE, MolInvDistMatern52, MolInvDistMatern32]
 
     @testset "Kernel: $KType" for KType in kernels_to_test
         println("\nTesting Kernel: $KType")
