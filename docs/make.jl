@@ -20,6 +20,7 @@ makedocs(;
             "Kernel Comparison" => "tutorials/kernel_comparison.md",
             "Minimization" => "tutorials/minimization.md",
             "Dimer Method" => "tutorials/dimer_method.md",
+            "NEB Method" => "tutorials/neb_method.md",
             "RPC Integration" => "tutorials/rpc_integration.md",
         ],
         "Guides" => [

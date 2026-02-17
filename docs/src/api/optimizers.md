@@ -28,6 +28,21 @@ rotational_force
 translational_force
 ```
 
+## NEB Path Optimization
+
+```@docs
+neb_optimize
+gp_neb_aie
+gp_neb_oie
+NEBPath
+NEBConfig
+NEBResult
+linear_interpolation
+path_tangent
+spring_force
+neb_force
+```
+
 ## L-BFGS Optimizer
 
 ```@docs

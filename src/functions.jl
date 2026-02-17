@@ -111,7 +111,7 @@ Mutates `model` in-place with the optimized kernel and noise parameters.
 
 See also: [`build_full_covariance`](@ref), [`predict`](@ref)
 """
-function train_model!(model::GPModel{Tk}; iterations = 1000) where {Tk}
+function train_model!(model::GPModel{Tk}; iterations = 1000) where {Tk<:AbstractMoleculeKernel}
     # 1. Define Initial Parameters (Structured)
     # Warm start from current model values as the starting point.
     # ParameterHandling.positive ensures they stay > 0 during optimization.
@@ -167,6 +167,51 @@ function train_model!(model::GPModel{Tk}; iterations = 1000) where {Tk}
     model.grad_noise_var = best_params.grad_noise
 
     @printf("Optimization Complete. Final NLL: %.4f\n", Optim.minimum(res))
+    return model
+end
+
+"""
+    train_model!(model::GPModel{Tk}; iterations=1000) where {Tk<:Kernel}
+
+Fallback training for generic KernelFunctions.jl kernels (e.g., `SqExponentialKernel`).
+
+Since we cannot generically introspect kernel hyperparameters, this method keeps
+the kernel fixed and optimizes only the noise variances by minimizing the negative
+log marginal likelihood.
+
+This is used by GP-NEB on non-molecular surfaces (Muller-Brown 2D).
+"""
+function train_model!(model::GPModel{Tk}; iterations = 1000) where {Tk<:Kernel}
+    kernel = model.kernel
+
+    raw_initial_params = (
+        noise = positive(model.noise_var),
+        grad_noise = positive(model.grad_noise_var),
+    )
+
+    flat_initial_params, unflatten = ParameterHandling.value_flatten(raw_initial_params)
+
+    function objective(params::NamedTuple)
+        K = build_full_covariance(kernel, model.X, params.noise, params.grad_noise, model.jitter)
+        L = try
+            cholesky(K)
+        catch
+            return Inf
+        end
+        return 0.5 * dot(model.y, L \ model.y) + logdet(L) + 0.5 * length(model.y) * log(2π)
+    end
+
+    res = Optim.optimize(
+        objective ∘ unflatten,
+        flat_initial_params,
+        NelderMead(),
+        Optim.Options(iterations = iterations, show_trace = false),
+    )
+
+    best_params = unflatten(Optim.minimizer(res))
+    model.noise_var = best_params.noise
+    model.grad_noise_var = best_params.grad_noise
+
     return model
 end
 

@@ -60,6 +60,9 @@ include("optimizers/lbfgs.jl")
 include("optimizers/trust_region.jl")
 include("optimizers/minimize.jl")
 include("optimizers/dimer.jl")
+include("optimizers/neb_types.jl")
+include("optimizers/neb_path.jl")
+include("optimizers/neb.jl")
 
 # ==============================================================================
 # Exports
@@ -100,6 +103,11 @@ export dimer_images, curvature, rotational_force, translational_force
 
 # L-BFGS optimizer
 export LBFGSHistory, push_pair!, compute_direction
+
+# NEB path optimization
+export NEBPath, NEBConfig, NEBResult
+export linear_interpolation, path_tangent, spring_force, neb_force
+export neb_optimize, gp_neb_aie, gp_neb_oie
 
 # Trust region utilities
 export min_distance_to_data, check_interatomic_ratio, remove_rigid_body_modes!
