@@ -3,10 +3,23 @@
 # ==============================================================================
 
 """
-    compute_features(x_flat, frozen_flat)
+    compute_inverse_distances(x_flat, frozen_flat)
 
-Computes 1/r features for Moving-Moving and Moving-Frozen pairs.
-Order is strictly deterministic to match the parameter mapping.
+Compute inverse interatomic distance features (1/r) for all Moving-Moving and
+Moving-Frozen atom pairs.
+
+Given flat coordinate vectors for moving atoms (`x_flat`) and frozen atoms
+(`frozen_flat`), returns a vector of `1/r` values in canonical order:
+1. Moving-Moving pairs (upper triangle: j < i)
+2. Moving-Frozen pairs (all combinations)
+
+The total number of features is `N_mov*(N_mov-1)/2 + N_mov*N_fro`.
+
+These features are rotationally and translationally invariant by construction,
+which is the key property that makes inverse distance kernels suitable for
+molecular systems.
+
+See also: [`MolInvDistSE`](@ref), [`MolInvDistMatern52`](@ref)
 """
 function compute_inverse_distances(x_flat::AbstractVector, frozen_flat::AbstractVector)
     if length(x_flat) % 3 != 0

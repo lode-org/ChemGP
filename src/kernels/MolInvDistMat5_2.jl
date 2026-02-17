@@ -1,3 +1,22 @@
+"""
+    MolInvDistMatern52{T,V,F} <: AbstractMoleculeKernel
+
+Matern 5/2 kernel on inverse interatomic distance features.
+
+Computes `k(x, y) = σ² (1 + √5 d + 5/3 d²) exp(-√5 d)` where
+`d = √(Σᵢ (θᵢ (fᵢ(x) - fᵢ(y)))²)` and `fᵢ` are inverse interatomic distances.
+
+The Matern 5/2 kernel is twice differentiable (C²), producing rougher GP surfaces
+than the SE kernel. This is often more appropriate for molecular potential energy
+surfaces, which can have sharp features near repulsive walls.
+
+# Constructors
+Same interface as [`MolInvDistSE`](@ref):
+- `MolInvDistMatern52(signal, inv_ls, frozen)`: Isotropic
+- `MolInvDistMatern52(signal, inv_ls, frozen, mov_types, fro_types, pair_map)`: Type-aware
+
+See also: [`MolInvDistSE`](@ref), [`compute_inverse_distances`](@ref)
+"""
 struct MolInvDistMatern52{T,V,F} <: AbstractMoleculeKernel
     signal_variance::T
     inv_lengthscales::V
