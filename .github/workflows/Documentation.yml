@@ -1,9 +1,14 @@
 name: Documentation
+concurrency:
+  group: "pages"
+  cancel-in-progress: true
 on:
   push:
     branches: [main]
     tags: ['*']
   pull_request:
+  schedule:
+    - cron: "0 8 * * 1"
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -23,3 +28,8 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           DOCUMENTER_KEY: ${{ secrets.DOCUMENTER_KEY }}
         run: julia --project=docs docs/make.jl
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: documentation
+          path: docs/build
