@@ -69,6 +69,12 @@ include("optimizers/neb.jl")
 include("optimizers/otgpd.jl")
 
 # ==============================================================================
+# I/O utilities
+# ==============================================================================
+include("io/extxyz.jl")
+include("io/hdf5.jl")
+
+# ==============================================================================
 # Exports
 # ==============================================================================
 
@@ -100,6 +106,8 @@ export LEPS_REACTANT, LEPS_PRODUCT
 
 # RPC oracle (rgpot integration)
 export RpcPotential, RpcPotentialCore, make_rpc_oracle
+export find_rgpot_lib, find_potserv, with_potserv
+export rgpot_available, potserv_available
 
 # Minimization
 export gp_minimize, MinimizationConfig, MinimizationResult
@@ -121,5 +129,9 @@ export otgpd, OTGPDConfig, OTGPDResult
 
 # Trust region utilities
 export min_distance_to_data, check_interatomic_ratio, remove_rigid_body_modes!
+
+# I/O
+export write_neb_trajectory, write_neb_dat, write_convergence_csv
+export write_neb_hdf5, make_neb_writer, make_neb_hdf5_writer, ELEMENT_SYMBOLS
 
 end
