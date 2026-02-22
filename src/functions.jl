@@ -254,7 +254,8 @@ Mutates `model` in-place with the optimized kernel and noise parameters.
 
 See also: [`build_full_covariance`](@ref), [`predict`](@ref)
 """
-function train_model!(model::GPModel{Tk}; iterations = 1000, fix_noise::Bool = false, verbose::Bool = true) where {Tk<:AbstractMoleculeKernel}
+function train_model!(model::GPModel{Tk}; iterations = 1000, fix_noise::Bool = false,
+                      verbose::Bool = true, barrier_strength::Float64 = 0.0) where {Tk<:AbstractMoleculeKernel}
     # 1. Define Initial Parameters (Structured)
     # Warm start from current model values as the starting point.
     # ParameterHandling.positive ensures they stay > 0 during optimization.
@@ -307,7 +308,18 @@ function train_model!(model::GPModel{Tk}; iterations = 1000, fix_noise::Bool = f
             return Inf
         end
 
-        return 0.5 * dot(model.y, L \ model.y) + logdet(L) + 0.5 * length(model.y) * log(2π)
+        nll = 0.5 * dot(model.y, L \ model.y) + logdet(L) + 0.5 * length(model.y) * log(2π)
+
+        # Variance barrier: penalizes signal variance collapsing to zero.
+        # Prevents degenerate solutions where sigma2 -> 0 on sparse data.
+        if barrier_strength > 0.0
+            log_sv = log(max(params.signal_var, 1e-30))
+            max_log_sv = log(max(params.signal_var, 1.0))
+            barrier = max_log_sv - log_sv
+            nll -= barrier_strength * log(max(barrier, 1e-30))
+        end
+
+        return nll
     end
 
     # 4. Run Optimization
