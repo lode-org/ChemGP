@@ -21,14 +21,78 @@
 #   Koistinen, O.-P. et al. (2017). Nudged elastic band calculations
 #   accelerated with Gaussian process regression. J. Chem. Phys., 147, 152720.
 
+# ==============================================================================
+# Shared GP training helper for GP-NEB (AIE and OIE)
+# ==============================================================================
+
+"""
+    _train_neb_gp(td, kernel, cfg, prev_kern, hess_X, hess_E, hess_G,
+                  n_hess, outer_iter)
+
+Train the GP model for NEB, handling both molecular kernels (energy shift,
+fixed noise) and generic kernels (normalize, optimize noise).
+
+Returns `(model, E_ref, y_std, kern)` where `kern` is the trained kernel
+suitable for warm-starting the next iteration.
+"""
+function _train_neb_gp(
+    td::TrainingData,
+    kernel,
+    cfg::NEBConfig,
+    prev_kern,
+    hess_X::Matrix{Float64},
+    hess_E::Vector{Float64},
+    hess_G::Vector{Float64},
+    n_hess::Int,
+    outer_iter::Int,
+)
+    if kernel isa AbstractMoleculeKernel
+        E_ref = td.energies[1]
+
+        use_hess = n_hess > 0 && outer_iter <= cfg.num_hess_iter
+        if use_hess
+            X_train = hcat(hess_X, td.X)
+            E_train = vcat(hess_E, td.energies)
+            G_train = vcat(hess_G, td.gradients)
+        else
+            X_train = td.X
+            E_train = td.energies
+            G_train = td.gradients
+        end
+
+        y_target = vcat(E_train .- E_ref, G_train)
+
+        # Warm-start: reuse previous kernel, only init on first iteration
+        kern = prev_kern === nothing ? init_mol_invdist_se(td, kernel) : prev_kern
+        model = GPModel(kern, X_train, y_target;
+                        noise_var = 1e-6, grad_noise_var = 1e-4, jitter = 1e-6)
+        train_model!(model; iterations = cfg.gp_train_iter,
+                     fix_noise = true, verbose = cfg.verbose)
+        return model, E_ref, 1.0, model.kernel
+    else
+        y_gp, E_ref, y_std = normalize(td)
+        kern = if prev_kern !== nothing
+            prev_kern
+        elseif kernel isa CartesianSE
+            init_cartesian_se(td)
+        else
+            kernel
+        end
+        model = GPModel(kern, td.X, y_gp;
+                        noise_var = 1e-6, grad_noise_var = 1e-6, jitter = 1e-4)
+        train_model!(model; iterations = cfg.gp_train_iter, verbose = cfg.verbose)
+        return model, E_ref, y_std, model.kernel
+    end
+end
+
 """
     neb_optimize(oracle, x_start, x_end; config) -> NEBResult
 
 Standard NEB optimization (oracle-only baseline).
 
 Evaluates the oracle at all intermediate images on every iteration. Uses
-steepest descent for relaxation. This is the reference implementation for
-comparison — GP-NEB variants should use fewer oracle calls.
+L-BFGS (default) or steepest descent for relaxation, with max_move
+clipping to prevent overshoot. Supports energy-weighted springs.
 """
 function neb_optimize(
     oracle::Function,
@@ -39,15 +103,26 @@ function neb_optimize(
 )
     cfg = config
     N = cfg.n_images
+    D = length(x_start)
+    N_mov = N - 2  # number of movable images
 
     # Initialize path
-    images = linear_interpolation(x_start, x_end, N)
+    images = if cfg.initializer == :sidpp
+        cfg.verbose && println("  Generating S-IDPP initial path...")
+        sidpp_interpolation(x_start, x_end, N;
+                            spring_constant = cfg.spring_constant)
+    elseif cfg.initializer == :idpp
+        cfg.verbose && println("  Generating IDPP initial path...")
+        idpp_interpolation(x_start, x_end, N)
+    else
+        linear_interpolation(x_start, x_end, N)
+    end
 
     # Evaluate endpoints (fixed)
     E_start, G_start = oracle(x_start)
     E_end, G_end = oracle(x_end)
     energies = zeros(N)
-    gradients = [zeros(length(x_start)) for _ in 1:N]
+    gradients = [zeros(D) for _ in 1:N]
     energies[1] = E_start
     energies[end] = E_end
     gradients[1] = G_start
@@ -72,6 +147,9 @@ function neb_optimize(
         "max_energy" => Float64[],
     )
 
+    # Optimizer state (L-BFGS with per-atom max_move, or nothing for SD)
+    optim = cfg.optimizer == :lbfgs ? OptimState(cfg.lbfgs_memory) : nothing
+
     ci_on = false
     converged = false
 
@@ -87,6 +165,8 @@ function neb_optimize(
         if !ci_on && cfg.climbing_image && max_f < cfg.ci_activation_tol
             ci_on = true
             cfg.verbose && @printf("  Iter %d: Climbing image activated (image %d)\n", iter, i_max)
+            # Reset optimizer -- force landscape changed
+            optim !== nothing && reset!(optim)
             # Recompute forces with CI
             forces, max_f, ci_f, i_max = compute_all_neb_forces(path, cfg; ci_on)
         end
@@ -104,9 +184,34 @@ function neb_optimize(
                                    iter, max_f, ci_f, maximum(energies))
         end
 
-        # Steepest descent update
-        for i in 2:(N - 1)
-            images[i] = images[i] + cfg.step_size * forces[i]
+        # Concatenate movable image positions and NEB forces
+        cur_x = vcat(images[2:N-1]...)
+        cur_force = vcat(forces[2:N-1]...)
+
+        # Compute step via OptimState (L-BFGS) or steepest descent
+        if optim !== nothing
+            displacement = optim_step!(optim, cur_x, cur_force, cfg.max_move;
+                                       n_coords_per_atom = 3)
+        else
+            # Steepest descent with per-atom max_move clipping
+            displacement = cfg.step_size * cur_force
+            n_atoms = div(length(displacement), 3)
+            max_disp = 0.0
+            for a in 1:n_atoms
+                off = (a - 1) * 3
+                disp = norm(@view displacement[off+1:off+3])
+                max_disp = max(max_disp, disp)
+            end
+            if max_disp > cfg.max_move
+                displacement .*= cfg.max_move / max_disp
+            end
+        end
+
+        # Update image positions
+        new_x = cur_x + displacement
+        for img_idx in 1:N_mov
+            offset = (img_idx - 1) * D
+            images[img_idx + 1] = new_x[offset+1:offset+D]
         end
 
         # Re-evaluate oracle
@@ -142,6 +247,11 @@ At each outer iteration:
 
 This variant uses fewer oracle calls than standard NEB because the inner
 relaxation (which takes many steps) operates on the cheap GP surface.
+
+Training data is deduplicated: new oracle evaluations are only added when
+the image is sufficiently far from all existing training points. This
+prevents near-singular covariance matrices from accumulating almost-
+identical data rows across outer iterations.
 """
 function gp_neb_aie(
     oracle::Function,
@@ -155,18 +265,56 @@ function gp_neb_aie(
     N = cfg.n_images
     D = length(x_start)
 
+    # Minimum distance threshold for adding training data.
+    # Points closer than this to existing data are redundant and would
+    # create near-singular rows in the covariance matrix.
+    dedup_tol = cfg.conv_tol * 0.1
+
     # Initialize path
-    images = linear_interpolation(x_start, x_end, N)
+    images = if cfg.initializer == :sidpp
+        cfg.verbose && println("  Generating S-IDPP initial path...")
+        sidpp_interpolation(x_start, x_end, N;
+                            spring_constant = cfg.spring_constant)
+    elseif cfg.initializer == :idpp
+        cfg.verbose && println("  Generating IDPP initial path...")
+        idpp_interpolation(x_start, x_end, N)
+    else
+        linear_interpolation(x_start, x_end, N)
+    end
 
     # Evaluate endpoints
     E_start, G_start = oracle(x_start)
     E_end, G_end = oracle(x_end)
     oracle_calls = 2
 
-    # Training data accumulator
+    # Training data accumulator (physical points only)
     td = TrainingData(D)
     add_point!(td, x_start, E_start, G_start)
     add_point!(td, x_end, E_end, G_end)
+
+    # Virtual Hessian points: displace endpoints by eps_hess along each axis.
+    # Evaluated once; included in GP training for first num_hess_iter iterations
+    # to provide curvature info, then dropped. Ranges for kernel init always
+    # use physical data only (matching MATLAB atomic_GP_NEB_AIE.m).
+    hess_X = Matrix{Float64}(undef, D, 0)
+    hess_E = Float64[]
+    hess_G = Float64[]
+    n_hess = 0
+
+    if cfg.num_hess_iter > 0
+        hess_pts = get_hessian_points(x_start, x_end, cfg.eps_hess)
+        n_hess = length(hess_pts)
+        hess_X = Matrix{Float64}(undef, D, n_hess)
+        for (idx, pt) in enumerate(hess_pts)
+            E, G = oracle(pt)
+            hess_X[:, idx] = pt
+            push!(hess_E, E)
+            append!(hess_G, G)
+            oracle_calls += 1
+        end
+        cfg.verbose && @printf("  Generated %d virtual Hessian points (%d oracle calls)\n",
+                               n_hess, n_hess)
+    end
 
     # Evaluate all intermediate images
     energies = zeros(N)
@@ -195,6 +343,7 @@ function gp_neb_aie(
 
     ci_on = false
     converged = false
+    prev_kern = nothing  # warm-start: reuse kernel from previous iteration
 
     for outer_iter in 1:(cfg.max_outer_iter)
         # Compute true forces and check convergence
@@ -205,8 +354,9 @@ function gp_neb_aie(
         push!(history["oracle_calls"], oracle_calls)
         push!(history["max_energy"], maximum(energies))
 
-        cfg.verbose && @printf("GP-NEB-AIE outer %d: max|F| = %.5f | CI|F| = %.5f | calls = %d\n",
-                               outer_iter, max_f_true, ci_f_true, oracle_calls)
+        n_total = npoints(td) + (outer_iter <= cfg.num_hess_iter ? n_hess : 0)
+        cfg.verbose && @printf("GP-NEB-AIE outer %d: max|F| = %.5f | CI|F| = %.5f | N_train = %d | calls = %d\n",
+                               outer_iter, max_f_true, ci_f_true, n_total, oracle_calls)
 
         # Activate climbing image
         if !ci_on && cfg.climbing_image && max_f_true < cfg.ci_activation_tol
@@ -221,13 +371,12 @@ function gp_neb_aie(
             break
         end
 
-        # Train GP
-        y_gp, y_mean, y_std = normalize(td)
-        model = GPModel(kernel, td.X, y_gp;
-                        noise_var = 1e-4, grad_noise_var = 1e-4, jitter = 1e-3)
-        train_model!(model; iterations = cfg.gp_train_iter)
+        # Train GP (shared helper handles kernel type dispatch, warm-start, noise)
+        model, E_ref, y_std, prev_kern = _train_neb_gp(
+            td, kernel, cfg, prev_kern,
+            hess_X, hess_E, hess_G, n_hess, outer_iter)
 
-        # Inner loop: relax on GP surface
+        # Inner loop: relax on GP surface (SD with max_move clipping)
         gp_images = deepcopy(images)
         for inner_iter in 1:(cfg.max_iter)
             # Predict energies and gradients from GP
@@ -236,7 +385,7 @@ function gp_neb_aie(
 
             for i in 2:(N - 1)
                 pred = predict(model, reshape(gp_images[i], :, 1))
-                gp_energies[i] = pred[1] * y_std + y_mean
+                gp_energies[i] = pred[1] * y_std + E_ref
                 gp_gradients[i] = pred[2:end] .* y_std
             end
 
@@ -250,22 +399,30 @@ function gp_neb_aie(
                 break
             end
 
-            # Steepest descent on GP
+            # SD with max_move clipping on GP surface
             for i in 2:(N - 1)
-                gp_images[i] = gp_images[i] + cfg.step_size * gp_forces[i]
+                step = cfg.step_size * gp_forces[i]
+                sn = norm(step)
+                if sn > cfg.max_move
+                    step .*= cfg.max_move / sn
+                end
+                gp_images[i] = gp_images[i] + step
             end
         end
 
         # Update path with GP-relaxed images
         images = gp_images
 
-        # Evaluate oracle at new positions
+        # Evaluate oracle at new positions; skip near-duplicate training data
         for i in 2:(N - 1)
             E, G = oracle(images[i])
             energies[i] = E
             gradients[i] = G
-            add_point!(td, images[i], E, G)
             oracle_calls += 1
+
+            if min_distance_to_data(images[i], td.X) > dedup_tol
+                add_point!(td, images[i], E, G)
+            end
         end
 
         path.images = images
@@ -293,6 +450,8 @@ At each outer iteration:
 
 This is the most oracle-efficient variant. Uses [`predict_with_variance`](@ref)
 to select the most informative evaluation point.
+
+Training data is deduplicated to prevent near-singular covariance matrices.
 """
 function gp_neb_oie(
     oracle::Function,
@@ -306,18 +465,50 @@ function gp_neb_oie(
     N = cfg.n_images
     D = length(x_start)
 
+    dedup_tol = cfg.conv_tol * 0.1
+
     # Initialize path
-    images = linear_interpolation(x_start, x_end, N)
+    images = if cfg.initializer == :sidpp
+        cfg.verbose && println("  Generating S-IDPP initial path...")
+        sidpp_interpolation(x_start, x_end, N;
+                            spring_constant = cfg.spring_constant)
+    elseif cfg.initializer == :idpp
+        cfg.verbose && println("  Generating IDPP initial path...")
+        idpp_interpolation(x_start, x_end, N)
+    else
+        linear_interpolation(x_start, x_end, N)
+    end
 
     # Evaluate endpoints
     E_start, G_start = oracle(x_start)
     E_end, G_end = oracle(x_end)
     oracle_calls = 2
 
-    # Training data accumulator
+    # Training data accumulator (physical points only)
     td = TrainingData(D)
     add_point!(td, x_start, E_start, G_start)
     add_point!(td, x_end, E_end, G_end)
+
+    # Virtual Hessian points (same mechanism as AIE)
+    hess_X = Matrix{Float64}(undef, D, 0)
+    hess_E = Float64[]
+    hess_G = Float64[]
+    n_hess = 0
+
+    if cfg.num_hess_iter > 0
+        hess_pts = get_hessian_points(x_start, x_end, cfg.eps_hess)
+        n_hess = length(hess_pts)
+        hess_X = Matrix{Float64}(undef, D, n_hess)
+        for (idx, pt) in enumerate(hess_pts)
+            E, G = oracle(pt)
+            hess_X[:, idx] = pt
+            push!(hess_E, E)
+            append!(hess_G, G)
+            oracle_calls += 1
+        end
+        cfg.verbose && @printf("  Generated %d virtual Hessian points (%d oracle calls)\n",
+                               n_hess, n_hess)
+    end
 
     # Initial evaluations: evaluate a few images to bootstrap the GP
     energies = zeros(N)
@@ -351,18 +542,18 @@ function gp_neb_oie(
 
     ci_on = false
     converged = false
+    prev_kern = nothing  # warm-start: reuse kernel from previous iteration
 
     for outer_iter in 1:(cfg.max_outer_iter)
-        # Train GP
-        y_gp, y_mean, y_std = normalize(td)
-        model = GPModel(kernel, td.X, y_gp;
-                        noise_var = 1e-4, grad_noise_var = 1e-4, jitter = 1e-3)
-        train_model!(model; iterations = cfg.gp_train_iter)
+        # Train GP (shared helper handles kernel type dispatch, warm-start, noise)
+        model, E_ref, y_std, prev_kern = _train_neb_gp(
+            td, kernel, cfg, prev_kern,
+            hess_X, hess_E, hess_G, n_hess, outer_iter)
 
         # Predict at all unevaluated images
         for i in 2:(N - 1)
             pred = predict(model, reshape(images[i], :, 1))
-            energies[i] = pred[1] * y_std + y_mean
+            energies[i] = pred[1] * y_std + E_ref
             gradients[i] = pred[2:end] .* y_std
         end
 
@@ -389,13 +580,16 @@ function gp_neb_oie(
             i_eval = i_max
         end
 
-        # Evaluate oracle at selected image
+        # Evaluate oracle at selected image; deduplicate training data
         E_eval, G_eval = oracle(images[i_eval])
         energies[i_eval] = E_eval
         gradients[i_eval] = G_eval
-        add_point!(td, images[i_eval], E_eval, G_eval)
         evaluated[i_eval] = true
         oracle_calls += 1
+
+        if min_distance_to_data(images[i_eval], td.X) > dedup_tol
+            add_point!(td, images[i_eval], E_eval, G_eval)
+        end
 
         push!(history["image_evaluated"], i_eval)
 
@@ -409,8 +603,8 @@ function gp_neb_oie(
         push!(history["oracle_calls"], oracle_calls)
         push!(history["max_energy"], maximum(energies))
 
-        cfg.verbose && @printf("GP-NEB-OIE outer %d: eval image %d | max|F| = %.5f | var = %.3e | calls = %d\n",
-                               outer_iter, i_eval, max_f, max_var, oracle_calls)
+        cfg.verbose && @printf("GP-NEB-OIE outer %d: eval image %d | max|F| = %.5f | var = %.3e | N_train = %d | calls = %d\n",
+                               outer_iter, i_eval, max_f, max_var, npoints(td), oracle_calls)
 
         # Activate climbing image
         if !ci_on && cfg.climbing_image && max_f < cfg.ci_activation_tol
@@ -426,7 +620,7 @@ function gp_neb_oie(
             break
         end
 
-        # Inner loop: relax on GP surface
+        # Inner loop: relax on GP surface (SD with max_move clipping)
         gp_images = deepcopy(images)
         for inner_iter in 1:(cfg.max_iter)
             gp_energies = copy(energies)
@@ -434,7 +628,7 @@ function gp_neb_oie(
 
             for i in 2:(N - 1)
                 pred = predict(model, reshape(gp_images[i], :, 1))
-                gp_energies[i] = pred[1] * y_std + y_mean
+                gp_energies[i] = pred[1] * y_std + E_ref
                 gp_gradients[i] = pred[2:end] .* y_std
             end
 
@@ -447,7 +641,12 @@ function gp_neb_oie(
             end
 
             for i in 2:(N - 1)
-                gp_images[i] = gp_images[i] + cfg.step_size * gp_forces[i]
+                step = cfg.step_size * gp_forces[i]
+                sn = norm(step)
+                if sn > cfg.max_move
+                    step .*= cfg.max_move / sn
+                end
+                gp_images[i] = gp_images[i] + step
             end
         end
 
