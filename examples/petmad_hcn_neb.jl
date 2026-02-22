@@ -73,6 +73,15 @@ function main()
         verbose = true,
     )
 
+    # Parallel oracle pool: one connection per movable image (or thread count)
+    n_workers = min(Threads.nthreads(), neb_cfg.n_images - 2)
+    oracles = if n_workers > 1
+        println("Creating $n_workers parallel oracle connections")
+        make_oracle_pool(SERVER_HOST, SERVER_PORT, ATOMIC_NUMBERS, BOX, n_workers)
+    else
+        oracle
+    end
+
     # --- Standard NEB (baseline) ---
     println("\n=== Standard NEB ===")
     std_dir = joinpath(OUTDIR, "standard")
@@ -88,7 +97,7 @@ function main()
         std_h5(path, iter)
     end
 
-    result_std = neb_optimize(oracle, X_HCN, X_HNC;
+    result_std = neb_optimize(oracles, X_HCN, X_HNC;
         config = neb_cfg, on_step = std_callback)
 
     # Final outputs
@@ -123,7 +132,7 @@ function main()
         verbose = true,
     )
 
-    result_gp = gp_neb_aie(oracle, X_HCN, X_HNC, kernel;
+    result_gp = gp_neb_aie(oracles, X_HCN, X_HNC, kernel;
         config = gp_cfg, on_step = gp_callback)
 
     write_neb_trajectory(result_gp, joinpath(gp_dir, "neb_final.xyz"), ATOMIC_NUMBERS, BOX)
@@ -157,7 +166,7 @@ function main()
     end
     println("="^70)
 
-    close!(pot)
+    close(pot)
     println("\nResults written to $OUTDIR/")
 end
 
