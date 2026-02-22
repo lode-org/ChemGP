@@ -9,7 +9,7 @@
 # bisection tangents.
 #
 # Reference:
-#   Goswami, R., Gunde, M. & Jónsson, H. (2026). Enhanced climbing image nudged
+#   Goswami, R., Gunde, M. & Jonsson, H. (2026). Enhanced climbing image nudged
 #   elastic band method with Hessian eigenmode alignment. arXiv:2601.12630.
 #
 #   Goswami, R. (2025). Efficient exploration of chemical kinetics. PhD thesis,
@@ -63,13 +63,10 @@ function path_tangent(
     E_next = energies[i+1]
 
     if E_prev < E_curr < E_next
-        # Monotonic increase: use forward tangent
         tau = tau_plus
     elseif E_prev > E_curr > E_next
-        # Monotonic decrease: use backward tangent
         tau = tau_minus
     else
-        # Local extremum: energy-weighted bisection
         dE_max = max(abs(E_next - E_curr), abs(E_prev - E_curr))
         dE_min = min(abs(E_next - E_curr), abs(E_prev - E_curr))
 
@@ -103,20 +100,43 @@ function spring_force(
 end
 
 """
+    energy_weighted_k(energies, i_lo, i_hi, k_min, k_max) -> Float64
+
+Compute the energy-weighted spring constant for the spring connecting
+images `i_lo` and `i_hi`. Each spring gets its own k based on the higher
+energy of its two endpoints.
+
+Reference: Asgeirsson, V. et al. (2021). J. Chem. Theory Comput., 17(8),
+4929-4945.
+"""
+function energy_weighted_k(
+    energies::Vector{Float64},
+    i_lo::Int,
+    i_hi::Int,
+    k_min::Float64,
+    k_max::Float64,
+)
+    E_ref = max(energies[1], energies[end])
+    E_max = maximum(energies)
+    dE = E_max - E_ref
+    if dE < 1e-18
+        return k_max
+    end
+    E_spring = max(energies[i_lo], energies[i_hi])
+    if E_spring > E_ref
+        return k_max - (k_max - k_min) * (E_max - E_spring) / dE
+    else
+        return k_min
+    end
+end
+
+"""
     neb_force(gradient, spring_f, tangent; climbing, is_highest) -> Vector{Float64}
 
 Compute the full NEB force at an image.
 
-Standard NEB:
-    F = -G_perp + F_spring_parallel
-
-where `G_perp = G - (G·τ)τ` is the gradient perpendicular to the path tangent.
-
-Climbing image (if `climbing=true` and `is_highest=true`):
-    F = -G + 2(G·τ)τ
-
-The climbing image moves uphill along the tangent and downhill perpendicular,
-converging to the exact saddle point.
+Standard NEB: F = -G_perp + F_spring_parallel
+Climbing image: F = -G + 2(G . tau) tau
 """
 function neb_force(
     gradient::Vector{Float64},
@@ -126,33 +146,88 @@ function neb_force(
     is_highest::Bool = false,
 )
     if climbing && is_highest
-        # Climbing image: invert parallel component of gradient
         return -gradient + 2 * dot(gradient, tangent) * tangent
     else
-        # Standard NEB: perpendicular gradient + parallel spring
         G_perp = gradient - dot(gradient, tangent) * tangent
         return -G_perp + spring_f
     end
 end
 
 """
-    compute_all_neb_forces(path, config; ci_on) -> (forces, max_force_norm, ci_force_norm)
+    get_hessian_points(x_start, x_end, epsilon) -> Vector{Vector{Float64}}
 
-Compute NEB forces at all intermediate images. Returns the force vectors,
-the maximum force norm among all images, and the climbing image force norm.
+Generate 2*D "virtual Hessian" points around both endpoints by displacing
++epsilon along each coordinate axis.
+
+The oracle is evaluated at these points and they are included in GP training
+data for the first `num_hess_iter` outer iterations, providing curvature
+information that improves GP conditioning.
+
+Reference: Koistinen, O.-P. et al. (2017). J. Chem. Phys. 147, 152720.
+Implementation follows MATLAB GPR/aux/get_hessian_points.m.
+"""
+function get_hessian_points(
+    x_start::Vector{Float64},
+    x_end::Vector{Float64},
+    epsilon::Float64,
+)
+    D = length(x_start)
+    points = Vector{Vector{Float64}}(undef, 2 * D)
+    for d in 1:D
+        p1 = copy(x_start)
+        p1[d] += epsilon
+        points[d] = p1
+
+        p2 = copy(x_end)
+        p2[d] += epsilon
+        points[D + d] = p2
+    end
+    return points
+end
+
+"""
+    compute_all_neb_forces(path, config; ci_on) -> (forces, max_f, ci_f, i_max)
+
+Compute NEB forces at all intermediate images of `path`.
+
+When `ci_on=true` and `config.climbing_image=true`, the highest-energy image
+uses the climbing image force formula (Henkelman et al. 2000, Eq. 5):
+`F_CI = -G + 2(G . tau) tau`, which inverts the gradient component along
+the path tangent to drive the image toward the true saddle point.
+
+When `config.energy_weighted=true`, each spring gets an energy-dependent
+constant k_i interpolated between `ew_k_min` and `ew_k_max` based on the
+higher energy of the two connected images (Asgeirsson et al. 2021).
+
+# Returns
+- `forces`: Vector of force vectors at each image (endpoints are zero)
+- `max_f`: Maximum force norm across all intermediate images
+- `ci_f`: Force norm at the highest-energy image (the CI candidate)
+- `i_max`: Index of the highest-energy intermediate image
 """
 function compute_all_neb_forces(path::NEBPath, config::NEBConfig; ci_on::Bool = false)
     N = length(path.images)
     forces = [zeros(length(path.images[1])) for _ in 1:N]
 
-    i_max = argmax(path.energies[2:end-1]) + 1  # Index among all images
+    i_max = argmax(path.energies[2:end-1]) + 1
 
     max_f_norm = 0.0
     ci_f_norm = 0.0
 
     for i in 2:(N - 1)
         tau = path_tangent(path.images, path.energies, i)
-        f_spring = spring_force(path.images, i, path.spring_constant, tau)
+
+        if config.energy_weighted
+            k_prev = energy_weighted_k(path.energies, i - 1, i,
+                                       config.ew_k_min, config.ew_k_max)
+            k_next = energy_weighted_k(path.energies, i, i + 1,
+                                       config.ew_k_min, config.ew_k_max)
+            d_next = norm(path.images[i+1] - path.images[i])
+            d_prev = norm(path.images[i] - path.images[i-1])
+            f_spring = (k_next * d_next - k_prev * d_prev) * tau
+        else
+            f_spring = spring_force(path.images, i, path.spring_constant, tau)
+        end
 
         is_highest = (i == i_max)
         f = neb_force(path.gradients[i], f_spring, tau;
