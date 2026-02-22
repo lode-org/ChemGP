@@ -167,7 +167,14 @@ Return a distance function matching the given metric symbol.
 """
 function _fps_distance_fn(metric::Symbol, atom_types::Vector{Int} = Int[])
     if metric == :emd
-        return (x1, x2) -> emd_distance(x1, x2; atom_types)
+        # EMD requires 3D coordinates; fall back to euclidean for non-3D
+        return (x1, x2) -> begin
+            if length(x1) % 3 == 0
+                emd_distance(x1, x2; atom_types)
+            else
+                norm(x1 - x2)
+            end
+        end
     elseif metric == :max_1d_log
         return max_1d_log_distance
     else  # :euclidean fallback
@@ -276,11 +283,15 @@ Returns a vector of log(signal_var), log.(inv_lengthscales), log(noise_var),
 log(grad_noise_var).
 """
 function _extract_hyperparams(model::GPModel)
-    hp = Float64[log(max(model.kernel.signal_variance, 1e-30))]
-    if hasproperty(model.kernel, :inv_lengthscales)
-        append!(hp, log.(max.(model.kernel.inv_lengthscales, 1e-30)))
-    elseif hasproperty(model.kernel, :lengthscale)
-        push!(hp, log(max(model.kernel.lengthscale, 1e-30)))
+    hp = Float64[]
+    k = model.kernel
+    if hasproperty(k, :signal_variance)
+        push!(hp, log(max(k.signal_variance, 1e-30)))
+    end
+    if hasproperty(k, :inv_lengthscales)
+        append!(hp, log.(max.(k.inv_lengthscales, 1e-30)))
+    elseif hasproperty(k, :lengthscale)
+        push!(hp, log(max(k.lengthscale, 1e-30)))
     end
     push!(hp, log(max(model.noise_var, 1e-30)))
     push!(hp, log(max(model.grad_noise_var, 1e-30)))
@@ -300,11 +311,11 @@ function _check_hod!(hod::HODState, model::GPModel, cfg::OTGPDConfig)
     n = length(hod.history)
     n < 3 && return false  # need at least 3 points for 2 differences
 
-    window = min(cfg.hod_monitoring_window, n - 1)
+    window = min(cfg.hod_monitoring_window, n - 2)
     n_flips = 0
     n_pairs = 0
 
-    for i in (n - window):max(n - 1, 2)
+    for i in max(n - window, 2):(n - 1)
         d1 = hod.history[i] - hod.history[i-1]
         d2 = hod.history[i+1] - hod.history[i]
         for j in eachindex(d1)
@@ -324,8 +335,7 @@ function _check_hod!(hod::HODState, model::GPModel, cfg::OTGPDConfig)
                       cfg.hod_max_history)
         if new_fps > hod.current_fps_history
             hod.current_fps_history = new_fps
-            cfg.verbose && @printf("  HOD: oscillation detected (%.0f%%), "  *
-                                   "FPS history -> %d\n",
+            cfg.verbose && @printf("  HOD: oscillation detected (%.0f%%), FPS history -> %d\n",
                                    flip_ratio * 100, new_fps)
             return true
         end
@@ -642,7 +652,8 @@ function otgpd(
             end
         end
 
-        # Train GP: optimize hyperparameters on FPS subset, rebuild on full data
+        # Train GP: two-path strategy depending on kernel type
+        # FPS subset selection (shared by both paths)
         dist_fn = _fps_distance_fn(cfg.fps_metric, cfg.atom_types)
         fps_size = hod_state !== nothing ? hod_state.current_fps_history : cfg.fps_history
         if fps_size > 0 && npoints(td) > fps_size
@@ -656,29 +667,57 @@ function otgpd(
             td_sub = td
         end
 
-        # Variance barrier strength scales with subset size
         n_sub = npoints(td_sub)
         barrier = min(1e-4 + 1e-3 * n_sub, 0.5)
 
-        y_sub, y_mean_sub, y_std_sub = normalize(td_sub)
-        model_sub = GPModel(kernel, td_sub.X, y_sub;
-                            noise_var = 1e-2,
-                            grad_noise_var = 1e-1,
-                            jitter = 1e-3)
-        train_model!(model_sub; iterations = cfg.gp_train_iter,
-                     verbose = cfg.verbose, barrier_strength = barrier)
+        if kernel isa AbstractMoleculeKernel
+            # Molecular kernel path: energy shift, fix_noise, warm-start
+            E_ref_sub = td_sub.energies[1]
+            y_sub = vcat(td_sub.energies .- E_ref_sub, td_sub.gradients)
+
+            kern_sub = if outer_iter == 1
+                init_mol_invdist_se(td_sub, kernel)
+            else
+                model.kernel  # warm-start from previous iteration
+            end
+
+            model_sub = GPModel(kern_sub, td_sub.X, y_sub;
+                                noise_var = 1e-6, grad_noise_var = 1e-4, jitter = 1e-6)
+            train_model!(model_sub; iterations = cfg.gp_train_iter,
+                         fix_noise = true, verbose = cfg.verbose,
+                         barrier_strength = barrier)
+
+            # Rebuild on full data
+            E_ref = td.energies[1]
+            y_gp = vcat(td.energies .- E_ref, td.gradients)
+            y_mean = E_ref
+            y_std = 1.0
+            model = GPModel(model_sub.kernel, td.X, y_gp;
+                            noise_var = model_sub.noise_var,
+                            grad_noise_var = model_sub.grad_noise_var,
+                            jitter = model_sub.jitter)
+        else
+            # Generic kernel path: normalize, optimize noise
+            y_sub, y_mean_sub, y_std_sub = normalize(td_sub)
+            model_sub = GPModel(kernel, td_sub.X, y_sub;
+                                noise_var = 1e-2,
+                                grad_noise_var = 1e-1,
+                                jitter = 1e-3)
+            train_model!(model_sub; iterations = cfg.gp_train_iter,
+                         verbose = cfg.verbose)
+
+            # Rebuild on full data
+            y_gp, y_mean, y_std = normalize(td)
+            model = GPModel(model_sub.kernel, td.X, y_gp;
+                            noise_var = model_sub.noise_var,
+                            grad_noise_var = model_sub.grad_noise_var,
+                            jitter = model_sub.jitter)
+        end
 
         # HOD: check for hyperparameter oscillation, enlarge FPS if needed
         if hod_state !== nothing
             _check_hod!(hod_state, model_sub, cfg)
         end
-
-        # Rebuild model on full data with optimized hyperparameters
-        y_gp, y_mean, y_std = normalize(td)
-        model = GPModel(model_sub.kernel, td.X, y_gp;
-                        noise_var = model_sub.noise_var,
-                        grad_noise_var = model_sub.grad_noise_var,
-                        jitter = model_sub.jitter)
 
         # Adaptive GP convergence threshold
         T_gp = if cfg.divisor_T_dimer_gp > 0 && !isempty(F_true_history)
