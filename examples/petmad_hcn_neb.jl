@@ -140,8 +140,43 @@ function main()
         atomic_numbers = ATOMIC_NUMBERS, cell = BOX)
     write_convergence_csv(result_gp, joinpath(gp_dir, "convergence.csv"))
 
+    # --- GP-NEB OIE ---
+    # OIE evaluates one image per iteration (max uncertainty), so parallelism
+    # does not apply -- pass single oracle.
+    println("\n=== GP-NEB (OIE) ===")
+    oie_dir = joinpath(OUTDIR, "gp_oie")
+
+    oie_writer = make_neb_writer(oie_dir, ATOMIC_NUMBERS, BOX)
+    oie_h5 = make_neb_hdf5_writer(
+        joinpath(oie_dir, "neb_history.h5");
+        atomic_numbers = ATOMIC_NUMBERS, cell = BOX,
+    )
+    oie_callback = (path, iter) -> begin
+        oie_writer(path, iter)
+        oie_h5(path, iter)
+    end
+
+    oie_cfg = NEBConfig(
+        n_images = 7,
+        spring_constant = 1.0,
+        climbing_image = true,
+        conv_tol = 5e-3,
+        gp_train_iter = 300,
+        max_outer_iter = 80,
+        trust_radius = 0.1,
+        verbose = true,
+    )
+
+    result_oie = gp_neb_oie(oracle, X_HCN, X_HNC, kernel;
+        config = oie_cfg, on_step = oie_callback)
+
+    write_neb_trajectory(result_oie, joinpath(oie_dir, "neb_final.xyz"), ATOMIC_NUMBERS, BOX)
+    write_neb_hdf5(result_oie, joinpath(oie_dir, "neb_result.h5");
+        atomic_numbers = ATOMIC_NUMBERS, cell = BOX)
+    write_convergence_csv(result_oie, joinpath(oie_dir, "convergence.csv"))
+
     # --- Generate profile plots ---
-    for (label, dir) in [("standard", std_dir), ("gp_aie", gp_dir)]
+    for (label, dir) in [("standard", std_dir), ("gp_aie", gp_dir), ("gp_oie", oie_dir)]
         traj = joinpath(dir, "neb_final.xyz")
         png = joinpath(dir, "profile.png")
         cmd = `uv run rgpycrumbs eon plt-neb --source traj --input-traj $traj -o $png --title "HCN->HNC ($label)"`
@@ -158,7 +193,8 @@ function main()
     @printf("%-12s %12s %10s %15s\n", "Method", "Oracle Calls", "Converged", "Barrier (E_TS)")
     println("-"^70)
 
-    for (label, res) in [("Standard", result_std), ("GP-NEB AIE", result_gp)]
+    for (label, res) in [("Standard", result_std), ("GP-NEB AIE", result_gp),
+                          ("GP-NEB OIE", result_oie)]
         ts_idx = res.max_energy_image
         barrier = res.path.energies[ts_idx] - res.path.energies[1]
         @printf("%-12s %12d %10s %15.6f\n",
