@@ -405,12 +405,12 @@ function calculate(pot::RpcPotential, positions::AbstractVector{Float64})
 end
 
 """
-    close!(pot::RpcPotential)
+    Base.close(pot::RpcPotential)
 
 Explicitly close the RPC connection and free resources.
 The potential cannot be used after this call.
 """
-function close!(pot::RpcPotential)
+function Base.close(pot::RpcPotential)
     if pot.client_ptr != C_NULL
         ccall(pot._free, Cvoid, (Ptr{Cvoid},), pot.client_ptr)
         pot.client_ptr = C_NULL
@@ -581,7 +581,7 @@ function calculate(pot::RpcPotentialCore, positions::AbstractVector{Float64})
     return output.energy, forces
 end
 
-function close!(pot::RpcPotentialCore)
+function Base.close(pot::RpcPotentialCore)
     if pot.client_ptr != C_NULL
         ccall(pot._free, Cvoid, (Ptr{Cvoid},), pot.client_ptr)
         pot.client_ptr = C_NULL
@@ -599,4 +599,35 @@ function make_rpc_oracle(pot::RpcPotentialCore)
         G = -F  # gradient = -forces
         return E, G
     end
+end
+
+# ==============================================================================
+# Oracle pool: multiple connections for parallel NEB evaluation
+# ==============================================================================
+
+"""
+    make_oracle_pool(host, port, atmnrs, box, n_workers)
+
+Create a vector of `n_workers` independent RPC oracle functions, each backed
+by its own `RpcPotential` connection. Suitable for parallel NEB evaluation
+with `neb_optimize` or `gp_neb_aie`.
+
+When the server runs in gateway mode (`--replicas N --gateway`), multiple
+client connections to the same port get load-balanced across replicas.
+
+# Example
+```julia
+oracles = make_oracle_pool("localhost", 12345, Int32[6,7,1], box, 4)
+result = neb_optimize(oracles, x_start, x_end; config = cfg)
+```
+"""
+function make_oracle_pool(
+    host::AbstractString,
+    port::Integer,
+    atmnrs::Vector{<:Integer},
+    box::Union{Vector{Float64},Matrix{Float64}},
+    n_workers::Int,
+)
+    return [make_rpc_oracle(RpcPotential(host, port, atmnrs, box))
+            for _ in 1:n_workers]
 end

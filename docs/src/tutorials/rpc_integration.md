@@ -297,8 +297,54 @@ kernel = MolInvDistSE(1.0, [0.5], Float64[])
 x0 = Float64[0,0,0, 2.5,0,0]  # Initial guess
 result = gp_minimize(oracle, x0, kernel; maxiter=10)
 
-close!(pot)
+close(pot)
 ```
+
+## Parallel NEB Evaluation
+
+For NEB calculations, each iteration evaluates the oracle at N-2 intermediate
+images. These evaluations are independent and can run in parallel when the
+server supports concurrent connections.
+
+### Server setup (gateway mode)
+
+Start eOn serve with multiple replicas behind a single gateway port:
+
+```bash
+eonclient -p metatomic --serve-port 12345 --replicas 8 --gateway \
+          --config petmad_hcn.ini
+```
+
+This creates 8 PET-MAD model instances behind port 12345, with round-robin
+dispatch. Multiple client connections to the same port get load-balanced
+across replicas.
+
+### Client setup
+
+Create an oracle pool and pass it to any NEB function:
+
+```julia
+using ChemGP
+
+n_workers = min(Threads.nthreads(), neb_cfg.n_images - 2)
+oracles = make_oracle_pool("localhost", 12345, atmnrs, box, n_workers)
+
+# Standard NEB with parallel evaluation
+result = neb_optimize(oracles, x_start, x_end; config = neb_cfg)
+
+# GP-NEB AIE with parallel evaluation
+result = gp_neb_aie(oracles, x_start, x_end, kernel; config = gp_cfg)
+```
+
+Launch Julia with multiple threads:
+
+```bash
+julia -t auto --project=. examples/petmad_hcn_neb.jl
+# or specify explicitly:
+julia -t 8 --project=. examples/petmad_hcn_neb.jl
+```
+
+A single `Function` oracle still works -- the pool is optional.
 
 ## Troubleshooting
 
