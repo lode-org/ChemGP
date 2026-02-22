@@ -113,6 +113,23 @@ Base.@kwdef struct OTGPDConfig
     fps_latest_points::Int      = 2     # most recent points always included
     fps_metric::Symbol          = :emd  # :emd, :max_1d_log, :euclidean
 
+    # Hyperparameter Oscillation Detection (HOD)
+    use_hod::Bool               = true
+    hod_monitoring_window::Int  = 5
+    hod_flip_threshold::Float64 = 0.8
+    hod_history_increment::Int  = 2
+    hod_max_history::Int        = 30
+
+    # Trust region metric and adaptive threshold
+    trust_metric::Symbol         = :emd
+    atom_types::Vector{Int}      = Int[]
+    use_adaptive_threshold::Bool = false
+    adaptive_t_min::Float64      = 0.15
+    adaptive_delta_t::Float64    = 0.35
+    adaptive_n_half::Int         = 50
+    adaptive_A::Float64          = 1.3
+    adaptive_floor::Float64      = 0.2
+
     verbose::Bool               = true
 end
 
@@ -222,6 +239,149 @@ function _extract_subset(td::TrainingData, indices::Vector{Int})
     end
     sub.gradients = new_grads
     return sub
+end
+
+# ==============================================================================
+# Hyperparameter Oscillation Detection (HOD)
+# ==============================================================================
+#
+# Monitors GP hyperparameters across outer iterations. If they oscillate
+# (sign-flip in consecutive differences), the FPS subset is enlarged to
+# provide more stable optimization landscape.
+#
+# Reference:
+#   Goswami, R. & Jonsson, H. (2025). Adaptive Pruning for Increased
+#   Robustness and Reduced Computational Overhead in Gaussian Process
+#   Accelerated Saddle Point Searches. ChemPhysChem.
+
+"""
+    HODState
+
+Mutable state for hyperparameter oscillation detection.
+Tracks log-space hyperparameter vectors across iterations and counts
+sign-flips in consecutive differences.
+"""
+mutable struct HODState
+    history::Vector{Vector{Float64}}  # log-space hyperparams per iteration
+    current_fps_history::Int          # current FPS subset size
+end
+
+HODState(initial_fps::Int) = HODState(Vector{Float64}[], initial_fps)
+
+"""
+    _extract_hyperparams(model::GPModel)
+
+Extract GP hyperparameters in log-space for oscillation monitoring.
+Returns a vector of log(signal_var), log.(inv_lengthscales), log(noise_var),
+log(grad_noise_var).
+"""
+function _extract_hyperparams(model::GPModel)
+    hp = Float64[log(max(model.kernel.signal_variance, 1e-30))]
+    if hasproperty(model.kernel, :inv_lengthscales)
+        append!(hp, log.(max.(model.kernel.inv_lengthscales, 1e-30)))
+    elseif hasproperty(model.kernel, :lengthscale)
+        push!(hp, log(max(model.kernel.lengthscale, 1e-30)))
+    end
+    push!(hp, log(max(model.noise_var, 1e-30)))
+    push!(hp, log(max(model.grad_noise_var, 1e-30)))
+    return hp
+end
+
+"""
+    _check_hod!(hod, model, cfg) -> Bool
+
+Check for hyperparameter oscillation. Returns true if oscillation was
+detected and the FPS subset was enlarged.
+"""
+function _check_hod!(hod::HODState, model::GPModel, cfg::OTGPDConfig)
+    hp = _extract_hyperparams(model)
+    push!(hod.history, hp)
+
+    n = length(hod.history)
+    n < 3 && return false  # need at least 3 points for 2 differences
+
+    window = min(cfg.hod_monitoring_window, n - 1)
+    n_flips = 0
+    n_pairs = 0
+
+    for i in (n - window):max(n - 1, 2)
+        d1 = hod.history[i] - hod.history[i-1]
+        d2 = hod.history[i+1] - hod.history[i]
+        for j in eachindex(d1)
+            if abs(d1[j]) > 1e-10 && abs(d2[j]) > 1e-10
+                n_pairs += 1
+                if sign(d1[j]) != sign(d2[j])
+                    n_flips += 1
+                end
+            end
+        end
+    end
+
+    flip_ratio = n_pairs > 0 ? n_flips / n_pairs : 0.0
+
+    if flip_ratio > cfg.hod_flip_threshold
+        new_fps = min(hod.current_fps_history + cfg.hod_history_increment,
+                      cfg.hod_max_history)
+        if new_fps > hod.current_fps_history
+            hod.current_fps_history = new_fps
+            cfg.verbose && @printf("  HOD: oscillation detected (%.0f%%), "  *
+                                   "FPS history -> %d\n",
+                                   flip_ratio * 100, new_fps)
+            return true
+        end
+    end
+    return false
+end
+
+# ==============================================================================
+# Adaptive trust radius threshold
+# ==============================================================================
+
+"""
+    _adaptive_trust_threshold(cfg, n_data, n_atoms)
+
+Compute adaptive trust radius threshold that decays with training set size.
+Based on the sigmoidal schedule from OTGPD:
+
+    T(n) = T_min + delta_T / (1 + A * exp(n / n_half))
+
+with a floor to prevent zero threshold.
+"""
+function _adaptive_trust_threshold(cfg::OTGPDConfig, n_data::Int, n_atoms::Int)
+    if !cfg.use_adaptive_threshold
+        return cfg.trust_radius
+    end
+    n_eff = n_data / max(n_atoms, 1)
+    t = cfg.adaptive_t_min + cfg.adaptive_delta_t /
+        (1.0 + cfg.adaptive_A * exp(n_eff / cfg.adaptive_n_half))
+    return max(t, cfg.adaptive_floor)
+end
+
+"""
+    _trust_distance(x1, x2, cfg)
+
+Compute trust region distance using the configured metric.
+"""
+function _trust_distance(x1::AbstractVector, x2::AbstractVector, cfg::OTGPDConfig)
+    dist_fn = _fps_distance_fn(cfg.trust_metric, cfg.atom_types)
+    return dist_fn(x1, x2)
+end
+
+"""
+    _trust_min_distance(x, td, cfg)
+
+Minimum trust distance from `x` to any training point, using the configured metric.
+"""
+function _trust_min_distance(x::AbstractVector, td::TrainingData, cfg::OTGPDConfig)
+    N = npoints(td)
+    N == 0 && return Inf
+    dist_fn = _fps_distance_fn(cfg.trust_metric, cfg.atom_types)
+    min_d = Inf
+    for i in 1:N
+        d = dist_fn(x, view(td.X, :, i))
+        min_d = min(min_d, d)
+    end
+    return min_d
 end
 
 # Convert OTGPD config to DimerConfig for use by rotation/translation functions
@@ -467,6 +627,8 @@ function otgpd(
     F_trans_prev = Float64[]
 
     converged = false
+    hod_state = cfg.use_hod ? HODState(cfg.fps_history) : nothing
+    n_atoms = div(D, 3)
 
     for outer_iter in 1:cfg.max_outer_iter
         cfg.verbose && @printf("\n--- Outer %d (oracle calls: %d, training: %d) ---\n",
@@ -481,9 +643,10 @@ function otgpd(
         end
 
         # Train GP: optimize hyperparameters on FPS subset, rebuild on full data
-        dist_fn = _fps_distance_fn(cfg.fps_metric)
-        if cfg.fps_history > 0 && npoints(td) > cfg.fps_history
-            sub_idx = _select_optim_subset(td, state.R, cfg.fps_history,
+        dist_fn = _fps_distance_fn(cfg.fps_metric, cfg.atom_types)
+        fps_size = hod_state !== nothing ? hod_state.current_fps_history : cfg.fps_history
+        if fps_size > 0 && npoints(td) > fps_size
+            sub_idx = _select_optim_subset(td, state.R, fps_size,
                                             cfg.fps_latest_points;
                                             distance_fn = dist_fn)
             td_sub = _extract_subset(td, sub_idx)
@@ -493,12 +656,22 @@ function otgpd(
             td_sub = td
         end
 
+        # Variance barrier strength scales with subset size
+        n_sub = npoints(td_sub)
+        barrier = min(1e-4 + 1e-3 * n_sub, 0.5)
+
         y_sub, y_mean_sub, y_std_sub = normalize(td_sub)
         model_sub = GPModel(kernel, td_sub.X, y_sub;
                             noise_var = 1e-2,
                             grad_noise_var = 1e-1,
                             jitter = 1e-3)
-        train_model!(model_sub; iterations = cfg.gp_train_iter, verbose = cfg.verbose)
+        train_model!(model_sub; iterations = cfg.gp_train_iter,
+                     verbose = cfg.verbose, barrier_strength = barrier)
+
+        # HOD: check for hyperparameter oscillation, enlarge FPS if needed
+        if hod_state !== nothing
+            _check_hod!(hod_state, model_sub, cfg)
+        end
 
         # Rebuild model on full data with optimized hyperparameters
         y_gp, y_mean, y_std = normalize(td)
@@ -574,14 +747,15 @@ function otgpd(
                 break
             end
 
-            # Trust region check
-            min_dist_new = min_distance_to_data(R_new, td.X)
-            if min_dist_new > cfg.trust_radius
+            # Trust region check (configurable metric, adaptive threshold)
+            trust_thresh = _adaptive_trust_threshold(cfg, npoints(td), n_atoms)
+            trust_dist = _trust_min_distance(R_new, td, cfg)
+            if trust_dist > trust_thresh
                 step_vec = R_new - state.R
-                scale = cfg.trust_radius / min_dist_new * 0.95
+                scale = trust_thresh / trust_dist * 0.95
                 state.R = state.R + scale * step_vec
                 cfg.verbose && @printf("  Trust radius at step %d (%.4f > %.4f)\n",
-                                       inner_iter, min_dist_new, cfg.trust_radius)
+                                       inner_iter, trust_dist, trust_thresh)
                 break
             end
 
