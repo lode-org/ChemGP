@@ -162,17 +162,19 @@ end
 """
     translational_force(G0, orient)
 
-Modified force for translation toward a saddle point. The component
-along the dimer direction is inverted, so the algorithm climbs along
-the lowest curvature mode while descending in all other directions.
+Effective force for translation toward a saddle point. The gradient
+component along the dimer direction is inverted, so the algorithm
+climbs along the lowest curvature mode while descending in all other
+directions (Henkelman & Jonsson 1999, Eq. 14).
 
-    F_trans = G0 - 2*(G0 . orient)*orient
+    F_eff = -G0 + 2*(G0 . orient)*orient
+
+Equivalently: F_eff = -G_perp + G_parallel, where G_perp is the
+perpendicular gradient and G_parallel = (G0 . orient) * orient.
 """
 function translational_force(G0, orient)
     F_parallel = dot(G0, orient) * orient
-    F_perp = G0 - F_parallel
-    F_trans = F_perp - F_parallel  # Invert along dimer direction
-    return F_trans
+    return -G0 + 2 * F_parallel
 end
 
 # ==============================================================================
@@ -568,17 +570,12 @@ function translate_dimer_lbfgs!(
     C = curvature(G0, G1, orient, state.dimer_sep)
 
     if C < 0
-        # --- Negative curvature: L-BFGS on modified translational force ---
+        # --- Negative curvature: L-BFGS on effective translational force ---
         F_trans = translational_force(G0, orient)
         F_norm = norm(F_trans)
 
-        # Update L-BFGS history
-        if !isempty(F_trans_prev) && !isempty(trans_hist.s)
-            # The s was already pushed by the caller after the previous step
-            # We need to push the force difference y
-        end
-
-        # Compute L-BFGS search direction (negate force for gradient convention)
+        # L-BFGS expects the gradient (uphill); F_trans is the force (downhill
+        # toward saddle), so the gradient is -F_trans.
         search_dir = compute_direction(trans_hist, -F_trans)
 
         step_len = norm(search_dir)
@@ -587,11 +584,12 @@ function translate_dimer_lbfgs!(
             search_dir .*= config.max_step / step_len
             # Reset memory on clipped step
             reset!(trans_hist)
-            verbose && @printf("  Trans L-BFGS: step clipped (%.4f → %.4f), memory reset\n",
+            verbose && @printf("  Trans L-BFGS: step clipped (%.4f -> %.4f), memory reset\n",
                                step_len, config.max_step)
         end
 
-        R_new = state.R - search_dir
+        # search_dir = -H*(-F_trans) = H*F_trans points toward saddle
+        R_new = state.R + search_dir
 
         return R_new, F_trans, C
     else
