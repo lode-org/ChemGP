@@ -78,7 +78,7 @@ Base.@kwdef struct NEBConfig
     # GP-specific
     gp_train_iter::Int      = 300
     max_outer_iter::Int     = 50
-    trust_radius::Float64   = 0.1
+    trust_radius::Float64   = 1.0
     # Virtual Hessian points (Koistinen et al. 2017):
     # Generate finite-difference perturbation points around endpoints to
     # bootstrap GP training with curvature information.
