@@ -7,6 +7,8 @@
 #
 # Per-step output mirrors eOn: neb_NNN.dat + neb_path_NNN.xyz per iteration,
 # plus a single HDF5 file with the full optimization history.
+# 
+# Reference (eOn CI-NEB with PET-MAD): barrier=2.918 eV, C-N=1.195, C-H=1.292, N-H=1.447, angle=71 deg
 #
 # Prerequisites:
 #   1. Build rgpot with RPC support
@@ -64,11 +66,14 @@ function main()
     @printf("HNC energy: %.6f\n", E_p)
 
     neb_cfg = NEBConfig(
-        n_images = 7,
+        n_images = 10,
         spring_constant = 1.0,
         climbing_image = true,
-        max_iter = 500,
-        conv_tol = 5e-3,
+        energy_weighted = true,
+        ew_k_min = 0.972,
+        ew_k_max = 9.72,
+        max_iter = 1000,
+        conv_tol = 0.05,
         step_size = 0.01,
         verbose = true,
     )
@@ -122,10 +127,13 @@ function main()
     end
 
     gp_cfg = NEBConfig(
-        n_images = 7,
+        n_images = 10,
         spring_constant = 1.0,
         climbing_image = true,
-        conv_tol = 5e-3,
+        energy_weighted = true,
+        ew_k_min = 0.972,
+        ew_k_max = 9.72,
+        conv_tol = 0.05,
         gp_train_iter = 300,
         max_outer_iter = 50,
         trust_radius = 0.1,
@@ -157,10 +165,13 @@ function main()
     end
 
     oie_cfg = NEBConfig(
-        n_images = 7,
+        n_images = 10,
         spring_constant = 1.0,
         climbing_image = true,
-        conv_tol = 5e-3,
+        energy_weighted = true,
+        ew_k_min = 0.972,
+        ew_k_max = 9.72,
+        conv_tol = 0.05,
         gp_train_iter = 300,
         max_outer_iter = 80,
         trust_radius = 0.1,
