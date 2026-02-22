@@ -62,7 +62,7 @@ digraph type_hierarchy {
         fillcolor="#d5b8e8"
     ];
     NEBConfig [
-        label="{NEBConfig|n_images, spring_constant\lclimbing_image::Bool\lconv_tol, step_size, ...}",
+        label="{NEBConfig|images, spring_constant\lclimbing_image::Bool\lconv_tol, step_size, ...}",
         fillcolor="#d5b8e8"
     ];
     OTGPDConfig [

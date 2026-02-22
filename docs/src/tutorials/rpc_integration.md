@@ -326,7 +326,7 @@ Create an oracle pool and pass it to any NEB function:
 ```julia
 using ChemGP
 
-n_workers = min(Threads.nthreads(), neb_cfg.n_images - 2)
+n_workers = min(Threads.nthreads(), neb_cfg.images)
 oracles = make_oracle_pool("localhost", 12345, atmnrs, box, n_workers)
 
 # Standard NEB with parallel evaluation

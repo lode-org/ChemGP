@@ -34,13 +34,13 @@ Returns a vector of image position vectors.
 function _init_neb_images(cfg::NEBConfig, x_start, x_end)
     if cfg.initializer == :sidpp
         cfg.verbose && println("  Generating S-IDPP initial path...")
-        sidpp_interpolation(x_start, x_end, cfg.n_images;
+        sidpp_interpolation(x_start, x_end, cfg.images + 2;
                             spring_constant = cfg.spring_constant)
     elseif cfg.initializer == :idpp
         cfg.verbose && println("  Generating IDPP initial path...")
-        idpp_interpolation(x_start, x_end, cfg.n_images)
+        idpp_interpolation(x_start, x_end, cfg.images + 2)
     else
-        linear_interpolation(x_start, x_end, cfg.n_images)
+        linear_interpolation(x_start, x_end, cfg.images + 2)
     end
 end
 
@@ -301,7 +301,7 @@ function neb_optimize(
     on_step::Union{Function,Nothing} = nothing,
 )
     cfg = config
-    N = cfg.n_images
+    N = cfg.images + 2
     D = length(x_start)
     N_mov = N - 2
 
@@ -439,7 +439,7 @@ function gp_neb_aie(
     on_step::Union{Function,Nothing} = nothing,
 )
     cfg = config
-    N = cfg.n_images
+    N = cfg.images + 2
     D = length(x_start)
     dedup_tol = cfg.conv_tol * 0.1
 
@@ -578,7 +578,7 @@ function gp_neb_oie(
     on_step::Union{Function,Nothing} = nothing,
 )
     cfg = config
-    N = cfg.n_images
+    N = cfg.images + 2
     D = length(x_start)
     ep_oracle = _single_oracle(oracle)
     dedup_tol = cfg.conv_tol * 0.1
