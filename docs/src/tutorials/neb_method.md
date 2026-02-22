@@ -67,7 +67,7 @@ for measuring GP speedup.
 
 ```julia
 result = neb_optimize(muller_brown_energy_gradient, x_start, x_end;
-    config = NEBConfig(n_images = 7, spring_constant = 10.0))
+    config = NEBConfig(images = 5, spring_constant = 10.0))
 ```
 
 ### GP-NEB-AIE ([`gp_neb_aie`](@ref))
@@ -103,7 +103,7 @@ x_C = [-0.050, 0.467]
 k = SqExponentialKernel()
 
 config = NEBConfig(
-    n_images = 7,
+    images = 5,
     spring_constant = 10.0,
     climbing_image = true,
     conv_tol = 0.1,
@@ -142,7 +142,7 @@ using ChemGP
 result = neb_optimize(oracle, x_start, x_end; config)
 
 # Oracle pool (parallel evaluation)
-n_workers = min(Threads.nthreads(), config.n_images - 2)
+n_workers = min(Threads.nthreads(), config.images)
 oracles = make_oracle_pool("localhost", 12345, atmnrs, box, n_workers)
 result = neb_optimize(oracles, x_start, x_end; config)
 ```
@@ -198,7 +198,7 @@ The [`NEBConfig`](@ref) struct controls all parameters:
 
 | Parameter | Default | Description |
 |:----------|:--------|:------------|
-| `n_images` | 7 | Number of images (including endpoints) |
+| `images` | 5 | Number of movable images (total = images + 2) |
 | `spring_constant` | 1.0 | Spring constant for elastic band |
 | `climbing_image` | true | Enable climbing image |
 | `ci_activation_tol` | 0.5 | Force norm to activate climbing image |
