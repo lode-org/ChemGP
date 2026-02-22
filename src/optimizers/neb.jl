@@ -85,6 +85,52 @@ function _train_neb_gp(
     end
 end
 
+# ==============================================================================
+# Parallel oracle evaluation
+# ==============================================================================
+
+# Union type for oracle: single function or pool of functions
+const OracleOrPool = Union{Function, AbstractVector{<:Function}}
+
+# Extract a single oracle from an oracle-or-pool (for endpoint evaluation etc.)
+_single_oracle(oracle::Function) = oracle
+_single_oracle(oracles::AbstractVector{<:Function}) = oracles[1]
+
+"""
+    _eval_images!(oracle, images, energies, gradients, indices)
+
+Evaluate oracle at multiple images. When `oracle` is a vector of functions,
+evaluations are dispatched in parallel using `Threads.@spawn`, round-robin
+across the pool.
+
+Returns the number of evaluations performed.
+"""
+function _eval_images!(oracle::Function, images, energies, gradients, indices)
+    for i in indices
+        E, G = oracle(images[i])
+        energies[i] = E
+        gradients[i] = G
+    end
+    return length(indices)
+end
+
+function _eval_images!(oracles::AbstractVector{<:Function},
+                       images, energies, gradients, indices)
+    n = length(indices)
+    n_workers = length(oracles)
+    tasks = Vector{Task}(undef, n)
+    for (k, i) in enumerate(indices)
+        w = ((k - 1) % n_workers) + 1
+        tasks[k] = Threads.@spawn oracles[w](images[i])
+    end
+    for (k, i) in enumerate(indices)
+        E, G = fetch(tasks[k])
+        energies[i] = E
+        gradients[i] = G
+    end
+    return n
+end
+
 """
     neb_optimize(oracle, x_start, x_end; config) -> NEBResult
 
@@ -93,9 +139,12 @@ Standard NEB optimization (oracle-only baseline).
 Evaluates the oracle at all intermediate images on every iteration. Uses
 L-BFGS (default) or steepest descent for relaxation, with max_move
 clipping to prevent overshoot. Supports energy-weighted springs.
+
+`oracle` can be a single `Function` or a `Vector{Function}` for parallel
+evaluation of images.
 """
 function neb_optimize(
-    oracle::Function,
+    oracle::OracleOrPool,
     x_start::Vector{Float64},
     x_end::Vector{Float64};
     config::NEBConfig = NEBConfig(),
@@ -119,8 +168,9 @@ function neb_optimize(
     end
 
     # Evaluate endpoints (fixed)
-    E_start, G_start = oracle(x_start)
-    E_end, G_end = oracle(x_end)
+    ep_oracle = _single_oracle(oracle)
+    E_start, G_start = ep_oracle(x_start)
+    E_end, G_end = ep_oracle(x_end)
     energies = zeros(N)
     gradients = [zeros(D) for _ in 1:N]
     energies[1] = E_start
@@ -130,13 +180,8 @@ function neb_optimize(
 
     oracle_calls = 2
 
-    # Evaluate intermediate images
-    for i in 2:(N - 1)
-        E, G = oracle(images[i])
-        energies[i] = E
-        gradients[i] = G
-        oracle_calls += 1
-    end
+    # Evaluate intermediate images (parallel when oracle is a pool)
+    oracle_calls += _eval_images!(oracle, images, energies, gradients, 2:(N-1))
 
     path = NEBPath(images, energies, gradients, cfg.spring_constant)
 
@@ -214,13 +259,8 @@ function neb_optimize(
             images[img_idx + 1] = new_x[offset+1:offset+D]
         end
 
-        # Re-evaluate oracle
-        for i in 2:(N - 1)
-            E, G = oracle(images[i])
-            energies[i] = E
-            gradients[i] = G
-            oracle_calls += 1
-        end
+        # Re-evaluate oracle (parallel when oracle is a pool)
+        oracle_calls += _eval_images!(oracle, images, energies, gradients, 2:(N-1))
 
         path.images = images
         path.energies = energies
@@ -254,7 +294,7 @@ prevents near-singular covariance matrices from accumulating almost-
 identical data rows across outer iterations.
 """
 function gp_neb_aie(
-    oracle::Function,
+    oracle::OracleOrPool,
     x_start::Vector{Float64},
     x_end::Vector{Float64},
     kernel;
@@ -283,8 +323,9 @@ function gp_neb_aie(
     end
 
     # Evaluate endpoints
-    E_start, G_start = oracle(x_start)
-    E_end, G_end = oracle(x_end)
+    ep_oracle = _single_oracle(oracle)
+    E_start, G_start = ep_oracle(x_start)
+    E_end, G_end = ep_oracle(x_end)
     oracle_calls = 2
 
     # Training data accumulator (physical points only)
@@ -306,7 +347,7 @@ function gp_neb_aie(
         n_hess = length(hess_pts)
         hess_X = Matrix{Float64}(undef, D, n_hess)
         for (idx, pt) in enumerate(hess_pts)
-            E, G = oracle(pt)
+            E, G = ep_oracle(pt)
             hess_X[:, idx] = pt
             push!(hess_E, E)
             append!(hess_G, G)
@@ -316,7 +357,7 @@ function gp_neb_aie(
                                n_hess, n_hess)
     end
 
-    # Evaluate all intermediate images
+    # Evaluate all intermediate images (parallel when oracle is a pool)
     energies = zeros(N)
     gradients = [zeros(D) for _ in 1:N]
     energies[1] = E_start
@@ -324,12 +365,9 @@ function gp_neb_aie(
     gradients[1] = G_start
     gradients[end] = G_end
 
-    for i in 2:(N - 1)
-        E, G = oracle(images[i])
-        energies[i] = E
-        gradients[i] = G
-        add_point!(td, images[i], E, G)
-        oracle_calls += 1
+    oracle_calls += _eval_images!(oracle, images, energies, gradients, 2:(N-1))
+    for i in 2:(N-1)
+        add_point!(td, images[i], energies[i], gradients[i])
     end
 
     path = NEBPath(images, energies, gradients, cfg.spring_constant)
@@ -413,15 +451,12 @@ function gp_neb_aie(
         # Update path with GP-relaxed images
         images = gp_images
 
-        # Evaluate oracle at new positions; skip near-duplicate training data
-        for i in 2:(N - 1)
-            E, G = oracle(images[i])
-            energies[i] = E
-            gradients[i] = G
-            oracle_calls += 1
-
+        # Evaluate oracle at new positions (parallel); deduplicate training data
+        n_new = _eval_images!(oracle, images, energies, gradients, 2:(N-1))
+        oracle_calls += n_new
+        for i in 2:(N-1)
             if min_distance_to_data(images[i], td.X) > dedup_tol
-                add_point!(td, images[i], E, G)
+                add_point!(td, images[i], energies[i], gradients[i])
             end
         end
 
@@ -454,7 +489,7 @@ to select the most informative evaluation point.
 Training data is deduplicated to prevent near-singular covariance matrices.
 """
 function gp_neb_oie(
-    oracle::Function,
+    oracle::OracleOrPool,
     x_start::Vector{Float64},
     x_end::Vector{Float64},
     kernel;
@@ -464,6 +499,8 @@ function gp_neb_oie(
     cfg = config
     N = cfg.n_images
     D = length(x_start)
+    # OIE evaluates one image per iteration; use single oracle throughout
+    ep_oracle = _single_oracle(oracle)
 
     dedup_tol = cfg.conv_tol * 0.1
 
@@ -480,8 +517,8 @@ function gp_neb_oie(
     end
 
     # Evaluate endpoints
-    E_start, G_start = oracle(x_start)
-    E_end, G_end = oracle(x_end)
+    E_start, G_start = ep_oracle(x_start)
+    E_end, G_end = ep_oracle(x_end)
     oracle_calls = 2
 
     # Training data accumulator (physical points only)
@@ -500,7 +537,7 @@ function gp_neb_oie(
         n_hess = length(hess_pts)
         hess_X = Matrix{Float64}(undef, D, n_hess)
         for (idx, pt) in enumerate(hess_pts)
-            E, G = oracle(pt)
+            E, G = ep_oracle(pt)
             hess_X[:, idx] = pt
             push!(hess_E, E)
             append!(hess_G, G)
@@ -523,7 +560,7 @@ function gp_neb_oie(
 
     # Evaluate midpoint to start
     mid = div(N, 2) + 1
-    E_mid, G_mid = oracle(images[mid])
+    E_mid, G_mid = ep_oracle(images[mid])
     energies[mid] = E_mid
     gradients[mid] = G_mid
     add_point!(td, images[mid], E_mid, G_mid)
@@ -581,7 +618,7 @@ function gp_neb_oie(
         end
 
         # Evaluate oracle at selected image; deduplicate training data
-        E_eval, G_eval = oracle(images[i_eval])
+        E_eval, G_eval = ep_oracle(images[i_eval])
         energies[i_eval] = E_eval
         gradients[i_eval] = G_eval
         evaluated[i_eval] = true

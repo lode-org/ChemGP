@@ -21,6 +21,9 @@ include("kernels/MolInvDistSE.jl")
 include("kernels/MolInvDistMat5_2.jl")
 include("kernels/MolInvDistMat3_2.jl")
 
+# Cartesian SE kernel (for GP-NEB, full-rank gradient blocks)
+include("kernels/CartesianSE.jl")
+
 # Additional kernels for composition
 include("kernels/ConstantKernel.jl")
 include("kernels/SumKernel.jl")
@@ -63,8 +66,10 @@ include("optimizers/lbfgs.jl")
 include("optimizers/trust_region.jl")
 include("optimizers/minimize.jl")
 include("optimizers/dimer.jl")
+include("optimizers/optim_step.jl")
 include("optimizers/neb_types.jl")
 include("optimizers/neb_path.jl")
+include("optimizers/idpp.jl")
 include("optimizers/neb.jl")
 include("optimizers/otgpd.jl")
 
@@ -87,6 +92,7 @@ export train_model!, predict, predict_with_variance, build_full_covariance
 # Kernels
 export AbstractMoleculeKernel
 export MolInvDistSE, MolInvDistMatern52, MolInvDistMatern32
+export CartesianSE, init_cartesian_se, init_mol_invdist_se
 export OffsetKernel, MolSumKernel, MolProductKernel
 export kernel_blocks, compute_inverse_distances
 
@@ -105,7 +111,7 @@ export leps_energy_gradient, leps_energy_gradient_2d
 export LEPS_REACTANT, LEPS_PRODUCT
 
 # RPC oracle (rgpot integration)
-export RpcPotential, RpcPotentialCore, make_rpc_oracle
+export RpcPotential, RpcPotentialCore, make_rpc_oracle, make_oracle_pool
 export find_rgpot_lib, find_potserv, with_potserv
 export rgpot_available, potserv_available
 
@@ -118,10 +124,13 @@ export dimer_images, curvature, rotational_force, translational_force
 
 # L-BFGS optimizer
 export LBFGSHistory, push_pair!, compute_direction
+export OptimState, optim_step!
 
 # NEB path optimization
 export NEBPath, NEBConfig, NEBResult
-export linear_interpolation, path_tangent, spring_force, neb_force
+export linear_interpolation, idpp_interpolation, sidpp_interpolation
+export path_tangent, spring_force, neb_force
+export energy_weighted_k, get_hessian_points
 export neb_optimize, gp_neb_aie, gp_neb_oie
 
 # OTGPD (Optimal Transport GP Dimer)
