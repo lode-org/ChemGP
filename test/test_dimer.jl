@@ -18,14 +18,14 @@
         @test C != 0.0
         @test isapprox(C, 10.0, atol = 1e-12)  # (2-1)*1 / 0.1 = 10
 
-        # Test translational_force: inverts component along dimer
+        # Test translational_force: effective force for saddle search
+        # F_eff = -G + 2*(G.n)n: descends perp to dimer, ascends along it
         G_test = [1.0, 1.0, 0.0]
         orient = [1.0, 0.0, 0.0]
         F = translational_force(G_test, orient)
-        # F_parallel = 1.0 * [1,0,0] = [1,0,0]
-        # F_perp = [0,1,0]
-        # F_trans = F_perp - F_parallel = [-1, 1, 0]
-        @test isapprox(F, [-1.0, 1.0, 0.0], atol = 1e-12)
+        # G_parallel = (G.n)n = [1,0,0]
+        # F_eff = -G + 2*G_parallel = [-1,-1,0] + [2,0,0] = [1,-1,0]
+        @test isapprox(F, [1.0, -1.0, 0.0], atol = 1e-12)
     end
 
     @testset "Trust region utilities" begin
