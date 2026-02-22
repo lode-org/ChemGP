@@ -440,8 +440,9 @@ function gp_neb_aie(
             td, kernel, cfg, prev_kern,
             hess_X, hess_E, hess_G, n_hess, outer_iter)
 
-        # Inner loop: relax on GP surface (SD with max_move clipping)
+        # Inner loop: relax on GP surface (SD with max_move + trust radius)
         gp_images = deepcopy(images)
+        start_images = deepcopy(images)  # anchor for trust radius
         for inner_iter in 1:(cfg.max_iter)
             # Predict energies and gradients from GP
             gp_energies = copy(energies)
@@ -463,14 +464,21 @@ function gp_neb_aie(
                 break
             end
 
-            # SD with max_move clipping on GP surface
+            # SD with max_move clipping + trust radius on GP surface
             for i in 2:(N - 1)
                 step = cfg.step_size * gp_forces[i]
                 sn = norm(step)
                 if sn > cfg.max_move
                     step .*= cfg.max_move / sn
                 end
-                gp_images[i] = gp_images[i] + step
+                candidate = gp_images[i] + step
+                # Trust radius: clip total displacement from oracle-evaluated position
+                disp = candidate - start_images[i]
+                dn = norm(disp)
+                if dn > cfg.trust_radius
+                    candidate = start_images[i] + disp * (cfg.trust_radius / dn)
+                end
+                gp_images[i] = candidate
             end
         end
 
@@ -694,8 +702,9 @@ function gp_neb_oie(
             break
         end
 
-        # Inner loop: relax on GP surface (SD with max_move clipping)
+        # Inner loop: relax on GP surface (SD with max_move + trust radius)
         gp_images = deepcopy(images)
+        start_images = deepcopy(images)  # anchor for trust radius
         for inner_iter in 1:(cfg.max_iter)
             gp_energies = copy(energies)
             gp_gradients = deepcopy(gradients)
@@ -720,7 +729,14 @@ function gp_neb_oie(
                 if sn > cfg.max_move
                     step .*= cfg.max_move / sn
                 end
-                gp_images[i] = gp_images[i] + step
+                candidate = gp_images[i] + step
+                # Trust radius: clip total displacement from oracle-evaluated position
+                disp = candidate - start_images[i]
+                dn = norm(disp)
+                if dn > cfg.trust_radius
+                    candidate = start_images[i] + disp * (cfg.trust_radius / dn)
+                end
+                gp_images[i] = candidate
             end
         end
 
