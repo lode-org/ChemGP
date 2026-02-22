@@ -9,3 +9,6 @@ docs/Manifest.toml
 
 # Temporary/cache
 .cache/
+
+# rgpot build (cloned and built via pixi tasks)
+rgpot/
