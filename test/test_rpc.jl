@@ -85,7 +85,7 @@ const LJ_BOX = Float64[100, 0, 0, 0, 100, 0, 0, 0, 100]  # Large non-periodic bo
             # G should be -F (gradient = -forces)
             @test isapprox(G, -F_rpc; atol = 1e-12)
 
-            ChemGP.close!(pot)
+            close(pot)
         end
     end
 
@@ -101,7 +101,7 @@ const LJ_BOX = Float64[100, 0, 0, 0, 100, 0, 0, 0, 100]  # Large non-periodic bo
             @test isfinite(E)
             @test all(isfinite, F)
 
-            ChemGP.close!(pot)
+            close(pot)
         end
     end
 
@@ -129,7 +129,7 @@ const LJ_BOX = Float64[100, 0, 0, 0, 100, 0, 0, 0, 100]  # Large non-periodic bo
             @test isfinite(result.E_final)
             @test length(result.trajectory) >= 1
 
-            ChemGP.close!(pot)
+            close(pot)
         end
     end
 
