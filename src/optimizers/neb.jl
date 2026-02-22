@@ -440,9 +440,12 @@ function gp_neb_aie(
             td, kernel, cfg, prev_kern,
             hess_X, hess_E, hess_G, n_hess, outer_iter)
 
-        # Inner loop: relax on GP surface (SD with max_move + trust radius)
+        # Inner loop: relax on GP surface (L-BFGS/SD + trust radius)
         gp_images = deepcopy(images)
         start_images = deepcopy(images)  # anchor for trust radius
+        N_mov = N - 2
+        gp_optim = cfg.optimizer == :lbfgs ? OptimState(cfg.lbfgs_memory) : nothing
+
         for inner_iter in 1:(cfg.max_iter)
             # Predict energies and gradients from GP
             gp_energies = copy(energies)
@@ -464,21 +467,29 @@ function gp_neb_aie(
                 break
             end
 
-            # SD with max_move clipping + trust radius on GP surface
-            for i in 2:(N - 1)
-                step = cfg.step_size * gp_forces[i]
-                sn = norm(step)
-                if sn > cfg.max_move
-                    step .*= cfg.max_move / sn
-                end
-                candidate = gp_images[i] + step
+            # Compute step (concatenated over all movable images)
+            cur_x = vcat(gp_images[2:N-1]...)
+            cur_force = vcat(gp_forces[2:N-1]...)
+
+            if gp_optim !== nothing
+                displacement = optim_step!(gp_optim, cur_x, cur_force, cfg.max_move;
+                                           n_coords_per_atom = 3)
+            else
+                displacement = cfg.step_size * cur_force
+                displacement = _clip_to_max_move(displacement, cfg.max_move, 3)
+            end
+
+            new_x = cur_x + displacement
+            for img_idx in 1:N_mov
+                offset = (img_idx - 1) * D
+                candidate = new_x[offset+1:offset+D]
                 # Trust radius: clip total displacement from oracle-evaluated position
-                disp = candidate - start_images[i]
+                disp = candidate - start_images[img_idx + 1]
                 dn = norm(disp)
                 if dn > cfg.trust_radius
-                    candidate = start_images[i] + disp * (cfg.trust_radius / dn)
+                    candidate = start_images[img_idx + 1] + disp * (cfg.trust_radius / dn)
                 end
-                gp_images[i] = candidate
+                gp_images[img_idx + 1] = candidate
             end
         end
 
@@ -702,9 +713,12 @@ function gp_neb_oie(
             break
         end
 
-        # Inner loop: relax on GP surface (SD with max_move + trust radius)
+        # Inner loop: relax on GP surface (L-BFGS/SD + trust radius)
         gp_images = deepcopy(images)
         start_images = deepcopy(images)  # anchor for trust radius
+        N_mov = N - 2
+        gp_optim = cfg.optimizer == :lbfgs ? OptimState(cfg.lbfgs_memory) : nothing
+
         for inner_iter in 1:(cfg.max_iter)
             gp_energies = copy(energies)
             gp_gradients = deepcopy(gradients)
@@ -723,20 +737,29 @@ function gp_neb_oie(
                 break
             end
 
-            for i in 2:(N - 1)
-                step = cfg.step_size * gp_forces[i]
-                sn = norm(step)
-                if sn > cfg.max_move
-                    step .*= cfg.max_move / sn
-                end
-                candidate = gp_images[i] + step
+            # Compute step (concatenated over all movable images)
+            cur_x = vcat(gp_images[2:N-1]...)
+            cur_force = vcat(gp_forces[2:N-1]...)
+
+            if gp_optim !== nothing
+                displacement = optim_step!(gp_optim, cur_x, cur_force, cfg.max_move;
+                                           n_coords_per_atom = 3)
+            else
+                displacement = cfg.step_size * cur_force
+                displacement = _clip_to_max_move(displacement, cfg.max_move, 3)
+            end
+
+            new_x = cur_x + displacement
+            for img_idx in 1:N_mov
+                offset = (img_idx - 1) * D
+                candidate = new_x[offset+1:offset+D]
                 # Trust radius: clip total displacement from oracle-evaluated position
-                disp = candidate - start_images[i]
+                disp = candidate - start_images[img_idx + 1]
                 dn = norm(disp)
                 if dn > cfg.trust_radius
-                    candidate = start_images[i] + disp * (cfg.trust_radius / dn)
+                    candidate = start_images[img_idx + 1] + disp * (cfg.trust_radius / dn)
                 end
-                gp_images[i] = candidate
+                gp_images[img_idx + 1] = candidate
             end
         end
 
