@@ -152,4 +152,72 @@
         # Path should be valid
         @test length(result.path.images) == 5
     end
+
+    @testset "CI-NEB convergence with L-BFGS (LEPS 9D)" begin
+        # Regression test: L-BFGS must not explode after climbing image activation.
+        # Without distance_reset, clipped L-BFGS steps corrupt curvature estimates
+        # causing a positive feedback loop (max|F| > 200 by iter 350).
+        x_r = copy(LEPS_REACTANT)
+        x_p = copy(LEPS_PRODUCT)
+
+        cfg = NEBConfig(
+            n_images = 7,
+            spring_constant = 5.0,
+            climbing_image = true,
+            ci_activation_tol = 0.5,
+            max_iter = 500,
+            conv_tol = 0.05,
+            optimizer = :lbfgs,
+            max_move = 0.1,
+            lbfgs_memory = 20,
+            initializer = :linear,
+            verbose = false,
+        )
+
+        result = neb_optimize(leps_energy_gradient, x_r, x_p; config = cfg)
+
+        # Must converge
+        @test result.converged
+
+        # Forces must never explode during optimization (the regression)
+        max_force_seen = maximum(result.history["max_force"])
+        @test max_force_seen < 50.0
+
+        # Barrier should be positive (TS above reactant)
+        barrier = result.path.energies[result.max_energy_image] -
+                  result.path.energies[1]
+        @test barrier > 0.0
+    end
+
+    @testset "CI-NEB convergence with SD (LEPS 9D)" begin
+        # Steepest descent should also converge (the old default before L-BFGS).
+        x_r = copy(LEPS_REACTANT)
+        x_p = copy(LEPS_PRODUCT)
+
+        cfg = NEBConfig(
+            n_images = 7,
+            spring_constant = 5.0,
+            climbing_image = true,
+            ci_activation_tol = 0.5,
+            max_iter = 1000,
+            conv_tol = 0.05,
+            optimizer = :sd,
+            max_move = 0.1,
+            initializer = :linear,
+            verbose = false,
+        )
+
+        result = neb_optimize(leps_energy_gradient, x_r, x_p; config = cfg)
+
+        @test result.converged
+
+        # Forces stay bounded
+        max_force_seen = maximum(result.history["max_force"])
+        @test max_force_seen < 50.0
+
+        # Barrier should be positive
+        barrier = result.path.energies[result.max_energy_image] -
+                  result.path.energies[1]
+        @test barrier > 0.0
+    end
 end
