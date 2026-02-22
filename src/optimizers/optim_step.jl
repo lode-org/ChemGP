@@ -3,8 +3,8 @@
 # ==============================================================================
 #
 # Reusable L-BFGS step function shared by NEB and dimer. Wraps LBFGSHistory
-# with previous-state tracking, angle check, and per-atom max_move clipping
-# matching eOn's LBFGS.cpp logic.
+# with previous-state tracking, negative curvature reset, angle check, and
+# per-atom max_move clipping matching eOn's LBFGS.cpp logic.
 #
 # Reference:
 #   Asgeirsson, V. et al. (2021). Nudged elastic band method for molecular
@@ -36,6 +36,27 @@ function reset!(s::OptimState)
     s.prev_g = nothing
 end
 
+# Clip a direction vector so that no atom moves more than max_move.
+# Matches eOn helper_functions::maxAtomMotionAppliedV.
+function _clip_to_max_move(
+    d::Vector{Float64},
+    max_move::Float64,
+    n_coords_per_atom::Int,
+)
+    result = copy(d)
+    n_atoms = div(length(d), n_coords_per_atom)
+    max_disp = 0.0
+    for a in 1:n_atoms
+        off = (a - 1) * n_coords_per_atom
+        disp = norm(@view result[off+1:off+n_coords_per_atom])
+        max_disp = max(max_disp, disp)
+    end
+    if max_disp > max_move
+        result .*= max_move / max_disp
+    end
+    return result
+end
+
 """
     optim_step!(state, x, force, max_move; n_coords_per_atom=3) -> Vector{Float64}
 
@@ -43,6 +64,8 @@ Compute an L-BFGS displacement vector from the current position `x` and
 `force` (pointing downhill). Returns the displacement to add to `x`.
 
 Matches eOn's LBFGS.cpp:
+- Negative curvature reset: if `s.dot(y) < 0`, resets history and returns
+  force step clipped to `max_move` (eOn LBFGS.cpp:20-30)
 - Updates L-BFGS memory with (s, y) pairs
 - Angle check: resets to steepest descent if step >90 deg from force
 - Distance reset: if max per-atom displacement exceeds `max_move`, resets
@@ -57,9 +80,21 @@ function optim_step!(
 )
     g = -force  # gradient (uphill) for L-BFGS
 
-    # Update L-BFGS memory with previous step
+    # Negative curvature reset: if s.dot(y) < 0, the force increased along
+    # the step direction (landscape changed, e.g. CI overshoot or tangent flip).
+    # Reset all history and return clipped force step.
+    # (matches eOn LBFGS.cpp:20-30, checked before L-BFGS computation)
     if state.prev_x !== nothing
-        push_pair!(state.lbfgs, x - state.prev_x, g - state.prev_g)
+        s = x - state.prev_x
+        y = g - state.prev_g
+        sy = dot(s, y)
+        if sy < 0
+            reset!(state)
+            state.prev_x = copy(x)
+            state.prev_g = copy(g)
+            return _clip_to_max_move(force, max_move, n_coords_per_atom)
+        end
+        push_pair!(state.lbfgs, s, y)
     end
     state.prev_x = copy(x)
     state.prev_g = copy(g)
@@ -76,7 +111,7 @@ function optim_step!(
             reset!(state)
             state.prev_x = copy(x)
             state.prev_g = copy(g)
-            direction = copy(force)
+            return _clip_to_max_move(force, max_move, n_coords_per_atom)
         end
     end
 
@@ -93,17 +128,7 @@ function optim_step!(
         reset!(state)
         state.prev_x = copy(x)
         state.prev_g = copy(g)
-        # Fall back to force direction, clipped to max_move
-        direction = copy(force)
-        max_disp_sd = 0.0
-        for a in 1:n_atoms
-            off = (a - 1) * n_coords_per_atom
-            disp = norm(@view direction[off+1:off+n_coords_per_atom])
-            max_disp_sd = max(max_disp_sd, disp)
-        end
-        if max_disp_sd > max_move
-            direction .*= max_move / max_disp_sd
-        end
+        return _clip_to_max_move(force, max_move, n_coords_per_atom)
     end
 
     return direction
