@@ -112,41 +112,41 @@ function main()
     write_convergence_csv(result_std, joinpath(std_dir, "convergence.csv"))
 
     # --- GP-NEB AIE ---
-    # println("\n=== GP-NEB (AIE) ===")
-    # gp_dir = joinpath(OUTDIR, "gp_aie")
-    # kernel = MolInvDistSE(1.0, [1.0], Float64[])
+    println("\n=== GP-NEB (AIE) ===")
+    gp_dir = joinpath(OUTDIR, "gp_aie")
+    kernel = MolInvDistSE(1.0, [1.0], Float64[])
 
-    # gp_writer = make_neb_writer(gp_dir, ATOMIC_NUMBERS, BOX)
-    # gp_h5 = make_neb_hdf5_writer(
-    #     joinpath(gp_dir, "neb_history.h5");
-    #     atomic_numbers = ATOMIC_NUMBERS, cell = BOX,
-    # )
-    # gp_callback = (path, iter) -> begin
-    #     gp_writer(path, iter)
-    #     gp_h5(path, iter)
-    # end
+    gp_writer = make_neb_writer(gp_dir, ATOMIC_NUMBERS, BOX)
+    gp_h5 = make_neb_hdf5_writer(
+        joinpath(gp_dir, "neb_history.h5");
+        atomic_numbers = ATOMIC_NUMBERS, cell = BOX,
+    )
+    gp_callback = (path, iter) -> begin
+        gp_writer(path, iter)
+        gp_h5(path, iter)
+    end
 
-    # gp_cfg = NEBConfig(
-    #     n_images = 10,
-    #     spring_constant = 1.0,
-    #     climbing_image = true,
-    #     energy_weighted = true,
-    #     ew_k_min = 0.972,
-    #     ew_k_max = 9.72,
-    #     conv_tol = 0.05,
-    #     gp_train_iter = 300,
-    #     max_outer_iter = 50,
-    #     trust_radius = 0.1,
-    #     verbose = true,
-    # )
+    gp_cfg = NEBConfig(
+        n_images = 10,
+        spring_constant = 1.0,
+        climbing_image = true,
+        energy_weighted = true,
+        ew_k_min = 0.972,
+        ew_k_max = 9.72,
+        conv_tol = 0.05,
+        gp_train_iter = 300,
+        max_outer_iter = 50,
+        trust_radius = 0.1,
+        verbose = true,
+    )
 
-    # result_gp = gp_neb_aie(oracles, X_HCN, X_HNC, kernel;
-    #     config = gp_cfg, on_step = gp_callback)
+    result_gp = gp_neb_aie(oracles, X_HCN, X_HNC, kernel;
+        config = gp_cfg, on_step = gp_callback)
 
-    # write_neb_trajectory(result_gp, joinpath(gp_dir, "neb_final.xyz"), ATOMIC_NUMBERS, BOX)
-    # write_neb_hdf5(result_gp, joinpath(gp_dir, "neb_result.h5");
-    #     atomic_numbers = ATOMIC_NUMBERS, cell = BOX)
-    # write_convergence_csv(result_gp, joinpath(gp_dir, "convergence.csv"))
+    write_neb_trajectory(result_gp, joinpath(gp_dir, "neb_final.xyz"), ATOMIC_NUMBERS, BOX)
+    write_neb_hdf5(result_gp, joinpath(gp_dir, "neb_result.h5");
+        atomic_numbers = ATOMIC_NUMBERS, cell = BOX)
+    write_convergence_csv(result_gp, joinpath(gp_dir, "convergence.csv"))
 
     # --- GP-NEB OIE ---
     # OIE evaluates one image per iteration (max uncertainty), so parallelism

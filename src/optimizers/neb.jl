@@ -83,17 +83,19 @@ Returns `(ci_on, conv_metric, activated)` where `activated` is true if CI
 just turned on this iteration.
 """
 function _check_ci(cfg::NEBConfig, ci_on::Bool, max_f, ci_f, baseline_force, iter)
-    conv_metric = (ci_on && cfg.ci_converged_only) ? ci_f : max_f
     activated = false
 
     if cfg.climbing_image && iter > 1
-        new_ci = conv_metric < cfg.ci_trigger_rel * baseline_force ||
-                 conv_metric < cfg.ci_activation_tol
+        # CI toggle always uses max_f over all images (matching eOn):
+        # "is the band relaxed enough for climbing?" is a band-level
+        # question, independent of ci_converged_only.
+        new_ci = max_f < cfg.ci_trigger_rel * baseline_force ||
+                 max_f < cfg.ci_activation_tol
         activated = new_ci && !ci_on
         ci_on = new_ci
     end
 
-    # Recompute conv_metric with updated ci_on
+    # Convergence metric: CI force when ci_converged_only + CI active
     conv_metric = (ci_on && cfg.ci_converged_only) ? ci_f : max_f
     return ci_on, conv_metric, activated
 end
@@ -704,9 +706,10 @@ function gp_neb_oie(
             cfg.verbose && @printf("  Climbing image activated (image %d)\n", i_max)
         end
 
-        # Check convergence
+        # Check convergence: CI image must be oracle-evaluated when ci_converged_only
         conv_check = ci_on || !cfg.climbing_image
-        if conv_check && conv_metric < cfg.conv_tol
+        ci_verified = !cfg.ci_converged_only || evaluated[i_max]
+        if conv_check && ci_verified && conv_metric < cfg.conv_tol
             cfg.verbose && println("GP-NEB-OIE converged!")
             converged = true
             break
