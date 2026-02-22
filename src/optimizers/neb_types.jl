@@ -26,7 +26,7 @@ end
 Configuration parameters for NEB path optimization.
 
 # Standard NEB fields
-- `n_images`: Number of images including endpoints (default 7)
+- `images`: Number of movable intermediate images, excluding fixed endpoints (default 5). Matches eOn convention; total images = images + 2.
 - `spring_constant`: Spring constant for elastic band (default 5.0)
 - `climbing_image`: Whether to enable climbing image NEB (default true)
 - `ci_activation_tol`: Absolute force threshold for CI activation (default 0.5)
@@ -56,7 +56,7 @@ Configuration parameters for NEB path optimization.
 - `verbose`: Print progress (default true)
 """
 Base.@kwdef struct NEBConfig
-    n_images::Int           = 7
+    images::Int             = 5
     spring_constant::Float64 = 5.0
     climbing_image::Bool    = true
     ci_activation_tol::Float64 = 0.5
@@ -78,7 +78,7 @@ Base.@kwdef struct NEBConfig
     # GP-specific
     gp_train_iter::Int      = 300
     max_outer_iter::Int     = 50
-    trust_radius::Float64   = 1.0
+    trust_radius::Float64   = 0.1
     # Virtual Hessian points (Koistinen et al. 2017):
     # Generate finite-difference perturbation points around endpoints to
     # bootstrap GP training with curvature information.

@@ -66,7 +66,7 @@ function main()
     @printf("HNC energy: %.6f\n", E_p)
 
     neb_cfg = NEBConfig(
-        n_images = 10,
+        images = 8,
         spring_constant = 1.0,
         climbing_image = true,
         energy_weighted = true,
@@ -79,7 +79,7 @@ function main()
     )
 
     # Parallel oracle pool: one connection per movable image (or thread count)
-    n_workers = min(Threads.nthreads(), neb_cfg.n_images - 2)
+    n_workers = min(Threads.nthreads(), neb_cfg.images)
     oracles = if n_workers > 1
         println("Creating $n_workers parallel oracle connections")
         make_oracle_pool(SERVER_HOST, SERVER_PORT, ATOMIC_NUMBERS, BOX, n_workers)
@@ -127,7 +127,7 @@ function main()
     end
 
     gp_cfg = NEBConfig(
-        n_images = 10,
+        images = 8,
         spring_constant = 1.0,
         climbing_image = true,
         energy_weighted = true,
@@ -166,13 +166,14 @@ function main()
     end
 
     oie_cfg = NEBConfig(
-        n_images = 10,
+        images = 8,
         spring_constant = 1.0,
         climbing_image = true,
         energy_weighted = true,
         ew_k_min = 0.972,
         ew_k_max = 9.72,
         conv_tol = 0.05,
+        trust_radius = 0.1,
         gp_train_iter = 300,
         max_outer_iter = 80,
         verbose = true,
@@ -190,7 +191,7 @@ function main()
     for (label, dir) in [("standard", std_dir), ("gp_oie", oie_dir)]
         traj = joinpath(dir, "neb_final.xyz")
         png = joinpath(dir, "profile.png")
-        cmd = `uv run rgpycrumbs eon plt-neb --source traj --input-traj $traj -o $png --title "HCN->HNC ($label)"`
+        cmd = `uv run rgpycrumbs --dev eon plt-neb --source traj --input-traj $traj -o $png --title "HCN->HNC ($label)"`
         println("Plotting: $cmd")
         try
             run(cmd)

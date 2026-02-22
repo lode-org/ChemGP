@@ -54,7 +54,7 @@
 
         f = neb_force(gradient, spring_f, tangent; climbing = true, is_highest = true)
 
-        # CI force: -G + 2*(G·τ)τ = -[1,2] + 2*1*[1,0] = [1, -2]
+        # CI force: -G + 2*(G.tau)tau = -[1,2] + 2*1*[1,0] = [1, -2]
         @test isapprox(f, [1.0, -2.0], atol = 1e-12)
     end
 
@@ -64,7 +64,7 @@
         x_C = [-0.050, 0.467]
 
         cfg = NEBConfig(
-            n_images = 7,
+            images = 5,           # 5 movable + 2 endpoints = 7 total
             spring_constant = 10.0,
             climbing_image = false,
             max_iter = 300,
@@ -75,7 +75,7 @@
 
         result = neb_optimize(muller_brown_energy_gradient, x_B, x_C; config = cfg)
 
-        # Path should have correct number of images
+        # Path should have correct number of images (movable + 2 endpoints)
         @test length(result.path.images) == 7
 
         # Endpoints should be fixed
@@ -100,7 +100,7 @@
         k = KernelFunctions.SqExponentialKernel()
 
         cfg = NEBConfig(
-            n_images = 5,
+            images = 3,           # 3 movable + 2 endpoints = 5 total
             spring_constant = 10.0,
             climbing_image = false,
             max_iter = 200,
@@ -129,7 +129,7 @@
         k = KernelFunctions.SqExponentialKernel()
 
         cfg = NEBConfig(
-            n_images = 5,
+            images = 3,           # 3 movable + 2 endpoints = 5 total
             spring_constant = 10.0,
             climbing_image = false,
             max_iter = 200,
@@ -161,7 +161,7 @@
         x_p = copy(LEPS_PRODUCT)
 
         cfg = NEBConfig(
-            n_images = 7,
+            images = 5,           # 5 movable + 2 endpoints = 7 total
             spring_constant = 5.0,
             climbing_image = true,
             ci_activation_tol = 0.5,
@@ -195,7 +195,7 @@
         x_p = copy(LEPS_PRODUCT)
 
         cfg = NEBConfig(
-            n_images = 7,
+            images = 5,           # 5 movable + 2 endpoints = 7 total
             spring_constant = 5.0,
             climbing_image = true,
             ci_activation_tol = 0.5,
