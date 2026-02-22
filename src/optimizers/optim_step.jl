@@ -45,7 +45,8 @@ Compute an L-BFGS displacement vector from the current position `x` and
 Matches eOn's LBFGS.cpp:
 - Updates L-BFGS memory with (s, y) pairs
 - Angle check: resets to steepest descent if step >90 deg from force
-- Per-atom max_move: finds max atom displacement, scales entire vector uniformly
+- Distance reset: if max per-atom displacement exceeds `max_move`, resets
+  L-BFGS history and returns SD step clipped to `max_move`
 """
 function optim_step!(
     state::OptimState,
@@ -79,7 +80,8 @@ function optim_step!(
         end
     end
 
-    # Per-atom max_move: find max atom displacement, scale uniformly
+    # Distance reset: if step exceeds max_move, reset history and use SD
+    # (matches eOn LBFGS.cpp:78-86, distance_reset=true by default)
     n_atoms = div(length(direction), n_coords_per_atom)
     max_disp = 0.0
     for a in 1:n_atoms
@@ -88,7 +90,20 @@ function optim_step!(
         max_disp = max(max_disp, disp)
     end
     if max_disp > max_move
-        direction .*= max_move / max_disp
+        reset!(state)
+        state.prev_x = copy(x)
+        state.prev_g = copy(g)
+        # Fall back to force direction, clipped to max_move
+        direction = copy(force)
+        max_disp_sd = 0.0
+        for a in 1:n_atoms
+            off = (a - 1) * n_coords_per_atom
+            disp = norm(@view direction[off+1:off+n_coords_per_atom])
+            max_disp_sd = max(max_disp_sd, disp)
+        end
+        if max_disp_sd > max_move
+            direction .*= max_move / max_disp_sd
+        end
     end
 
     return direction
