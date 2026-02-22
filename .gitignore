@@ -12,3 +12,13 @@ docs/Manifest.toml
 
 # rgpot build (cloned and built via pixi tasks)
 rgpot/
+
+# Model files and run outputs
+*.pt
+*.ini
+results_*/
+scratch/
+
+# Debug/scratch scripts (not part of the package)
+debug_gp.jl
+run_hcn_neb.jl
