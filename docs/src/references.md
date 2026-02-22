@@ -75,9 +75,9 @@ Key publications underlying the methods implemented in ChemGP.
   University of Iceland.
   [arXiv:2510.21368](https://arxiv.org/abs/2510.21368)
 
-## Distance Metrics and Pruning
+## Distance Metrics, Pruning, and Trust Regions
 
-- **Goswami, R. & Jónsson, H.** (2025). Adaptive pruning for increased
+- **Goswami, R. & Jonsson, H.** (2025). Adaptive pruning for increased
   robustness and reduced computational overhead in Gaussian process accelerated
   saddle point searches. *ChemPhysChem*.
   [doi:10.1002/cphc.202500730](https://doi.org/10.1002/cphc.202500730)
@@ -85,6 +85,25 @@ Key publications underlying the methods implemented in ChemGP.
 - **Goswami, R.** (2025). Two-dimensional RMSD projections for reaction path
   visualization and validation.
   [arXiv:2512.07329](https://arxiv.org/abs/2512.07329)
+
+- **Goswami, R.** (2025). Efficient exploration of chemical kinetics. PhD thesis,
+  University of Iceland.
+  [arXiv:2510.21368](https://arxiv.org/abs/2510.21368)
+
+## Optimal Transport and Earth Mover's Distance
+
+- **Villani, C.** (2009). *Optimal Transport: Old and New*. Springer.
+
+- **Rubner, Y., Tomasi, C. & Guibas, L. J.** (2000). The Earth Mover's Distance
+  as a metric for image retrieval. *Int. J. Computer Vision*, 40(2), 99--121.
+  [doi:10.1023/A:1026543900054](https://doi.org/10.1023/A:1026543900054)
+
+## Farthest Point Sampling and Subset Selection
+
+- **Goswami, R. & Jonsson, H.** (2025). Adaptive pruning for increased
+  robustness and reduced computational overhead in Gaussian process accelerated
+  saddle point searches. *ChemPhysChem*.
+  [doi:10.1002/cphc.202500730](https://doi.org/10.1002/cphc.202500730)
 
 ## RPC and Interoperable Potentials
 

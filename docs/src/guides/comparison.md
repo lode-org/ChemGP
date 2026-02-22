@@ -66,8 +66,8 @@ Mapping between ChemGP (Julia), gpr\_dimer\_matlab (MATLAB), and gpr\_optim (C++
 | ChemGP | MATLAB | C++ |
 |:-------|:-------|:----|
 | `max_1d_log_distance` | Inline | `max1dlog` |
-| `rmsd_distance` | — | `rmsd` |
-| `emd_distance` | — | `emd` |
+| `rmsd_distance` | -- | `rmsd` |
+| `emd_distance` | -- | `emd` |
 | `interatomic_distances` | Inline | `InverseDistanceFeatures` |
 
 ## Trust Region
@@ -75,8 +75,29 @@ Mapping between ChemGP (Julia), gpr\_dimer\_matlab (MATLAB), and gpr\_optim (C++
 | ChemGP | MATLAB | C++ |
 |:-------|:-------|:----|
 | `min_distance_to_data` | `disp_max` check | `minDistToData` |
+| `_trust_min_distance` (EMD) | -- | `minDistToData` (EMD) |
+| `_adaptive_trust_threshold` | -- | `adaptiveTrustThreshold` |
 | `check_interatomic_ratio` | Commented out | `checkInteratomicRatio` |
-| `remove_rigid_body_modes!` | — | `project_out_rot_trans` |
+| `remove_rigid_body_modes!` | -- | `project_out_rot_trans` |
+
+## FPS Subset Selection and HOD
+
+| ChemGP | MATLAB | C++ |
+|:-------|:-------|:----|
+| `_select_optim_subset` (FPS) | -- | `selectOptimSubset` |
+| `_extract_subset` | -- | `extractSubset` |
+| `HODState` / `_check_hod!` | -- | `HODMonitor` |
+| `_extract_hyperparams` | -- | `extractHyperparams` |
+| `farthest_point_sampling` | -- | `farthestPointSampling` |
+
+## NEB Parallel Evaluation
+
+| ChemGP | MATLAB | C++ |
+|:-------|:-------|:----|
+| `_eval_images!` (sequential) | Sequential loop | -- |
+| `_eval_images!` (parallel, `Threads.@spawn`) | -- | -- |
+| `make_oracle_pool` | -- | -- |
+| `_train_neb_gp` (shared helper) | -- | -- |
 
 ## Performance
 

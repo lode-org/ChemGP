@@ -73,7 +73,8 @@ result = neb_optimize(muller_brown_energy_gradient, x_start, x_end;
 ### GP-NEB-AIE ([`gp_neb_aie`](@ref))
 
 All Images Evaluated per outer iteration. The inner relaxation (many steps)
-operates on the cheap GP surface.
+operates on the cheap GP surface. Uses warm-started GP hyperparameters and
+regularized noise settings for stability (Goswami, Gunde & Jonsson 2026).
 
 ```julia
 result = gp_neb_aie(oracle, x_start, x_end, kernel; config = NEBConfig())
@@ -122,6 +123,74 @@ println("GP-NEB-AIE: $(result_aie.oracle_calls) oracle calls")
 result_oie = gp_neb_oie(muller_brown_energy_gradient, x_B, x_C, k; config)
 println("GP-NEB-OIE: $(result_oie.oracle_calls) oracle calls")
 ```
+
+## Parallel Oracle Evaluation
+
+Each NEB iteration evaluates the oracle at N-2 intermediate images. These
+evaluations are independent and can run in parallel when the server supports
+concurrent connections.
+
+All three NEB functions (`neb_optimize`, `gp_neb_aie`, `gp_neb_oie`) accept
+either a single oracle function or a vector of oracle functions (an oracle pool).
+When a pool is provided, image evaluations are dispatched across workers using
+`Threads.@spawn`:
+
+```julia
+using ChemGP
+
+# Single oracle (sequential)
+result = neb_optimize(oracle, x_start, x_end; config)
+
+# Oracle pool (parallel evaluation)
+n_workers = min(Threads.nthreads(), config.n_images - 2)
+oracles = make_oracle_pool("localhost", 12345, atmnrs, box, n_workers)
+result = neb_optimize(oracles, x_start, x_end; config)
+```
+
+Launch Julia with multiple threads for parallel evaluation:
+
+```bash
+julia -t auto --project=. examples/petmad_hcn_neb.jl
+# or specify explicitly:
+julia -t 8 --project=. examples/petmad_hcn_neb.jl
+```
+
+A single `Function` oracle still works -- the pool is optional. For GP-NEB
+OIE, which evaluates one image per iteration, parallelism does not apply.
+
+See also: [RPC Integration](@ref) for setting up parallel servers with
+gateway mode.
+
+## GP Training: Warm-Start and Noise Regularization
+
+The GP-NEB variants (AIE and OIE) share a common GP training strategy
+that differs from naive implementation in two important ways:
+
+### Warm-Start
+
+Rather than re-initializing kernel hyperparameters from scratch at each outer
+iteration, the optimized hyperparameters from the previous iteration seed the
+next optimization. This provides two benefits:
+- Fewer optimization iterations needed (the starting point is already close)
+- More stable convergence, especially for molecular kernels with many
+  lengthscale parameters
+
+### Noise Regularization
+
+For molecular kernels (e.g., `MolInvDistSE`), the gradient-gradient block
+``K_{GG}`` of the covariance matrix can be rank-deficient for small molecules
+where the number of inverse-distance features is less than the number of
+gradient components. The default noise settings prevent numerical instability:
+
+| Parameter | Value | Purpose |
+|:----------|:------|:--------|
+| `noise_var` | 1e-6 | Energy observation noise |
+| `grad_noise_var` | 1e-4 | Gradient observation noise (regularizes K\_GG) |
+| `jitter` | 1e-6 | Diagonal jitter for Cholesky stability |
+
+These are set with `fix_noise = true`, meaning they are not optimized but
+treated as fixed regularization. This is critical for small systems (e.g.,
+HCN with 3 atoms, 3 inverse distances, but 9 gradient components).
 
 ## Configuration
 
