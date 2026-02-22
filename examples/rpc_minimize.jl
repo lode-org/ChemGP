@@ -73,7 +73,7 @@ function main()
     println("Max |gradient|: $(maximum(abs.(result.G_final)))")
 
     # Clean up the RPC connection
-    close!(pot)
+    close(pot)
 end
 
 main()
