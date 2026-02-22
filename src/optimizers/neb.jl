@@ -206,8 +206,9 @@ function neb_optimize(
         push!(history["oracle_calls"], oracle_calls)
         push!(history["max_energy"], maximum(energies))
 
-        # Activate climbing image
-        if !ci_on && cfg.climbing_image && max_f < cfg.ci_activation_tol
+        # Activate climbing image (not on first iter -- path must relax first,
+        # otherwise SIDPP/IDPP initial paths can trigger CI prematurely)
+        if !ci_on && cfg.climbing_image && iter > 1 && max_f < cfg.ci_activation_tol
             ci_on = true
             cfg.verbose && @printf("  Iter %d: Climbing image activated (image %d)\n", iter, i_max)
             # Reset optimizer -- force landscape changed
@@ -396,8 +397,8 @@ function gp_neb_aie(
         cfg.verbose && @printf("GP-NEB-AIE outer %d: max|F| = %.5f | CI|F| = %.5f | N_train = %d | calls = %d\n",
                                outer_iter, max_f_true, ci_f_true, n_total, oracle_calls)
 
-        # Activate climbing image
-        if !ci_on && cfg.climbing_image && max_f_true < cfg.ci_activation_tol
+        # Activate climbing image (not on first outer iter -- path must relax first)
+        if !ci_on && cfg.climbing_image && outer_iter > 1 && max_f_true < cfg.ci_activation_tol
             ci_on = true
             cfg.verbose && @printf("  Climbing image activated (image %d)\n", i_max)
         end
@@ -643,8 +644,8 @@ function gp_neb_oie(
         cfg.verbose && @printf("GP-NEB-OIE outer %d: eval image %d | max|F| = %.5f | var = %.3e | N_train = %d | calls = %d\n",
                                outer_iter, i_eval, max_f, max_var, npoints(td), oracle_calls)
 
-        # Activate climbing image
-        if !ci_on && cfg.climbing_image && max_f < cfg.ci_activation_tol
+        # Activate climbing image (not on first outer iter -- path must relax first)
+        if !ci_on && cfg.climbing_image && outer_iter > 1 && max_f < cfg.ci_activation_tol
             ci_on = true
             cfg.verbose && @printf("  Climbing image activated (image %d)\n", i_max)
         end
