@@ -35,6 +35,7 @@ function neb_optimize(
     x_start::Vector{Float64},
     x_end::Vector{Float64};
     config::NEBConfig = NEBConfig(),
+    on_step::Union{Function,Nothing} = nothing,
 )
     cfg = config
     N = cfg.n_images
@@ -119,6 +120,9 @@ function neb_optimize(
         path.images = images
         path.energies = energies
         path.gradients = gradients
+
+        # Per-step callback (write .dat/.xyz files etc.)
+        on_step !== nothing && on_step(path, iter)
     end
 
     i_max = argmax(energies[2:end-1]) + 1
@@ -145,6 +149,7 @@ function gp_neb_aie(
     x_end::Vector{Float64},
     kernel;
     config::NEBConfig = NEBConfig(),
+    on_step::Union{Function,Nothing} = nothing,
 )
     cfg = config
     N = cfg.n_images
@@ -266,6 +271,8 @@ function gp_neb_aie(
         path.images = images
         path.energies = energies
         path.gradients = gradients
+
+        on_step !== nothing && on_step(path, outer_iter)
     end
 
     i_max = argmax(energies[2:end-1]) + 1
@@ -293,6 +300,7 @@ function gp_neb_oie(
     x_end::Vector{Float64},
     kernel;
     config::NEBConfig = NEBConfig(),
+    on_step::Union{Function,Nothing} = nothing,
 )
     cfg = config
     N = cfg.n_images
@@ -446,6 +454,9 @@ function gp_neb_oie(
         # Update path with relaxed images
         images = gp_images
         path.images = images
+
+        on_step !== nothing && on_step(path, outer_iter)
+
         # Reset evaluation flags for moved images
         for i in 2:(N - 1)
             evaluated[i] = false
