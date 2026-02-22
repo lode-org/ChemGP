@@ -21,4 +21,9 @@ using KernelFunctions
     if isfile(joinpath(@__DIR__, "cpp_consistency.jl"))
         include("cpp_consistency.jl")
     end
+
+    # RPC integration tests run only when rgpot is available
+    if ChemGP.rgpot_available() && ChemGP.potserv_available()
+        include("test_rpc.jl")
+    end
 end

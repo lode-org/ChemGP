@@ -4,6 +4,9 @@
 #
 # This integrates ChemGP with the rgpot library (OmniPotentRPC), allowing
 # GP-guided optimization to call potentials served over Cap'n Proto RPC.
+# Potentials can be served by rgpot's potserv, or by eOn's eonclient --serve
+# mode, which wraps any eOn potential (including Metatomic ML models) as an
+# rgpot-compatible Cap'n Proto server.
 #
 # Reference:
 #   Bigi, F. et al. (2026). metatensor and metatomic: foundational libraries
@@ -16,22 +19,186 @@
 # In a typical workflow:
 #   1. A server runs a potential (e.g., metatensor, EAM, ML potential):
 #        ./potserv 12345 CuH2
+#      Or via eOn (for Metatomic / ML potentials):
+#        eonclient --serve --potential metatomic --port 12345
 #   2. ChemGP connects as a client and uses the potential as its oracle:
-#        pot = RpcPotential("localhost", 12345, librgpot, atmnrs, box)
+#        pot = RpcPotential("localhost", 12345, atmnrs, box)
 #        result = gp_minimize(make_rpc_oracle(pot), x_init, kernel)
 #
 # Two C interfaces are supported:
 #   - pot_bridge.h (C++ bridge, simpler): pot_client_init / pot_calculate
 #   - rgpot.h (Rust core, richer error handling): rgpot_rpc_client_new / rgpot_rpc_calculate
 #
-# The user must build rgpot and provide the path to the shared library.
-# See: https://github.com/OmniPotentRPC/rgpot
+# Library discovery:
+#   The shared library is found automatically via find_rgpot_lib(), which
+#   searches RGPOT_LIB_PATH, RGPOT_BUILD_DIR, CONDA_PREFIX, and common
+#   relative paths. Set RGPOT_BUILD_DIR to the meson builddir of rgpot.
 #
 # Data layout (matching rgpot convention):
 #   positions: flat [x1,y1,z1, x2,y2,z2, ...] (same as ChemGP)
 #   atmnrs:    [Z1, Z2, ...] (atomic numbers)
 #   box:       flat 3x3 row-major [a_x,a_y,a_z, b_x,b_y,b_z, c_x,c_y,c_z]
 #   forces:    flat [Fx1,Fy1,Fz1, ...] (note: forces = -gradient)
+
+# ==============================================================================
+# Library and executable discovery
+# ==============================================================================
+
+const _RGPOT_BRIDGE_NAMES = Sys.isapple() ?
+    ["libpot_client_bridge.dylib"] :
+    ["libpot_client_bridge.so"]
+
+const _RGPOT_CORE_NAMES = Sys.isapple() ?
+    ["librgpot_core.dylib"] :
+    ["librgpot_core.so"]
+
+# Subdirectories within a meson/cmake build tree where libraries may appear
+const _LIB_SEARCH_SUBDIRS = ["CppCore/rgpot/rpc", "lib", "lib64", ""]
+
+"""
+    find_rgpot_lib(; variant=:bridge)
+
+Search for the rgpot shared library in common locations.
+
+Checks (in order):
+1. `RGPOT_LIB_PATH` environment variable (direct path to the .so/.dylib)
+2. `RGPOT_BUILD_DIR` environment variable (meson/cmake build directory)
+3. Pixi/conda prefix (`CONDA_PREFIX`)
+4. Relative paths from the ChemGP project root
+
+Returns the absolute path if found, `nothing` otherwise.
+"""
+function find_rgpot_lib(; variant::Symbol = :bridge)
+    names = variant == :bridge ? _RGPOT_BRIDGE_NAMES : _RGPOT_CORE_NAMES
+
+    # 1. Direct path from environment
+    env_path = get(ENV, "RGPOT_LIB_PATH", nothing)
+    if env_path !== nothing && isfile(env_path)
+        return abspath(env_path)
+    end
+
+    # 2. Build directory
+    build_dir = get(ENV, "RGPOT_BUILD_DIR", nothing)
+    if build_dir !== nothing
+        for name in names, sub in _LIB_SEARCH_SUBDIRS
+            p = joinpath(build_dir, sub, name)
+            isfile(p) && return abspath(p)
+        end
+    end
+
+    # 3. Conda / pixi prefix
+    prefix = get(ENV, "CONDA_PREFIX", nothing)
+    if prefix !== nothing
+        for name in names
+            p = joinpath(prefix, "lib", name)
+            isfile(p) && return abspath(p)
+        end
+    end
+
+    # 4. Relative to ChemGP project root
+    project_root = dirname(dirname(@__DIR__))
+    for rel in ["rgpot/builddir", "build/rgpot", "../rgpot/builddir"]
+        dir = joinpath(project_root, rel)
+        for name in names, sub in _LIB_SEARCH_SUBDIRS
+            p = joinpath(dir, sub, name)
+            isfile(p) && return abspath(p)
+        end
+    end
+
+    return nothing
+end
+
+"""
+    find_potserv(; build_dir=nothing)
+
+Search for the `potserv` executable in common locations.
+
+Checks `RGPOT_BUILD_DIR`, `CONDA_PREFIX`, and relative paths.
+Returns the absolute path if found, `nothing` otherwise.
+"""
+function find_potserv(; build_dir::Union{AbstractString,Nothing} = nothing)
+    dirs = String[]
+    if build_dir !== nothing
+        push!(dirs, build_dir)
+    end
+    env_dir = get(ENV, "RGPOT_BUILD_DIR", nothing)
+    if env_dir !== nothing
+        push!(dirs, env_dir)
+    end
+    prefix = get(ENV, "CONDA_PREFIX", nothing)
+    if prefix !== nothing
+        push!(dirs, joinpath(prefix, "bin"))
+    end
+    project_root = dirname(dirname(@__DIR__))
+    for rel in ["rgpot/builddir", "build/rgpot", "../rgpot/builddir"]
+        push!(dirs, joinpath(project_root, rel))
+    end
+
+    for dir in dirs
+        for sub in ["CppCore/rgpot/rpc", "bin", ""]
+            p = joinpath(dir, sub, "potserv")
+            isfile(p) && return abspath(p)
+        end
+    end
+    return nothing
+end
+
+"""
+    with_potserv(f, port, potential; build_dir=nothing, startup_time=2.0)
+
+Start a `potserv` process serving `potential` on `port`, execute `f()`,
+then kill the server. Useful for integration tests.
+
+# Example
+```julia
+with_potserv(12345, "LJ") do
+    pot = RpcPotential("localhost", 12345, Int32[0,0,0], zeros(9))
+    oracle = make_rpc_oracle(pot)
+    E, G = oracle(x)
+end
+```
+"""
+function with_potserv(
+    f::Function,
+    port::Integer,
+    potential::AbstractString;
+    build_dir::Union{AbstractString,Nothing} = nothing,
+    startup_time::Real = 2.0,
+)
+    exe = find_potserv(; build_dir)
+    exe === nothing && error(
+        "Could not find potserv executable. " *
+        "Set RGPOT_BUILD_DIR to the rgpot meson builddir.",
+    )
+
+    proc = run(
+        pipeline(`$exe $port $potential`; stdout = devnull, stderr = devnull);
+        wait = false,
+    )
+    sleep(startup_time)
+
+    try
+        f()
+    finally
+        kill(proc)
+        wait(proc)
+    end
+end
+
+"""
+    rgpot_available(; variant=:bridge)
+
+Return `true` if the rgpot shared library can be found.
+"""
+rgpot_available(; variant::Symbol = :bridge) = find_rgpot_lib(; variant) !== nothing
+
+"""
+    potserv_available(; build_dir=nothing)
+
+Return `true` if the potserv executable can be found.
+"""
+potserv_available(; build_dir::Union{AbstractString,Nothing} = nothing) =
+    find_potserv(; build_dir) !== nothing
 
 # ==============================================================================
 # RpcPotential: Wraps a connection to an rgpot Cap'n Proto server
@@ -90,6 +257,13 @@ pot = RpcPotential("localhost", 12345,
                    Int32[29, 29, 1, 1],  # Cu2H2
                    Float64[10,0,0, 0,10,0, 0,0,10])
 ```
+
+See also the auto-discovery constructor:
+```julia
+pot = RpcPotential("localhost", 12345,
+                   Int32[29, 29, 1, 1],
+                   Float64[10,0,0, 0,10,0, 0,0,10])
+```
 """
 function RpcPotential(
     host::AbstractString,
@@ -144,6 +318,40 @@ function RpcPotential(
     end
 
     return pot
+end
+
+"""
+    RpcPotential(host, port, atmnrs, box)
+
+Convenience constructor that auto-discovers the rgpot shared library.
+
+The library is searched via [`find_rgpot_lib`](@ref). Set the environment
+variable `RGPOT_LIB_PATH` (direct path) or `RGPOT_BUILD_DIR` (meson
+builddir) to guide discovery.
+
+# Example
+```julia
+# With RGPOT_BUILD_DIR set:
+pot = RpcPotential("localhost", 12345,
+                   Int32[29, 29, 1, 1],
+                   Float64[10,0,0, 0,10,0, 0,0,10])
+oracle = make_rpc_oracle(pot)
+result = gp_minimize(oracle, x_init, kernel)
+```
+"""
+function RpcPotential(
+    host::AbstractString,
+    port::Integer,
+    atmnrs::Vector{<:Integer},
+    box::Union{Vector{Float64},Matrix{Float64}},
+)
+    lib_path = find_rgpot_lib(; variant = :bridge)
+    lib_path === nothing && error(
+        "Could not find rgpot shared library. " *
+        "Set RGPOT_LIB_PATH or RGPOT_BUILD_DIR environment variable. " *
+        "See: https://github.com/OmniPotentRPC/rgpot",
+    )
+    return RpcPotential(host, port, lib_path, atmnrs, box)
 end
 
 function _get_bridge_error(fn_err::Ptr{Cvoid}, client::Ptr{Cvoid})
