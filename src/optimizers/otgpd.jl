@@ -108,6 +108,11 @@ Base.@kwdef struct OTGPDConfig
     perturb_scale::Float64      = 0.15
     max_training_points::Int    = 0
 
+    # FPS subset selection for hyperparameter optimization
+    fps_history::Int            = 5     # subset size for hyperopt (0=use all)
+    fps_latest_points::Int      = 2     # most recent points always included
+    fps_metric::Symbol          = :emd  # :emd, :max_1d_log, :euclidean
+
     verbose::Bool               = true
 end
 
@@ -132,6 +137,91 @@ struct OTGPDResult
     converged::Bool
     oracle_calls::Int
     history::Dict{String,Vector}
+end
+
+# ==============================================================================
+# FPS subset selection for hyperparameter optimization
+# ==============================================================================
+
+"""
+    _fps_distance_fn(metric::Symbol, atom_types::Vector{Int})
+
+Return a distance function matching the given metric symbol.
+"""
+function _fps_distance_fn(metric::Symbol, atom_types::Vector{Int} = Int[])
+    if metric == :emd
+        return (x1, x2) -> emd_distance(x1, x2; atom_types)
+    elseif metric == :max_1d_log
+        return max_1d_log_distance
+    else  # :euclidean fallback
+        return (x1, x2) -> norm(x1 - x2)
+    end
+end
+
+"""
+    _select_optim_subset(td, x_current, n_select, n_latest; distance_fn)
+
+Select a subset of training data for hyperparameter optimization using
+farthest point sampling. Always includes the `n_latest` most recently
+added points, then fills the rest via FPS from the remaining candidates.
+
+Returns column indices into `td.X`.
+"""
+function _select_optim_subset(
+    td::TrainingData,
+    x_current::Vector{Float64},
+    n_select::Int,
+    n_latest::Int;
+    distance_fn::Function = max_1d_log_distance,
+)
+    N = npoints(td)
+    n_select <= 0 && return collect(1:N)
+    n_select >= N && return collect(1:N)
+
+    # Always include the most recent n_latest points
+    n_latest = min(n_latest, N, n_select)
+    latest_idx = collect((N - n_latest + 1):N)
+
+    n_fps = n_select - n_latest
+    if n_fps <= 0
+        return latest_idx
+    end
+
+    # Candidates: everything except the latest points
+    cand_idx = setdiff(1:N, latest_idx)
+    if isempty(cand_idx)
+        return latest_idx
+    end
+
+    # Build candidate and selected matrices for FPS
+    cand_X = td.X[:, cand_idx]
+    sel_X = td.X[:, latest_idx]
+
+    fps_idx = farthest_point_sampling(cand_X, sel_X, n_fps;
+                                       distance_fn = distance_fn)
+
+    result = sort(vcat(latest_idx, cand_idx[fps_idx]))
+    return result
+end
+
+"""
+    _extract_subset(td, indices)
+
+Create a new TrainingData from selected column indices.
+"""
+function _extract_subset(td::TrainingData, indices::Vector{Int})
+    D = size(td.X, 1)
+    sub = TrainingData(D)
+    sub.X = td.X[:, indices]
+    sub.energies = td.energies[indices]
+    new_grads = Float64[]
+    for i in indices
+        s = (i - 1) * D + 1
+        e = i * D
+        append!(new_grads, td.gradients[s:e])
+    end
+    sub.gradients = new_grads
+    return sub
 end
 
 # Convert OTGPD config to DimerConfig for use by rotation/translation functions
@@ -390,13 +480,32 @@ function otgpd(
             end
         end
 
-        # Train GP
+        # Train GP: optimize hyperparameters on FPS subset, rebuild on full data
+        dist_fn = _fps_distance_fn(cfg.fps_metric)
+        if cfg.fps_history > 0 && npoints(td) > cfg.fps_history
+            sub_idx = _select_optim_subset(td, state.R, cfg.fps_history,
+                                            cfg.fps_latest_points;
+                                            distance_fn = dist_fn)
+            td_sub = _extract_subset(td, sub_idx)
+            cfg.verbose && @printf("  FPS subset: %d/%d points\n",
+                                   npoints(td_sub), npoints(td))
+        else
+            td_sub = td
+        end
+
+        y_sub, y_mean_sub, y_std_sub = normalize(td_sub)
+        model_sub = GPModel(kernel, td_sub.X, y_sub;
+                            noise_var = 1e-2,
+                            grad_noise_var = 1e-1,
+                            jitter = 1e-3)
+        train_model!(model_sub; iterations = cfg.gp_train_iter, verbose = cfg.verbose)
+
+        # Rebuild model on full data with optimized hyperparameters
         y_gp, y_mean, y_std = normalize(td)
-        model = GPModel(kernel, td.X, y_gp;
-                        noise_var = 1e-2,
-                        grad_noise_var = 1e-1,
-                        jitter = 1e-3)
-        train_model!(model; iterations = cfg.gp_train_iter)
+        model = GPModel(model_sub.kernel, td.X, y_gp;
+                        noise_var = model_sub.noise_var,
+                        grad_noise_var = model_sub.grad_noise_var,
+                        jitter = model_sub.jitter)
 
         # Adaptive GP convergence threshold
         T_gp = if cfg.divisor_T_dimer_gp > 0 && !isempty(F_true_history)
