@@ -196,7 +196,9 @@ function neb_optimize(
     optim = cfg.optimizer == :lbfgs ? OptimState(cfg.lbfgs_memory) : nothing
 
     ci_on = false
+    ci_ever = false  # track whether CI has ever been active (for logging)
     converged = false
+    baseline_force = 0.0
 
     for iter in 1:(cfg.max_iter)
         forces, max_f, ci_f, i_max = compute_all_neb_forces(path, cfg; ci_on)
@@ -206,21 +208,33 @@ function neb_optimize(
         push!(history["oracle_calls"], oracle_calls)
         push!(history["max_energy"], maximum(energies))
 
-        # Activate climbing image (not on first iter -- path must relax first,
-        # otherwise SIDPP/IDPP initial paths can trigger CI prematurely)
-        if !ci_on && cfg.climbing_image && iter > 1 && max_f < cfg.ci_activation_tol
-            ci_on = true
-            cfg.verbose && @printf("  Iter %d: Climbing image activated (image %d)\n", iter, i_max)
-            # Reset optimizer -- force landscape changed
-            optim !== nothing && reset!(optim)
-            # Recompute forces with CI
-            forces, max_f, ci_f, i_max = compute_all_neb_forces(path, cfg; ci_on)
+        # Record baseline force on first iteration
+        if iter == 1
+            baseline_force = max_f
+        end
+
+        # Dynamic CI activation (matches eOn NudgedElasticBand.cpp:405-410):
+        # CI is active when convergence metric drops below relative or absolute
+        # threshold. Unlike a sticky flag, CI can toggle off if forces increase.
+        # The convergence metric is CI-only when ci_converged_only and CI active.
+        conv_metric = (ci_on && cfg.ci_converged_only) ? ci_f : max_f
+        if cfg.climbing_image && iter > 1
+            ci_was_on = ci_on
+            ci_on = conv_metric < cfg.ci_trigger_rel * baseline_force ||
+                    conv_metric < cfg.ci_activation_tol
+            if ci_on && !ci_was_on
+                ci_ever = true
+                cfg.verbose && @printf("  Iter %d: Climbing image activated (image %d)\n", iter, i_max)
+                # Recompute forces with CI
+                forces, max_f, ci_f, i_max = compute_all_neb_forces(path, cfg; ci_on)
+                conv_metric = cfg.ci_converged_only ? ci_f : max_f
+            end
         end
 
         # Check convergence
         conv_check = ci_on || !cfg.climbing_image
-        if conv_check && max_f < cfg.conv_tol
-            cfg.verbose && @printf("NEB converged at iter %d: max|F| = %.5f\n", iter, max_f)
+        if conv_check && conv_metric < cfg.conv_tol
+            cfg.verbose && @printf("NEB converged at iter %d: max|F| = %.5f\n", iter, conv_metric)
             converged = true
             break
         end
@@ -383,6 +397,7 @@ function gp_neb_aie(
     ci_on = false
     converged = false
     prev_kern = nothing  # warm-start: reuse kernel from previous iteration
+    baseline_force = 0.0
 
     for outer_iter in 1:(cfg.max_outer_iter)
         # Compute true forces and check convergence
@@ -393,18 +408,28 @@ function gp_neb_aie(
         push!(history["oracle_calls"], oracle_calls)
         push!(history["max_energy"], maximum(energies))
 
+        if outer_iter == 1
+            baseline_force = max_f_true
+        end
+
         n_total = npoints(td) + (outer_iter <= cfg.num_hess_iter ? n_hess : 0)
         cfg.verbose && @printf("GP-NEB-AIE outer %d: max|F| = %.5f | CI|F| = %.5f | N_train = %d | calls = %d\n",
                                outer_iter, max_f_true, ci_f_true, n_total, oracle_calls)
 
-        # Activate climbing image (not on first outer iter -- path must relax first)
-        if !ci_on && cfg.climbing_image && outer_iter > 1 && max_f_true < cfg.ci_activation_tol
-            ci_on = true
-            cfg.verbose && @printf("  Climbing image activated (image %d)\n", i_max)
+        # Dynamic CI activation (matches eOn)
+        conv_metric = (ci_on && cfg.ci_converged_only) ? ci_f_true : max_f_true
+        if cfg.climbing_image && outer_iter > 1
+            ci_was_on = ci_on
+            ci_on = conv_metric < cfg.ci_trigger_rel * baseline_force ||
+                    conv_metric < cfg.ci_activation_tol
+            if ci_on && !ci_was_on
+                cfg.verbose && @printf("  Climbing image activated (image %d)\n", i_max)
+                conv_metric = cfg.ci_converged_only ? ci_f_true : max_f_true
+            end
         end
 
         conv_check = ci_on || !cfg.climbing_image
-        if conv_check && max_f_true < cfg.conv_tol
+        if conv_check && conv_metric < cfg.conv_tol
             cfg.verbose && println("GP-NEB-AIE converged!")
             converged = true
             break
@@ -581,6 +606,7 @@ function gp_neb_oie(
     ci_on = false
     converged = false
     prev_kern = nothing  # warm-start: reuse kernel from previous iteration
+    baseline_force = 0.0
 
     for outer_iter in 1:(cfg.max_outer_iter)
         # Train GP (shared helper handles kernel type dispatch, warm-start, noise)
@@ -641,18 +667,28 @@ function gp_neb_oie(
         push!(history["oracle_calls"], oracle_calls)
         push!(history["max_energy"], maximum(energies))
 
+        if outer_iter == 1
+            baseline_force = max_f
+        end
+
         cfg.verbose && @printf("GP-NEB-OIE outer %d: eval image %d | max|F| = %.5f | var = %.3e | N_train = %d | calls = %d\n",
                                outer_iter, i_eval, max_f, max_var, npoints(td), oracle_calls)
 
-        # Activate climbing image (not on first outer iter -- path must relax first)
-        if !ci_on && cfg.climbing_image && outer_iter > 1 && max_f < cfg.ci_activation_tol
-            ci_on = true
-            cfg.verbose && @printf("  Climbing image activated (image %d)\n", i_max)
+        # Dynamic CI activation (matches eOn)
+        conv_metric = (ci_on && cfg.ci_converged_only) ? ci_f : max_f
+        if cfg.climbing_image && outer_iter > 1
+            ci_was_on = ci_on
+            ci_on = conv_metric < cfg.ci_trigger_rel * baseline_force ||
+                    conv_metric < cfg.ci_activation_tol
+            if ci_on && !ci_was_on
+                cfg.verbose && @printf("  Climbing image activated (image %d)\n", i_max)
+                conv_metric = cfg.ci_converged_only ? ci_f : max_f
+            end
         end
 
         # Check convergence (only if all images evaluated or force is small enough)
         conv_check = ci_on || !cfg.climbing_image
-        if conv_check && all(evaluated[2:end-1]) && max_f < cfg.conv_tol
+        if conv_check && all(evaluated[2:end-1]) && conv_metric < cfg.conv_tol
             cfg.verbose && println("GP-NEB-OIE converged!")
             converged = true
             break
