@@ -134,4 +134,30 @@ digraph module_structure {
     distances -> trust [color="#cc9900"];
     emd -> sampling [color="#cc9900", style=dashed];
     sampling -> otgpd [color="#cc9900", label="pruning"];
+
+    // Package extension (weak dep)
+    subgraph cluster_ext {
+        label="Package Extensions";
+        style=dashed;
+        color="#999999";
+        node [fillcolor="#fce4ec"];
+
+        atomsbase_ext [label="ext/ChemGPAtomsBaseExt.jl\nchemgp_coords\natomsbase_system\natomsbase_neb_trajectory"];
+    }
+
+    subgraph cluster_weakdeps {
+        label="Weak Dependencies";
+        style=dashed;
+        color="#bbbbbb";
+        node [fillcolor="#e8e8e8"];
+
+        AtomsBase [label="AtomsBase\n(AbstractSystem)"];
+        Unitful [label="Unitful\n(unit conversion)"];
+        StaticArrays [label="StaticArrays\n(SVector)"];
+    }
+
+    AtomsBase -> atomsbase_ext [color="#cc3333", style=dashed, label="triggers"];
+    Unitful -> atomsbase_ext [color="#cc3333", style=dashed];
+    StaticArrays -> atomsbase_ext [color="#cc3333", style=dashed];
+    atomsbase_ext -> neb_types [color="#339933", style=dashed, label="produces flat\nvectors for NEB"];
 }

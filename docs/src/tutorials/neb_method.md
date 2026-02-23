@@ -293,6 +293,39 @@ cfg = NEBConfig(
 )
 ```
 
+## Loading Structures from Files
+
+For molecular systems, hardcoding coordinates is impractical. ChemGP integrates
+with [AtomsBase.jl](https://github.com/JuliaMolSim/AtomsBase.jl) via a package
+extension. Load structures from extended XYZ, POSCAR, or other formats using
+[AtomsIO.jl](https://github.com/mfherbst/AtomsIO.jl), then convert to
+ChemGP's flat-vector convention:
+
+```julia
+using ChemGP
+using AtomsBase, AtomsIO
+
+# Load reactant and product from extxyz files
+sys_r = load_system("reactant.extxyz")
+sys_p = load_system("product.extxyz")
+
+(; positions = X_r, atomic_numbers, box) = chemgp_coords(sys_r)
+(; positions = X_p) = chemgp_coords(sys_p)
+
+# Use X_r, X_p as NEB endpoints
+result = neb_optimize(oracle, X_r, X_p; config = NEBConfig())
+```
+
+After optimization, convert the NEB path back to AtomsBase systems for
+visualization or further computation:
+
+```julia
+trajectory = atomsbase_neb_trajectory(result, atomic_numbers, box)
+```
+
+See `examples/petmad_hcn_neb.jl` for a complete worked example using PET-MAD
+over RPC with AtomsIO-loaded HCN/HNC structures.
+
 ## Further Reading
 
 - Goswami, Gunde & Jónsson (2026) [arXiv:2601.12630](https://arxiv.org/abs/2601.12630) — enhanced CI-NEB with Hessian eigenmode alignment
