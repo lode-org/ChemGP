@@ -23,8 +23,7 @@
 
     # FPS with Euclidean distance should also work
     indices_euc = farthest_point_sampling(
-        candidates, X_selected, 3;
-        distance_fn = (a, b) -> norm(a - b),
+        candidates, X_selected, 3; distance_fn=(a, b) -> norm(a - b)
     )
     @test length(indices_euc) == 3
 end

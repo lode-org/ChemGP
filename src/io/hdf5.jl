@@ -34,8 +34,8 @@ Layout:
 function write_neb_hdf5(
     result::NEBResult,
     filename::AbstractString;
-    atomic_numbers::Union{AbstractVector{<:Integer},Nothing} = nothing,
-    cell::Union{AbstractVector{<:Real},Nothing} = nothing,
+    atomic_numbers::Union{AbstractVector{<:Integer},Nothing}=nothing,
+    cell::Union{AbstractVector{<:Real},Nothing}=nothing,
 )
     path = result.path
     n = length(path.images)
@@ -45,7 +45,7 @@ function write_neb_hdf5(
     f_para = _compute_f_para(path)
     dists = zeros(n)
     for i in 2:n
-        dists[i] = dists[i-1] + norm(path.images[i] .- path.images[i-1])
+        dists[i] = dists[i - 1] + norm(path.images[i] .- path.images[i - 1])
     end
 
     h5open(filename, "w") do fid
@@ -90,18 +90,19 @@ Returns `(path::NEBPath, iteration::Int) -> nothing`.
 """
 function make_neb_hdf5_writer(
     filename::AbstractString;
-    atomic_numbers::Union{AbstractVector{<:Integer},Nothing} = nothing,
-    cell::Union{AbstractVector{<:Real},Nothing} = nothing,
+    atomic_numbers::Union{AbstractVector{<:Integer},Nothing}=nothing,
+    cell::Union{AbstractVector{<:Real},Nothing}=nothing,
 )
     # Create the file with metadata on first call
     initialized = Ref(false)
 
-    return function(path::NEBPath, iteration::Int)
+    return function (path::NEBPath, iteration::Int)
         mode = initialized[] ? "r+" : "w"
         h5open(filename, mode) do fid
             if !initialized[]
                 g = create_group(fid, "metadata")
-                atomic_numbers !== nothing && (g["atomic_numbers"] = collect(Int32, atomic_numbers))
+                atomic_numbers !== nothing &&
+                    (g["atomic_numbers"] = collect(Int32, atomic_numbers))
                 cell !== nothing && (g["cell"] = collect(Float64, cell))
                 create_group(fid, "steps")
                 initialized[] = true
@@ -111,7 +112,7 @@ function make_neb_hdf5_writer(
             f_para = _compute_f_para(path)
             dists = zeros(n)
             for i in 2:n
-                dists[i] = dists[i-1] + norm(path.images[i] .- path.images[i-1])
+                dists[i] = dists[i - 1] + norm(path.images[i] .- path.images[i - 1])
             end
 
             step_name = @sprintf("%03d", iteration)

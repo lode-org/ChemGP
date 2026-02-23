@@ -24,17 +24,17 @@ This is the "oracle" in the GP-guided optimization loop. In real
 applications, each call corresponds to an expensive quantum chemistry
 calculation.
 """
-function lj_energy_gradient(x::AbstractVector{<:Real}; epsilon = 1.0, sigma = 1.0)
+function lj_energy_gradient(x::AbstractVector{<:Real}; epsilon=1.0, sigma=1.0)
     N = div(length(x), 3)
     E = 0.0
     G = zeros(length(x))
 
     for i in 1:N
-        for j in (i+1):N
+        for j in (i + 1):N
             # Displacement vector
-            dx = x[3(j-1)+1] - x[3(i-1)+1]
-            dy = x[3(j-1)+2] - x[3(i-1)+2]
-            dz = x[3(j-1)+3] - x[3(i-1)+3]
+            dx = x[3(j - 1) + 1] - x[3(i - 1) + 1]
+            dy = x[3(j - 1) + 2] - x[3(i - 1) + 2]
+            dz = x[3(j - 1) + 3] - x[3(i - 1) + 3]
             r2 = dx^2 + dy^2 + dz^2
             r = sqrt(r2)
 
@@ -48,9 +48,9 @@ function lj_energy_gradient(x::AbstractVector{<:Real}; epsilon = 1.0, sigma = 1.
 
             # Gradient = dE/dx (opposite sign to force on atom i)
             for d in 1:3
-                rij_d = x[3(j-1)+d] - x[3(i-1)+d]
-                G[3(i-1)+d] -= f_over_r * rij_d
-                G[3(j-1)+d] += f_over_r * rij_d
+                rij_d = x[3(j - 1) + d] - x[3(i - 1) + d]
+                G[3(i - 1) + d] -= f_over_r * rij_d
+                G[3(j - 1) + d] += f_over_r * rij_d
             end
         end
     end
@@ -68,7 +68,7 @@ The first atom is placed at the origin. Subsequent atoms are placed at random
 positions within a sphere, rejecting any placement that would create a pair
 distance shorter than `min_dist`.
 """
-function random_cluster(N_atoms::Int; min_dist = 1.5, max_attempts = 10000)
+function random_cluster(N_atoms::Int; min_dist=1.5, max_attempts=10000)
     coords = zeros(3 * N_atoms)
     # First atom at origin (already zeros)
 
@@ -81,8 +81,8 @@ function random_cluster(N_atoms::Int; min_dist = 1.5, max_attempts = 10000)
             candidate = [r * sin(phi) * cos(theta), r * sin(phi) * sin(theta), r * cos(phi)]
 
             too_close = false
-            for j in 1:(i-1)
-                xj = @view coords[(3j-2):(3j)]
+            for j in 1:(i - 1)
+                xj = @view coords[(3j - 2):(3j)]
                 if sqrt(sum((candidate .- xj) .^ 2)) < min_dist
                     too_close = true
                     break
@@ -90,7 +90,7 @@ function random_cluster(N_atoms::Int; min_dist = 1.5, max_attempts = 10000)
             end
 
             if !too_close
-                coords[(3i-2):(3i)] = candidate
+                coords[(3i - 2):(3i)] = candidate
                 placed = true
                 break
             end

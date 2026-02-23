@@ -2,15 +2,15 @@ using Documenter
 using ChemGP
 
 makedocs(;
-    modules = [ChemGP],
-    sitename = "ChemGP.jl",
-    authors = "Rohit Goswami and contributors",
-    format = Documenter.HTML(;
-        prettyurls = get(ENV, "CI", nothing) == "true",
-        canonical = "https://lode-org.github.io/ChemGP.jl",
+    modules=[ChemGP],
+    sitename="ChemGP.jl",
+    authors="Rohit Goswami and contributors",
+    format=Documenter.HTML(;
+        prettyurls=get(ENV, "CI", nothing) == "true",
+        canonical="https://lode-org.github.io/ChemGP.jl",
     ),
-    repo = Remotes.GitHub("lode-org", "ChemGP.jl"),
-    pages = [
+    repo=Remotes.GitHub("lode-org", "ChemGP.jl"),
+    pages=[
         "Home" => "index.md",
         "Installation" => "installation.md",
         "Tutorials" => [
@@ -39,11 +39,7 @@ makedocs(;
         ],
         "References" => "references.md",
     ],
-    warnonly = [:missing_docs],
+    warnonly=[:missing_docs],
 )
 
-deploydocs(;
-    repo = "github.com/lode-org/ChemGP.jl",
-    devbranch = "main",
-    push_preview = true,
-)
+deploydocs(; repo="github.com/lode-org/ChemGP.jl", devbranch="main", push_preview=true)

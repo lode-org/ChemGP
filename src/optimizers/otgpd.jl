@@ -72,65 +72,65 @@ and data management options.
 """
 Base.@kwdef struct OTGPDConfig
     # Core convergence
-    T_dimer::Float64            = 0.01
-    T_dimer_gp_init::Float64    = 0.001
+    T_dimer::Float64 = 0.01
+    T_dimer_gp_init::Float64 = 0.001
     divisor_T_dimer_gp::Float64 = 10.0
-    T_angle_rot::Float64        = 1e-3
+    T_angle_rot::Float64 = 1e-3
 
     # Iteration limits
-    max_outer_iter::Int         = 50
-    max_inner_iter::Int         = 10000
-    max_rot_iter::Int           = 5
+    max_outer_iter::Int = 50
+    max_inner_iter::Int = 10000
+    max_rot_iter::Int = 5
 
     # Dimer geometry
-    dimer_sep::Float64          = 0.01
-    eval_image1::Bool           = true
+    dimer_sep::Float64 = 0.01
+    eval_image1::Bool = true
 
     # Rotation/translation
-    rotation_method::Symbol     = :lbfgs
-    translation_method::Symbol  = :lbfgs
-    lbfgs_memory::Int           = 5
-    step_convex::Float64        = 0.1
-    max_step::Float64           = 0.5
-    alpha_trans::Float64        = 0.01
+    rotation_method::Symbol = :lbfgs
+    translation_method::Symbol = :lbfgs
+    lbfgs_memory::Int = 5
+    step_convex::Float64 = 0.1
+    max_step::Float64 = 0.5
+    alpha_trans::Float64 = 0.01
 
     # Trust region
-    trust_radius::Float64       = 0.5
-    ratio_at_limit::Float64     = 2 / 3
+    trust_radius::Float64 = 0.5
+    ratio_at_limit::Float64 = 2 / 3
 
     # Initial rotation
-    initial_rotation::Bool      = true
-    max_initial_rot::Int        = 20
+    initial_rotation::Bool = true
+    max_initial_rot::Int = 20
 
     # Data management
-    gp_train_iter::Int          = 300
-    n_initial_perturb::Int      = 4
-    perturb_scale::Float64      = 0.15
-    max_training_points::Int    = 0
+    gp_train_iter::Int = 300
+    n_initial_perturb::Int = 4
+    perturb_scale::Float64 = 0.15
+    max_training_points::Int = 0
 
     # FPS subset selection for hyperparameter optimization
-    fps_history::Int            = 5     # subset size for hyperopt (0=use all)
-    fps_latest_points::Int      = 2     # most recent points always included
-    fps_metric::Symbol          = :emd  # :emd, :max_1d_log, :euclidean
+    fps_history::Int = 5     # subset size for hyperopt (0=use all)
+    fps_latest_points::Int = 2     # most recent points always included
+    fps_metric::Symbol = :emd  # :emd, :max_1d_log, :euclidean
 
     # Hyperparameter Oscillation Detection (HOD)
-    use_hod::Bool               = true
-    hod_monitoring_window::Int  = 5
+    use_hod::Bool = true
+    hod_monitoring_window::Int = 5
     hod_flip_threshold::Float64 = 0.8
-    hod_history_increment::Int  = 2
-    hod_max_history::Int        = 30
+    hod_history_increment::Int = 2
+    hod_max_history::Int = 30
 
     # Trust region metric and adaptive threshold
-    trust_metric::Symbol         = :emd
-    atom_types::Vector{Int}      = Int[]
+    trust_metric::Symbol = :emd
+    atom_types::Vector{Int} = Int[]
     use_adaptive_threshold::Bool = false
-    adaptive_t_min::Float64      = 0.15
-    adaptive_delta_t::Float64    = 0.35
-    adaptive_n_half::Int         = 50
-    adaptive_A::Float64          = 1.3
-    adaptive_floor::Float64      = 0.2
+    adaptive_t_min::Float64 = 0.15
+    adaptive_delta_t::Float64 = 0.35
+    adaptive_n_half::Int = 50
+    adaptive_A::Float64 = 1.3
+    adaptive_floor::Float64 = 0.2
 
-    verbose::Bool               = true
+    verbose::Bool = true
 end
 
 """
@@ -161,8 +161,9 @@ end
 # ==============================================================================
 
 # Thin wrapper calling shared trust utility (see distances_trust.jl)
-_fps_distance_fn(metric::Symbol, atom_types::Vector{Int} = Int[]) =
+function _fps_distance_fn(metric::Symbol, atom_types::Vector{Int}=Int[])
     trust_distance_fn(metric, atom_types)
+end
 
 """
     _select_optim_subset(td, x_current, n_select, n_latest; distance_fn)
@@ -178,7 +179,7 @@ function _select_optim_subset(
     x_current::Vector{Float64},
     n_select::Int,
     n_latest::Int;
-    distance_fn::Function = max_1d_log_distance,
+    distance_fn::Function=max_1d_log_distance,
 )
     N = npoints(td)
     n_select <= 0 && return collect(1:N)
@@ -203,8 +204,7 @@ function _select_optim_subset(
     cand_X = td.X[:, cand_idx]
     sel_X = td.X[:, latest_idx]
 
-    fps_idx = farthest_point_sampling(cand_X, sel_X, n_fps;
-                                       distance_fn = distance_fn)
+    fps_idx = farthest_point_sampling(cand_X, sel_X, n_fps; distance_fn=distance_fn)
 
     result = sort(vcat(latest_idx, cand_idx[fps_idx]))
     return result
@@ -298,8 +298,8 @@ function _check_hod!(hod::HODState, model::GPModel, cfg::OTGPDConfig)
     n_pairs = 0
 
     for i in max(n - window, 2):(n - 1)
-        d1 = hod.history[i] - hod.history[i-1]
-        d2 = hod.history[i+1] - hod.history[i]
+        d1 = hod.history[i] - hod.history[i - 1]
+        d2 = hod.history[i + 1] - hod.history[i]
         for j in eachindex(d1)
             if abs(d1[j]) > 1e-10 && abs(d2[j]) > 1e-10
                 n_pairs += 1
@@ -313,12 +313,16 @@ function _check_hod!(hod::HODState, model::GPModel, cfg::OTGPDConfig)
     flip_ratio = n_pairs > 0 ? n_flips / n_pairs : 0.0
 
     if flip_ratio > cfg.hod_flip_threshold
-        new_fps = min(hod.current_fps_history + cfg.hod_history_increment,
-                      cfg.hod_max_history)
+        new_fps = min(
+            hod.current_fps_history + cfg.hod_history_increment, cfg.hod_max_history
+        )
         if new_fps > hod.current_fps_history
             hod.current_fps_history = new_fps
-            cfg.verbose && @printf("  HOD: oscillation detected (%.0f%%), FPS history -> %d\n",
-                                   flip_ratio * 100, new_fps)
+            cfg.verbose && @printf(
+                "  HOD: oscillation detected (%.0f%%), FPS history -> %d\n",
+                flip_ratio * 100,
+                new_fps
+            )
             return true
         end
     end
@@ -331,10 +335,17 @@ end
 
 # Thin wrapper calling shared trust utility (see distances_trust.jl)
 function _adaptive_trust_threshold(cfg::OTGPDConfig, n_data::Int, n_atoms::Int)
-    adaptive_trust_threshold(cfg.trust_radius, n_data, n_atoms;
-        use_adaptive=cfg.use_adaptive_threshold, t_min=cfg.adaptive_t_min,
-        delta_t=cfg.adaptive_delta_t, n_half=cfg.adaptive_n_half,
-        A=cfg.adaptive_A, floor=cfg.adaptive_floor)
+    adaptive_trust_threshold(
+        cfg.trust_radius,
+        n_data,
+        n_atoms;
+        use_adaptive=cfg.use_adaptive_threshold,
+        t_min=cfg.adaptive_t_min,
+        delta_t=cfg.adaptive_delta_t,
+        n_half=cfg.adaptive_n_half,
+        A=cfg.adaptive_A,
+        floor=cfg.adaptive_floor,
+    )
 end
 
 # Thin wrappers calling shared trust utilities (see distances_trust.jl)
@@ -348,24 +359,24 @@ function _trust_min_distance(x::AbstractVector, td::TrainingData, cfg::OTGPDConf
 end
 
 # Convert OTGPD config to DimerConfig for use by rotation/translation functions
-function _make_dimer_config(cfg::OTGPDConfig; T_force_gp::Float64 = 0.001)
+function _make_dimer_config(cfg::OTGPDConfig; T_force_gp::Float64=0.001)
     DimerConfig(;
-        T_force_true = cfg.T_dimer,
-        T_force_gp = T_force_gp,
-        T_angle_rot = cfg.T_angle_rot,
-        trust_radius = cfg.trust_radius,
-        ratio_at_limit = cfg.ratio_at_limit,
-        max_outer_iter = 1,  # Not used by rotation/translation
-        max_inner_iter = 1,
-        max_rot_iter = cfg.max_rot_iter,
-        alpha_trans = cfg.alpha_trans,
-        gp_train_iter = cfg.gp_train_iter,
-        rotation_method = cfg.rotation_method,
-        translation_method = cfg.translation_method,
-        lbfgs_memory = cfg.lbfgs_memory,
-        max_step = cfg.max_step,
-        step_convex = cfg.step_convex,
-        verbose = false,
+        T_force_true=cfg.T_dimer,
+        T_force_gp=T_force_gp,
+        T_angle_rot=cfg.T_angle_rot,
+        trust_radius=cfg.trust_radius,
+        ratio_at_limit=cfg.ratio_at_limit,
+        max_outer_iter=1,  # Not used by rotation/translation
+        max_inner_iter=1,
+        max_rot_iter=cfg.max_rot_iter,
+        alpha_trans=cfg.alpha_trans,
+        gp_train_iter=cfg.gp_train_iter,
+        rotation_method=cfg.rotation_method,
+        translation_method=cfg.translation_method,
+        lbfgs_memory=cfg.lbfgs_memory,
+        max_step=cfg.max_step,
+        step_convex=cfg.step_convex,
+        verbose=false,
     )
 end
 
@@ -415,8 +426,8 @@ function otgpd(
     x_init::Vector{Float64},
     orient_init::Vector{Float64},
     kernel;
-    config::OTGPDConfig = OTGPDConfig(),
-    training_data::Union{Nothing,TrainingData} = nothing,
+    config::OTGPDConfig=OTGPDConfig(),
+    training_data::Union{Nothing,TrainingData}=nothing,
 )
     D = length(x_init)
     cfg = config
@@ -466,12 +477,15 @@ function otgpd(
 
     cfg.verbose && println("=" ^ 70)
     cfg.verbose && println("OTGPD — Optimal Transport GP Dimer")
-    cfg.verbose && @printf("  Rotation: %s | Translation: %s\n",
-                           cfg.rotation_method, cfg.translation_method)
+    cfg.verbose && @printf(
+        "  Rotation: %s | Translation: %s\n",
+        cfg.rotation_method,
+        cfg.translation_method
+    )
     cfg.verbose && @printf("  Adaptive threshold: divisor = %.1f\n", cfg.divisor_T_dimer_gp)
     cfg.verbose && println("=" ^ 70)
-    cfg.verbose && @printf("Training points: %d | Dimer sep: %.4f\n\n",
-                           npoints(td), cfg.dimer_sep)
+    cfg.verbose &&
+        @printf("Training points: %d | Dimer sep: %.4f\n\n", npoints(td), cfg.dimer_sep)
 
     history = Dict{String,Vector}(
         "E_true" => Float64[],
@@ -509,8 +523,13 @@ function otgpd(
             # Initial angle estimate
             dtheta = 0.5 * atan(0.5 * F_rot_norm / (abs(C) + 1e-10))
 
-            cfg.verbose && @printf("  Init rot %d: |F_rot| = %.5f, C = %+.3e, dθ = %.5f\n",
-                                   init_rot, F_rot_norm, C, dtheta)
+            cfg.verbose && @printf(
+                "  Init rot %d: |F_rot| = %.5f, C = %+.3e, dθ = %.5f\n",
+                init_rot,
+                F_rot_norm,
+                C,
+                dtheta
+            )
 
             if dtheta < cfg.T_angle_rot
                 cfg.verbose && println("  Initial rotation converged.")
@@ -568,8 +587,8 @@ function otgpd(
         C_fin = curvature(G0_fin, G1_fin, state.orient, state.dimer_sep)
         push!(F_true_history, F_fin)
 
-        cfg.verbose && @printf("\n  After init rotation: |F| = %.5f, C = %+.3e\n\n",
-                               F_fin, C_fin)
+        cfg.verbose &&
+            @printf("\n  After init rotation: |F| = %.5f, C = %+.3e\n\n", F_fin, C_fin)
     end
 
     # =========================================================================
@@ -594,14 +613,19 @@ function otgpd(
     n_atoms = div(D, 3)
 
     for outer_iter in 1:cfg.max_outer_iter
-        cfg.verbose && @printf("\n--- Outer %d (oracle calls: %d, training: %d) ---\n",
-                               outer_iter, oracle_calls, npoints(td))
+        cfg.verbose && @printf(
+            "\n--- Outer %d (oracle calls: %d, training: %d) ---\n",
+            outer_iter,
+            oracle_calls,
+            npoints(td)
+        )
 
         # Optional: prune training data
         if cfg.max_training_points > 0
             n_removed = prune_training_data!(td, state.R, cfg.max_training_points)
             if n_removed > 0
-                cfg.verbose && @printf("  Pruned %d points (kept %d)\n", n_removed, npoints(td))
+                cfg.verbose &&
+                    @printf("  Pruned %d points (kept %d)\n", n_removed, npoints(td))
             end
         end
 
@@ -610,12 +634,12 @@ function otgpd(
         dist_fn = _fps_distance_fn(cfg.fps_metric, cfg.atom_types)
         fps_size = hod_state !== nothing ? hod_state.current_fps_history : cfg.fps_history
         if fps_size > 0 && npoints(td) > fps_size
-            sub_idx = _select_optim_subset(td, state.R, fps_size,
-                                            cfg.fps_latest_points;
-                                            distance_fn = dist_fn)
+            sub_idx = _select_optim_subset(
+                td, state.R, fps_size, cfg.fps_latest_points; distance_fn=dist_fn
+            )
             td_sub = _extract_subset(td, sub_idx)
-            cfg.verbose && @printf("  FPS subset: %d/%d points\n",
-                                   npoints(td_sub), npoints(td))
+            cfg.verbose &&
+                @printf("  FPS subset: %d/%d points\n", npoints(td_sub), npoints(td))
         else
             td_sub = td
         end
@@ -634,37 +658,48 @@ function otgpd(
                 model.kernel  # warm-start from previous iteration
             end
 
-            model_sub = GPModel(kern_sub, td_sub.X, y_sub;
-                                noise_var = 1e-6, grad_noise_var = 1e-4, jitter = 1e-6)
-            train_model!(model_sub; iterations = cfg.gp_train_iter,
-                         fix_noise = true, verbose = cfg.verbose,
-                         barrier_strength = barrier)
+            model_sub = GPModel(
+                kern_sub, td_sub.X, y_sub; noise_var=1e-6, grad_noise_var=1e-4, jitter=1e-6
+            )
+            train_model!(
+                model_sub;
+                iterations=cfg.gp_train_iter,
+                fix_noise=true,
+                verbose=cfg.verbose,
+                barrier_strength=barrier,
+            )
 
             # Rebuild on full data
             E_ref = td.energies[1]
             y_gp = vcat(td.energies .- E_ref, td.gradients)
             y_mean = E_ref
             y_std = 1.0
-            model = GPModel(model_sub.kernel, td.X, y_gp;
-                            noise_var = model_sub.noise_var,
-                            grad_noise_var = model_sub.grad_noise_var,
-                            jitter = model_sub.jitter)
+            model = GPModel(
+                model_sub.kernel,
+                td.X,
+                y_gp;
+                noise_var=model_sub.noise_var,
+                grad_noise_var=model_sub.grad_noise_var,
+                jitter=model_sub.jitter,
+            )
         else
             # Generic kernel path: normalize, optimize noise
             y_sub, y_mean_sub, y_std_sub = normalize(td_sub)
-            model_sub = GPModel(kernel, td_sub.X, y_sub;
-                                noise_var = 1e-2,
-                                grad_noise_var = 1e-1,
-                                jitter = 1e-3)
-            train_model!(model_sub; iterations = cfg.gp_train_iter,
-                         verbose = cfg.verbose)
+            model_sub = GPModel(
+                kernel, td_sub.X, y_sub; noise_var=1e-2, grad_noise_var=1e-1, jitter=1e-3
+            )
+            train_model!(model_sub; iterations=cfg.gp_train_iter, verbose=cfg.verbose)
 
             # Rebuild on full data
             y_gp, y_mean, y_std = normalize(td)
-            model = GPModel(model_sub.kernel, td.X, y_gp;
-                            noise_var = model_sub.noise_var,
-                            grad_noise_var = model_sub.grad_noise_var,
-                            jitter = model_sub.jitter)
+            model = GPModel(
+                model_sub.kernel,
+                td.X,
+                y_gp;
+                noise_var=model_sub.noise_var,
+                grad_noise_var=model_sub.grad_noise_var,
+                jitter=model_sub.jitter,
+            )
         end
 
         # HOD: check for hyperparameter oscillation, enlarge FPS if needed
@@ -691,8 +726,7 @@ function otgpd(
         # Inner loop: optimize on GP surface
         for inner_iter in 1:cfg.max_inner_iter
             # Rotate dimer to lowest curvature mode
-            rotate_dimer!(state, model, dimer_cfg; y_std, verbose = false,
-                          rot_hist, cg_state)
+            rotate_dimer!(state, model, dimer_cfg; y_std, verbose=false, rot_hist, cg_state)
 
             # Predict at current position
             G0, G1, E0 = predict_dimer_gradients(state, model, y_std)
@@ -700,8 +734,15 @@ function otgpd(
 
             if cfg.translation_method == :lbfgs && trans_hist !== nothing
                 R_new, F_trans_cur, C = translate_dimer_lbfgs!(
-                    state, G0, G1, dimer_cfg, trans_hist, td;
-                    F_trans_prev, y_std, verbose = false,
+                    state,
+                    G0,
+                    G1,
+                    dimer_cfg,
+                    trans_hist,
+                    td;
+                    F_trans_prev,
+                    y_std,
+                    verbose=false,
                 )
                 F_norm = norm(F_trans_cur)
 
@@ -727,14 +768,24 @@ function otgpd(
 
             if inner_iter % 100 == 0 || inner_iter == 1
                 min_dist = min_distance_to_data(state.R, td.X)
-                cfg.verbose && @printf("  GP step %4d: E = %8.4f | |F| = %.5f | C = %+.3e | d = %.4f\n",
-                                       inner_iter, E0_phys, F_norm, C, min_dist)
+                cfg.verbose && @printf(
+                    "  GP step %4d: E = %8.4f | |F| = %.5f | C = %+.3e | d = %.4f\n",
+                    inner_iter,
+                    E0_phys,
+                    F_norm,
+                    C,
+                    min_dist
+                )
             end
 
             # Check GP convergence
             if F_norm < T_gp
-                cfg.verbose && @printf("  GP converged at step %d (|F| = %.5f < T_gp = %.5f)\n",
-                                       inner_iter, F_norm, T_gp)
+                cfg.verbose && @printf(
+                    "  GP converged at step %d (|F| = %.5f < T_gp = %.5f)\n",
+                    inner_iter,
+                    F_norm,
+                    T_gp
+                )
                 state.R = R_new
                 break
             end
@@ -746,14 +797,19 @@ function otgpd(
                 step_vec = R_new - state.R
                 scale = trust_thresh / trust_dist * 0.95
                 state.R = state.R + scale * step_vec
-                cfg.verbose && @printf("  Trust radius at step %d (%.4f > %.4f)\n",
-                                       inner_iter, trust_dist, trust_thresh)
+                cfg.verbose && @printf(
+                    "  Trust radius at step %d (%.4f > %.4f)\n",
+                    inner_iter,
+                    trust_dist,
+                    trust_thresh
+                )
                 break
             end
 
             # Inter-atomic distance ratio check
             if !check_interatomic_ratio(R_new, td.X, cfg.ratio_at_limit)
-                cfg.verbose && @printf("  Inter-atomic ratio violated at step %d\n", inner_iter)
+                cfg.verbose &&
+                    @printf("  Inter-atomic ratio violated at step %d\n", inner_iter)
                 break
             end
 
@@ -787,8 +843,9 @@ function otgpd(
         push!(history["curv_true"], C_true)
         push!(history["oracle_calls"], oracle_calls)
 
-        cfg.verbose && @printf("  True: E = %8.4f | |F| = %.5f | C = %+.3e\n",
-                               E_true, F_norm_true, C_true)
+        cfg.verbose && @printf(
+            "  True: E = %8.4f | |F| = %.5f | C = %+.3e\n", E_true, F_norm_true, C_true
+        )
 
         # Check convergence: small force + negative curvature
         if F_norm_true < cfg.T_dimer && (isnan(C_true) || C_true < 0.0)

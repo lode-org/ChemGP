@@ -47,7 +47,7 @@ struct RFFModel
     c::Float64
     frozen::Vector{Float64}
     alpha::Vector{Float64}
-    A_chol::LinearAlgebra.Cholesky{Float64, Matrix{Float64}}
+    A_chol::LinearAlgebra.Cholesky{Float64,Matrix{Float64}}
 end
 
 """
@@ -71,8 +71,7 @@ function _rff_features(
     z = c .* cos.(u)
 
     # Jacobian of inverse distances w.r.t. Cartesian coordinates
-    J_phi = ForwardDiff.jacobian(
-        x_ -> compute_inverse_distances(x_, frozen), collect(x))
+    J_phi = ForwardDiff.jacobian(x_ -> compute_inverse_distances(x_, frozen), collect(x))
     # J_phi: (d_feat, D), W: (D_rff, d_feat)
     # J_z = -c * sin(u) .* (W * J_phi), element-wise broadcast on columns
     sin_u = sin.(u)
@@ -98,8 +97,8 @@ function build_rff(
     X_train::Matrix{Float64},
     y_train::Vector{Float64},
     D_rff::Int;
-    noise_var::Float64 = 1e-6,
-    grad_noise_var::Float64 = 1e-4,
+    noise_var::Float64=1e-6,
+    grad_noise_var::Float64=1e-4,
 )
     D, N = size(X_train)
     frozen = Vector{Float64}(kernel.frozen_coords)
@@ -143,7 +142,7 @@ function build_rff(
     # Noise precision vector
     prec = zeros(n_obs)
     prec[1:N] .= 1.0 / noise_var
-    prec[N+1:end] .= 1.0 / grad_noise_var
+    prec[(N + 1):end] .= 1.0 / grad_noise_var
 
     # Bayesian linear regression: A = Z^T diag(prec) Z + I
     ZtP = Z' .* prec'   # (D_rff, n_obs)
@@ -174,7 +173,7 @@ function predict(rff::RFFModel, X_test::Matrix{Float64})
 
         offset = (i - 1) * dim_block
         result[offset + 1] = dot(z, rff.alpha)
-        result[offset+2 : offset+dim_block] = J_z' * rff.alpha
+        result[(offset + 2):(offset + dim_block)] = J_z' * rff.alpha
     end
 
     return result

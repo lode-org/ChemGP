@@ -34,8 +34,9 @@ Returns a vector of image position vectors.
 function _init_neb_images(cfg::NEBConfig, x_start, x_end)
     if cfg.initializer == :sidpp
         cfg.verbose && println("  Generating S-IDPP initial path...")
-        sidpp_interpolation(x_start, x_end, cfg.images + 2;
-                            spring_constant = cfg.spring_constant)
+        sidpp_interpolation(
+            x_start, x_end, cfg.images + 2; spring_constant=cfg.spring_constant
+        )
     elseif cfg.initializer == :idpp
         cfg.verbose && println("  Generating IDPP initial path...")
         idpp_interpolation(x_start, x_end, cfg.images + 2)
@@ -68,8 +69,9 @@ function _init_hessian_data(cfg::NEBConfig, ep_oracle, x_start, x_end, D)
             append!(hess_G, G)
             calls += 1
         end
-        cfg.verbose && @printf("  Generated %d virtual Hessian points (%d oracle calls)\n",
-                               n_hess, n_hess)
+        cfg.verbose && @printf(
+            "  Generated %d virtual Hessian points (%d oracle calls)\n", n_hess, n_hess
+        )
     end
 
     return hess_X, hess_E, hess_G, n_hess, calls
@@ -89,8 +91,8 @@ function _check_ci(cfg::NEBConfig, ci_on::Bool, max_f, ci_f, baseline_force, ite
         # CI toggle always uses max_f over all images (matching eOn):
         # "is the band relaxed enough for climbing?" is a band-level
         # question, independent of ci_converged_only.
-        new_ci = max_f < cfg.ci_trigger_rel * baseline_force ||
-                 max_f < cfg.ci_activation_tol
+        new_ci =
+            max_f < cfg.ci_trigger_rel * baseline_force || max_f < cfg.ci_activation_tol
         activated = new_ci && !ci_on
         ci_on = new_ci
     end
@@ -132,18 +134,18 @@ function _train_neb_gp(
     hess_G::Vector{Float64},
     n_hess::Int,
     outer_iter::Int;
-    images::Vector{Vector{Float64}} = Vector{Float64}[],
+    images::Vector{Vector{Float64}}=Vector{Float64}[],
 )
     # Per-bead subset selection when training set exceeds max_gp_points.
     # Each bead gets its K nearest training points, then the union is kept.
     # This prevents the CI image (or any bead) from losing local coverage
     # that global FPS would discard in favor of globally diverse points.
     dist_fn = trust_distance_fn(cfg.trust_metric, cfg.atom_types)
-    td_use = _bead_local_subset_td(td, cfg.max_gp_points, images;
-                                    distance_fn=dist_fn)
+    td_use = _bead_local_subset_td(td, cfg.max_gp_points, images; distance_fn=dist_fn)
     if npoints(td_use) < npoints(td)
-        cfg.verbose && @printf("  Per-bead subset: %d/%d training points\n",
-                               npoints(td_use), npoints(td))
+        cfg.verbose && @printf(
+            "  Per-bead subset: %d/%d training points\n", npoints(td_use), npoints(td)
+        )
     end
 
     if kernel isa AbstractMoleculeKernel
@@ -164,18 +166,29 @@ function _train_neb_gp(
 
         # Warm-start: reuse previous kernel, only init on first iteration
         kern = prev_kern === nothing ? init_mol_invdist_se(td_use, kernel) : prev_kern
-        model = GPModel(kern, X_train, y_target;
-                        noise_var = 1e-6, grad_noise_var = 1e-4, jitter = 1e-6)
-        train_model!(model; iterations = cfg.gp_train_iter,
-                     fix_noise = true, verbose = cfg.verbose)
+        model = GPModel(
+            kern, X_train, y_target; noise_var=1e-6, grad_noise_var=1e-4, jitter=1e-6
+        )
+        train_model!(
+            model; iterations=cfg.gp_train_iter, fix_noise=true, verbose=cfg.verbose
+        )
 
         # RFF approximation: train hyperparameters on subset, predict using all data
         if cfg.rff_features > 0 && kernel isa MolInvDistSE && npoints(td) > npoints(td_use)
             y_all = vcat(td.energies .- E_ref, td.gradients)
-            rff_model = build_rff(model.kernel, td.X, y_all, cfg.rff_features;
-                                  noise_var = 1e-6, grad_noise_var = 1e-4)
-            cfg.verbose && @printf("  RFF: %d features, %d training points\n",
-                                   cfg.rff_features, npoints(td))
+            rff_model = build_rff(
+                model.kernel,
+                td.X,
+                y_all,
+                cfg.rff_features;
+                noise_var=1e-6,
+                grad_noise_var=1e-4,
+            )
+            cfg.verbose && @printf(
+                "  RFF: %d features, %d training points\n",
+                cfg.rff_features,
+                npoints(td)
+            )
             return rff_model, E_ref, 1.0, model.kernel
         end
 
@@ -189,9 +202,10 @@ function _train_neb_gp(
         else
             kernel
         end
-        model = GPModel(kern, td_use.X, y_gp;
-                        noise_var = 1e-6, grad_noise_var = 1e-6, jitter = 1e-4)
-        train_model!(model; iterations = cfg.gp_train_iter, verbose = cfg.verbose)
+        model = GPModel(
+            kern, td_use.X, y_gp; noise_var=1e-6, grad_noise_var=1e-6, jitter=1e-4
+        )
+        train_model!(model; iterations=cfg.gp_train_iter, verbose=cfg.verbose)
         return model, E_ref, y_std, model.kernel
     end
 end
@@ -244,12 +258,13 @@ function _gp_inner_relax(
         end
 
         # Compute step (concatenated over all movable images)
-        cur_x = vcat(gp_images[2:N-1]...)
-        cur_force = vcat(gp_forces[2:N-1]...)
+        cur_x = vcat(gp_images[2:(N - 1)]...)
+        cur_force = vcat(gp_forces[2:(N - 1)]...)
 
         if gp_optim !== nothing
-            displacement = optim_step!(gp_optim, cur_x, cur_force, cfg.max_move;
-                                       n_coords_per_atom = 3)
+            displacement = optim_step!(
+                gp_optim, cur_x, cur_force, cfg.max_move; n_coords_per_atom=3
+            )
         else
             displacement = cfg.step_size * cur_force
             displacement = _clip_to_max_move(displacement, cfg.max_move, 3)
@@ -258,7 +273,7 @@ function _gp_inner_relax(
         new_x = cur_x + displacement
         for img_idx in 1:N_mov
             offset = (img_idx - 1) * D
-            candidate = new_x[offset+1:offset+D]
+            candidate = new_x[(offset + 1):(offset + D)]
             # Trust radius: clip total displacement from oracle-evaluated position
             disp = candidate - start_images[img_idx + 1]
             dn = norm(disp)
@@ -284,28 +299,30 @@ This is applied AFTER inner relaxation completes -- never inside the inner
 loop -- because per-step clipping disrupts L-BFGS curvature estimates and
 causes force divergence.
 """
-function _emd_trust_clip!(
-    images::Vector{Vector{Float64}},
-    td::TrainingData,
-    cfg::NEBConfig,
-)
+function _emd_trust_clip!(images::Vector{Vector{Float64}}, td::TrainingData, cfg::NEBConfig)
     N = length(images)
     D = length(images[1])
     n_atoms = div(D, 3)
-    thresh = adaptive_trust_threshold(cfg.trust_radius, npoints(td), n_atoms;
-                 use_adaptive=cfg.use_adaptive_threshold,
-                 t_min=cfg.adaptive_t_min, delta_t=cfg.adaptive_delta_t,
-                 n_half=cfg.adaptive_n_half, A=cfg.adaptive_A,
-                 floor=cfg.adaptive_floor)
+    thresh = adaptive_trust_threshold(
+        cfg.trust_radius,
+        npoints(td),
+        n_atoms;
+        use_adaptive=cfg.use_adaptive_threshold,
+        t_min=cfg.adaptive_t_min,
+        delta_t=cfg.adaptive_delta_t,
+        n_half=cfg.adaptive_n_half,
+        A=cfg.adaptive_A,
+        floor=cfg.adaptive_floor,
+    )
 
     for i in 2:(N - 1)
-        d = trust_min_distance(images[i], td.X, cfg.trust_metric;
-                               atom_types=cfg.atom_types)
+        d = trust_min_distance(images[i], td.X, cfg.trust_metric; atom_types=cfg.atom_types)
         if d > thresh
             # Find nearest training point and scale back toward it
             dist_fn = trust_distance_fn(cfg.trust_metric, cfg.atom_types)
-            nearest_idx = argmin(dist_fn(images[i], view(td.X, :, j))
-                                for j in 1:npoints(td))
+            nearest_idx = argmin(
+                dist_fn(images[i], view(td.X, :, j)) for j in 1:npoints(td)
+            )
             nearest = td.X[:, nearest_idx]
             disp = images[i] - nearest
             images[i] = nearest + disp * (thresh / d * 0.95)
@@ -318,7 +335,7 @@ end
 # ==============================================================================
 
 # Union type for oracle: single function or pool of functions
-const OracleOrPool = Union{Function, AbstractVector{<:Function}}
+const OracleOrPool = Union{Function,AbstractVector{<:Function}}
 
 # Extract a single oracle from an oracle-or-pool (for endpoint evaluation etc.)
 _single_oracle(oracle::Function) = oracle
@@ -342,8 +359,9 @@ function _eval_images!(oracle::Function, images, energies, gradients, indices)
     return length(indices)
 end
 
-function _eval_images!(oracles::AbstractVector{<:Function},
-                       images, energies, gradients, indices)
+function _eval_images!(
+    oracles::AbstractVector{<:Function}, images, energies, gradients, indices
+)
     n = length(indices)
     n_workers = length(oracles)
     tasks = Vector{Task}(undef, n)
@@ -379,8 +397,8 @@ function neb_optimize(
     oracle::OracleOrPool,
     x_start::Vector{Float64},
     x_end::Vector{Float64};
-    config::NEBConfig = NEBConfig(),
-    on_step::Union{Function,Nothing} = nothing,
+    config::NEBConfig=NEBConfig(),
+    on_step::Union{Function,Nothing}=nothing,
 )
     cfg = config
     N = cfg.images + 2
@@ -403,7 +421,7 @@ function neb_optimize(
     oracle_calls = 2
 
     # Evaluate intermediate images (parallel when oracle is a pool)
-    oracle_calls += _eval_images!(oracle, images, energies, gradients, 2:(N-1))
+    oracle_calls += _eval_images!(oracle, images, energies, gradients, 2:(N - 1))
 
     path = NEBPath(images, energies, gradients, cfg.spring_constant)
 
@@ -434,9 +452,12 @@ function neb_optimize(
         end
 
         # Dynamic CI activation (matches eOn NudgedElasticBand.cpp:405-410)
-        ci_on, conv_metric, ci_activated = _check_ci(cfg, ci_on, max_f, ci_f, baseline_force, iter)
+        ci_on, conv_metric, ci_activated = _check_ci(
+            cfg, ci_on, max_f, ci_f, baseline_force, iter
+        )
         if ci_activated
-            cfg.verbose && @printf("  Iter %d: Climbing image activated (image %d)\n", iter, i_max)
+            cfg.verbose &&
+                @printf("  Iter %d: Climbing image activated (image %d)\n", iter, i_max)
             # Recompute forces with CI enabled
             forces, max_f, ci_f, i_max = compute_all_neb_forces(path, cfg; ci_on)
             conv_metric = cfg.ci_converged_only ? ci_f : max_f
@@ -445,24 +466,31 @@ function neb_optimize(
         # Check convergence
         conv_check = ci_on || !cfg.climbing_image
         if conv_check && conv_metric < cfg.conv_tol
-            cfg.verbose && @printf("NEB converged at iter %d: max|F| = %.5f\n", iter, conv_metric)
+            cfg.verbose &&
+                @printf("NEB converged at iter %d: max|F| = %.5f\n", iter, conv_metric)
             converged = true
             break
         end
 
         if iter % 50 == 0 || iter == 1
-            cfg.verbose && @printf("  Iter %3d: max|F| = %.5f | CI|F| = %.5f | E_max = %.4f\n",
-                                   iter, max_f, ci_f, maximum(energies))
+            cfg.verbose && @printf(
+                "  Iter %3d: max|F| = %.5f | CI|F| = %.5f | E_max = %.4f\n",
+                iter,
+                max_f,
+                ci_f,
+                maximum(energies)
+            )
         end
 
         # Concatenate movable image positions and NEB forces
-        cur_x = vcat(images[2:N-1]...)
-        cur_force = vcat(forces[2:N-1]...)
+        cur_x = vcat(images[2:(N - 1)]...)
+        cur_force = vcat(forces[2:(N - 1)]...)
 
         # Compute step via OptimState (L-BFGS) or steepest descent
         if optim !== nothing
-            displacement = optim_step!(optim, cur_x, cur_force, cfg.max_move;
-                                       n_coords_per_atom = 3)
+            displacement = optim_step!(
+                optim, cur_x, cur_force, cfg.max_move; n_coords_per_atom=3
+            )
         else
             displacement = cfg.step_size * cur_force
             displacement = _clip_to_max_move(displacement, cfg.max_move, 3)
@@ -472,11 +500,11 @@ function neb_optimize(
         new_x = cur_x + displacement
         for img_idx in 1:N_mov
             offset = (img_idx - 1) * D
-            images[img_idx + 1] = new_x[offset+1:offset+D]
+            images[img_idx + 1] = new_x[(offset + 1):(offset + D)]
         end
 
         # Re-evaluate oracle (parallel when oracle is a pool)
-        oracle_calls += _eval_images!(oracle, images, energies, gradients, 2:(N-1))
+        oracle_calls += _eval_images!(oracle, images, energies, gradients, 2:(N - 1))
 
         path.images = images
         path.energies = energies
@@ -485,7 +513,7 @@ function neb_optimize(
         on_step !== nothing && on_step(path, iter)
     end
 
-    i_max = argmax(energies[2:end-1]) + 1
+    i_max = argmax(energies[2:(end - 1)]) + 1
     return NEBResult(path, converged, oracle_calls, i_max, history)
 end
 
@@ -516,7 +544,7 @@ function _bead_local_subset_td(
     td::TrainingData,
     max_points::Int,
     images::Vector{Vector{Float64}};
-    distance_fn::Function = max_1d_log_distance,
+    distance_fn::Function=max_1d_log_distance,
 )
     N = npoints(td)
     if max_points <= 0 || N <= max_points
@@ -582,9 +610,7 @@ Global FPS subset selection (used as fallback or final trim).
 Selects `max_points` diverse points from `td` using Farthest Point Sampling.
 """
 function _global_fps_subset_td(
-    td::TrainingData,
-    max_points::Int;
-    distance_fn::Function = max_1d_log_distance,
+    td::TrainingData, max_points::Int; distance_fn::Function=max_1d_log_distance
 )
     N = npoints(td)
     if max_points <= 0 || N <= max_points
@@ -638,8 +664,8 @@ function gp_neb_aie(
     x_start::Vector{Float64},
     x_end::Vector{Float64},
     kernel;
-    config::NEBConfig = NEBConfig(),
-    on_step::Union{Function,Nothing} = nothing,
+    config::NEBConfig=NEBConfig(),
+    on_step::Union{Function,Nothing}=nothing,
 )
     cfg = config
     N = cfg.images + 2
@@ -661,7 +687,8 @@ function gp_neb_aie(
 
     # Virtual Hessian points
     hess_X, hess_E, hess_G, n_hess, hess_calls = _init_hessian_data(
-        cfg, ep_oracle, x_start, x_end, D)
+        cfg, ep_oracle, x_start, x_end, D
+    )
     oracle_calls += hess_calls
 
     # Evaluate all intermediate images (parallel when oracle is a pool)
@@ -672,8 +699,8 @@ function gp_neb_aie(
     gradients[1] = G_start
     gradients[end] = G_end
 
-    oracle_calls += _eval_images!(oracle, images, energies, gradients, 2:(N-1))
-    for i in 2:(N-1)
+    oracle_calls += _eval_images!(oracle, images, energies, gradients, 2:(N - 1))
+    for i in 2:(N - 1)
         add_point!(td, images[i], energies[i], gradients[i])
     end
 
@@ -705,12 +732,19 @@ function gp_neb_aie(
         end
 
         n_total = npoints(td) + (outer_iter <= cfg.num_hess_iter ? n_hess : 0)
-        cfg.verbose && @printf("GP-NEB-AIE outer %d: max|F| = %.5f | CI|F| = %.5f | N_train = %d | calls = %d\n",
-                               outer_iter, max_f_true, ci_f_true, n_total, oracle_calls)
+        cfg.verbose && @printf(
+            "GP-NEB-AIE outer %d: max|F| = %.5f | CI|F| = %.5f | N_train = %d | calls = %d\n",
+            outer_iter,
+            max_f_true,
+            ci_f_true,
+            n_total,
+            oracle_calls
+        )
 
         # Dynamic CI activation
         ci_on, conv_metric, ci_activated = _check_ci(
-            cfg, ci_on, max_f_true, ci_f_true, baseline_force, outer_iter)
+            cfg, ci_on, max_f_true, ci_f_true, baseline_force, outer_iter
+        )
         if ci_activated
             cfg.verbose && @printf("  Climbing image activated (image %d)\n", i_max)
         end
@@ -724,14 +758,14 @@ function gp_neb_aie(
 
         # Train GP (per-bead subset applied inside when max_gp_points > 0)
         model, E_ref, y_std, prev_kern = _train_neb_gp(
-            td, kernel, cfg, prev_kern,
-            hess_X, hess_E, hess_G, n_hess, outer_iter;
-            images)
+            td, kernel, cfg, prev_kern, hess_X, hess_E, hess_G, n_hess, outer_iter; images
+        )
 
         # Inner loop: relax on GP surface
         gp_tol = max(min(max_f_true / 10, cfg.conv_tol), cfg.conv_tol / 10)
-        images = _gp_inner_relax(model, images, energies, gradients,
-                                 cfg, ci_on, E_ref, y_std, gp_tol)
+        images = _gp_inner_relax(
+            model, images, energies, gradients, cfg, ci_on, E_ref, y_std, gp_tol
+        )
 
         # EMD trust clip: scale back images that drifted beyond the adaptive
         # threshold from all training data. Applied AFTER inner relaxation
@@ -739,8 +773,8 @@ function gp_neb_aie(
         _emd_trust_clip!(images, td, cfg)
 
         # Evaluate oracle at new positions (parallel); deduplicate training data
-        oracle_calls += _eval_images!(oracle, images, energies, gradients, 2:(N-1))
-        for i in 2:(N-1)
+        oracle_calls += _eval_images!(oracle, images, energies, gradients, 2:(N - 1))
+        for i in 2:(N - 1)
             if min_distance_to_data(images[i], td.X) > dedup_tol
                 add_point!(td, images[i], energies[i], gradients[i])
             end
@@ -753,7 +787,7 @@ function gp_neb_aie(
         on_step !== nothing && on_step(path, outer_iter)
     end
 
-    i_max = argmax(energies[2:end-1]) + 1
+    i_max = argmax(energies[2:(end - 1)]) + 1
     return NEBResult(path, converged, oracle_calls, i_max, history)
 end
 

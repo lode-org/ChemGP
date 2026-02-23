@@ -23,15 +23,15 @@ Configuration for the GP-guided minimization loop.
 All fields have sensible defaults via `@kwdef`.
 """
 Base.@kwdef struct MinimizationConfig
-    trust_radius::Float64    = 0.1     # Max distance from training data
-    conv_tol::Float64        = 5e-3    # Gradient norm convergence threshold
-    max_iter::Int            = 500     # Max outer iterations (oracle calls)
-    gp_opt_tol::Float64      = 1e-2    # Convergence tolerance for GP inner optimization
-    gp_train_iter::Int       = 300     # Nelder-Mead iterations for GP hyperparameter training
-    n_initial_perturb::Int   = 4       # Number of perturbed initial points
-    perturb_scale::Float64   = 0.1     # Scale of initial perturbations
-    penalty_coeff::Float64   = 1e3     # Soft trust region penalty coefficient
-    verbose::Bool            = true
+    trust_radius::Float64 = 0.1     # Max distance from training data
+    conv_tol::Float64 = 5e-3    # Gradient norm convergence threshold
+    max_iter::Int = 500     # Max outer iterations (oracle calls)
+    gp_opt_tol::Float64 = 1e-2    # Convergence tolerance for GP inner optimization
+    gp_train_iter::Int = 300     # Nelder-Mead iterations for GP hyperparameter training
+    n_initial_perturb::Int = 4       # Number of perturbed initial points
+    perturb_scale::Float64 = 0.1     # Scale of initial perturbations
+    penalty_coeff::Float64 = 1e3     # Soft trust region penalty coefficient
+    verbose::Bool = true
 end
 
 """
@@ -69,8 +69,8 @@ function gp_minimize(
     oracle::Function,
     x_init::Vector{Float64},
     kernel;
-    config::MinimizationConfig = MinimizationConfig(),
-    training_data::Union{Nothing,TrainingData} = nothing,
+    config::MinimizationConfig=MinimizationConfig(),
+    training_data::Union{Nothing,TrainingData}=nothing,
 )
     D = length(x_init)
     cfg = config
@@ -115,25 +115,29 @@ function gp_minimize(
     oracle_calls = npoints(td)
 
     cfg.verbose && println("\n=== Starting GP Minimization ===")
-    cfg.verbose && @printf("Trust radius: %.3f | Conv. tol: %.1e | Training points: %d\n\n",
-                           cfg.trust_radius, cfg.conv_tol, oracle_calls)
+    cfg.verbose && @printf(
+        "Trust radius: %.3f | Conv. tol: %.1e | Training points: %d\n\n",
+        cfg.trust_radius,
+        cfg.conv_tol,
+        oracle_calls
+    )
 
     converged = false
 
     for outer_step in 1:(cfg.max_iter)
         cfg.verbose && println("-"^60)
-        cfg.verbose && @printf("OUTER ITERATION %d (Oracle calls: %d)\n", outer_step, oracle_calls)
+        cfg.verbose &&
+            @printf("OUTER ITERATION %d (Oracle calls: %d)\n", outer_step, oracle_calls)
 
         # Step 2: Train GP on current data
         y_gp, y_mean, y_std = normalize(td)
 
-        model = GPModel(kernel, td.X, y_gp;
-                        noise_var = 1e-2,
-                        grad_noise_var = 1e-1,
-                        jitter = 1e-3)
+        model = GPModel(
+            kernel, td.X, y_gp; noise_var=1e-2, grad_noise_var=1e-1, jitter=1e-3
+        )
 
         cfg.verbose && @printf("Training GP on %d points...\n", npoints(td))
-        train_model!(model, iterations = cfg.gp_train_iter)
+        train_model!(model; iterations=cfg.gp_train_iter)
 
         # Step 3: Optimize on GP surface using L-BFGS
         # Objective: GP-predicted energy + soft trust region penalty
@@ -166,7 +170,8 @@ function gp_minimize(
 
             if min_dist > cfg.trust_radius
                 direction = (x - td.X[:, nearest_idx]) / (min_dist + 1e-10)
-                penalty_grad = 2 * cfg.penalty_coeff * (min_dist - cfg.trust_radius) * direction
+                penalty_grad =
+                    2 * cfg.penalty_coeff * (min_dist - cfg.trust_radius) * direction
                 G .= G_pred + penalty_grad
             else
                 G .= G_pred
@@ -178,11 +183,7 @@ function gp_minimize(
             gp_gradient!,
             x_curr,
             LBFGS(),
-            Optim.Options(
-                g_tol = cfg.gp_opt_tol,
-                iterations = 100,
-                show_trace = false,
-            ),
+            Optim.Options(; g_tol=cfg.gp_opt_tol, iterations=100, show_trace=false),
         )
 
         x_curr = Optim.minimizer(result)
@@ -225,7 +226,6 @@ function gp_minimize(
     E_final, G_final = oracle(x_curr)
 
     return MinimizationResult(
-        x_curr, E_final, G_final, converged, oracle_calls,
-        trajectory, all_energies,
+        x_curr, E_final, G_final, converged, oracle_calls, trajectory, all_energies
     )
 end

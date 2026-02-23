@@ -33,8 +33,8 @@ function gp_neb_oie_naive(
     x_start::Vector{Float64},
     x_end::Vector{Float64},
     kernel;
-    config::NEBConfig = NEBConfig(),
-    on_step::Union{Function,Nothing} = nothing,
+    config::NEBConfig=NEBConfig(),
+    on_step::Union{Function,Nothing}=nothing,
 )
     cfg = config
     N = cfg.images + 2
@@ -56,7 +56,8 @@ function gp_neb_oie_naive(
 
     # Virtual Hessian points
     hess_X, hess_E, hess_G, n_hess, hess_calls = _init_hessian_data(
-        cfg, ep_oracle, x_start, x_end, D)
+        cfg, ep_oracle, x_start, x_end, D
+    )
     oracle_calls += hess_calls
 
     # Bootstrap: evaluate midpoint
@@ -96,9 +97,8 @@ function gp_neb_oie_naive(
     for outer_iter in 1:(cfg.max_outer_iter)
         # Train GP (per-bead subset when max_gp_points > 0)
         model, E_ref, y_std, prev_kern = _train_neb_gp(
-            td, kernel, cfg, prev_kern,
-            hess_X, hess_E, hess_G, n_hess, outer_iter;
-            images)
+            td, kernel, cfg, prev_kern, hess_X, hess_E, hess_G, n_hess, outer_iter; images
+        )
 
         # Predict at all intermediate images
         for i in 2:(N - 1)
@@ -156,12 +156,20 @@ function gp_neb_oie_naive(
             baseline_force = max_f
         end
 
-        cfg.verbose && @printf("GP-NEB-OIE-naive %d: eval image %d | max|F| = %.5f | var = %.3e | N_train = %d | calls = %d\n",
-                               outer_iter, i_eval, max_f, max_var, npoints(td), oracle_calls)
+        cfg.verbose && @printf(
+            "GP-NEB-OIE-naive %d: eval image %d | max|F| = %.5f | var = %.3e | N_train = %d | calls = %d\n",
+            outer_iter,
+            i_eval,
+            max_f,
+            max_var,
+            npoints(td),
+            oracle_calls
+        )
 
         # Dynamic CI activation
         ci_on, conv_metric, ci_activated = _check_ci(
-            cfg, ci_on, max_f, ci_f, baseline_force, outer_iter)
+            cfg, ci_on, max_f, ci_f, baseline_force, outer_iter
+        )
         if ci_activated
             cfg.verbose && @printf("  Climbing image activated (image %d)\n", i_max)
         end
@@ -177,8 +185,9 @@ function gp_neb_oie_naive(
 
         # Inner loop: relax on GP surface
         gp_tol = max(max_f / 10, cfg.conv_tol / 10)
-        images = _gp_inner_relax(model, images, energies, gradients,
-                                 cfg, ci_on, E_ref, y_std, gp_tol)
+        images = _gp_inner_relax(
+            model, images, energies, gradients, cfg, ci_on, E_ref, y_std, gp_tol
+        )
 
         # EMD trust clip at outer boundary
         _emd_trust_clip!(images, td, cfg)
@@ -192,6 +201,6 @@ function gp_neb_oie_naive(
         end
     end
 
-    i_max = argmax(energies[2:end-1]) + 1
+    i_max = argmax(energies[2:(end - 1)]) + 1
     return NEBResult(path, converged, oracle_calls, i_max, history)
 end

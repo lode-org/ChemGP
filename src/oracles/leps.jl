@@ -20,13 +20,13 @@
 # --- Parameters ---
 
 const LEPS_ALPHA = 1.942       # Morse range parameter (Å⁻¹)
-const LEPS_R_E   = 0.742       # Equilibrium bond length (Å)
-const LEPS_D_AB  = 4.746       # Dissociation energy A-B (eV)
-const LEPS_D_BC  = 4.746       # Dissociation energy B-C (eV)
-const LEPS_D_AC  = 3.445       # Dissociation energy A-C (eV)
-const LEPS_S_AB  = 0.05        # Sato parameter A-B
-const LEPS_S_BC  = 0.30        # Sato parameter B-C
-const LEPS_S_AC  = 0.05        # Sato parameter A-C
+const LEPS_R_E = 0.742       # Equilibrium bond length (Å)
+const LEPS_D_AB = 4.746       # Dissociation energy A-B (eV)
+const LEPS_D_BC = 4.746       # Dissociation energy B-C (eV)
+const LEPS_D_AC = 3.445       # Dissociation energy A-C (eV)
+const LEPS_S_AB = 0.05        # Sato parameter A-B
+const LEPS_S_BC = 0.30        # Sato parameter B-C
+const LEPS_S_AC = 0.05        # Sato parameter A-C
 
 # --- Helper functions ---
 
@@ -223,7 +223,7 @@ end
 Approximate reactant geometry: A far from B-C at equilibrium.
 Collinear: A at origin, B at r_e, C at r_e + 3.0.
 """
-const LEPS_REACTANT = [0.0, 0.0, 0.0,  LEPS_R_E, 0.0, 0.0,  LEPS_R_E + 3.0, 0.0, 0.0]
+const LEPS_REACTANT = [0.0, 0.0, 0.0, LEPS_R_E, 0.0, 0.0, LEPS_R_E + 3.0, 0.0, 0.0]
 
 """
     LEPS_PRODUCT
@@ -231,4 +231,4 @@ const LEPS_REACTANT = [0.0, 0.0, 0.0,  LEPS_R_E, 0.0, 0.0,  LEPS_R_E + 3.0, 0.0,
 Approximate product geometry: A-B at equilibrium, C far away.
 Collinear: A at origin, B at 3.0, C at 3.0 + r_e.
 """
-const LEPS_PRODUCT = [0.0, 0.0, 0.0,  3.0, 0.0, 0.0,  3.0 + LEPS_R_E, 0.0, 0.0]
+const LEPS_PRODUCT = [0.0, 0.0, 0.0, 3.0, 0.0, 0.0, 3.0 + LEPS_R_E, 0.0, 0.0]

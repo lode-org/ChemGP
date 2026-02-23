@@ -34,17 +34,13 @@ Returns a `Symmetric` matrix.
 See also: [`kernel_blocks`](@ref), [`train_model!`](@ref)
 """
 function build_full_covariance(
-    kernel::Kernel,
-    X::Matrix{Float64},
-    noise_e::Real,
-    noise_g::Real,
-    jitter::Real,
+    kernel::Kernel, X::Matrix{Float64}, noise_e::Real, noise_g::Real, jitter::Real
 )
     D, N = size(X)
     TotalDim = N * (1 + D)
     K_mat = zeros(TotalDim, TotalDim)
 
-    for i = 1:N
+    for i in 1:N
         xi = view(X, :, i)
 
         # Diagonal Blocks
@@ -62,7 +58,7 @@ function build_full_covariance(
         K_mat[s_g:e_g, s_g:e_g] = k_ff + (noise_g + jitter) * I
 
         # Off-diagonal Interactions
-        for j = (i+1):N
+        for j in (i + 1):N
             xj = view(X, :, j)
             k_ee, k_ef, k_fe, k_ff = kernel_blocks(kernel, xi, xj)
 
@@ -127,7 +123,7 @@ function init_mol_invdist_se(td::TrainingData, kernel::MolInvDistSE)
     # Max pairwise distance in feature space
     max_feat_dist = 0.0
     for i in 1:N
-        for j in (i+1):N
+        for j in (i + 1):N
             d = norm(features[i] - features[j])
             max_feat_dist = max(max_feat_dist, d)
         end
@@ -173,7 +169,7 @@ function init_cartesian_se(td::TrainingData)
     N = npoints(td)
     range_x = 0.0
     for i in 1:N
-        for j in (i+1):N
+        for j in (i + 1):N
             d = norm(td.X[:, i] - td.X[:, j])
             range_x = max(range_x, d)
         end
@@ -200,7 +196,7 @@ This handles rank-deficient covariance matrices that arise from molecular
 kernels where the feature space dimension is smaller than the coordinate
 space (e.g., 3 inverse distances for 9D coordinates of a 3-atom system).
 """
-function _robust_cholesky(K::AbstractMatrix; max_attempts::Int = 8)
+function _robust_cholesky(K::AbstractMatrix; max_attempts::Int=8)
     L = try
         cholesky(K)
     catch
@@ -254,8 +250,13 @@ Mutates `model` in-place with the optimized kernel and noise parameters.
 
 See also: [`build_full_covariance`](@ref), [`predict`](@ref)
 """
-function train_model!(model::GPModel{Tk}; iterations = 1000, fix_noise::Bool = false,
-                      verbose::Bool = true, barrier_strength::Float64 = 0.0) where {Tk<:AbstractMoleculeKernel}
+function train_model!(
+    model::GPModel{Tk};
+    iterations=1000,
+    fix_noise::Bool=false,
+    verbose::Bool=true,
+    barrier_strength::Float64=0.0,
+) where {Tk<:AbstractMoleculeKernel}
     # 1. Define Initial Parameters (Structured)
     # Warm start from current model values as the starting point.
     # ParameterHandling.positive ensures they stay > 0 during optimization.
@@ -265,15 +266,15 @@ function train_model!(model::GPModel{Tk}; iterations = 1000, fix_noise::Bool = f
     # inv_lengthscales are optimized.
     raw_initial_params = if fix_noise
         (
-            signal_var = positive(model.kernel.signal_variance),
-            inv_lengthscales = positive(model.kernel.inv_lengthscales),
+            signal_var=positive(model.kernel.signal_variance),
+            inv_lengthscales=positive(model.kernel.inv_lengthscales),
         )
     else
         (
-            signal_var = positive(model.kernel.signal_variance),
-            inv_lengthscales = positive(model.kernel.inv_lengthscales),
-            noise = positive(model.noise_var),
-            grad_noise = positive(model.grad_noise_var),
+            signal_var=positive(model.kernel.signal_variance),
+            inv_lengthscales=positive(model.kernel.inv_lengthscales),
+            noise=positive(model.noise_var),
+            grad_noise=positive(model.grad_noise_var),
         )
     end
 
@@ -329,14 +330,15 @@ function train_model!(model::GPModel{Tk}; iterations = 1000, fix_noise::Bool = f
         objective ∘ unflatten,
         flat_initial_params,
         NelderMead(),
-        Optim.Options(iterations = iterations, show_trace = verbose && !fix_noise),
+        Optim.Options(; iterations=iterations, show_trace=verbose && !fix_noise),
     )
 
     # 5. Update Model with Best Parameters
     best_params = unflatten(Optim.minimizer(res))
 
-    model.kernel =
-        Tk(best_params.signal_var, best_params.inv_lengthscales, frozen, feat_map)
+    model.kernel = Tk(
+        best_params.signal_var, best_params.inv_lengthscales, frozen, feat_map
+    )
     if !fix_noise
         model.noise_var = best_params.noise
         model.grad_noise_var = best_params.grad_noise
@@ -357,18 +359,21 @@ log marginal likelihood.
 
 This is used by GP-NEB on non-molecular surfaces (Muller-Brown 2D).
 """
-function train_model!(model::GPModel{Tk}; iterations = 1000, verbose::Bool = true) where {Tk<:Kernel}
+function train_model!(
+    model::GPModel{Tk}; iterations=1000, verbose::Bool=true
+) where {Tk<:Kernel}
     kernel = model.kernel
 
     raw_initial_params = (
-        noise = positive(model.noise_var),
-        grad_noise = positive(model.grad_noise_var),
+        noise=positive(model.noise_var), grad_noise=positive(model.grad_noise_var)
     )
 
     flat_initial_params, unflatten = ParameterHandling.value_flatten(raw_initial_params)
 
     function objective(params::NamedTuple)
-        K = build_full_covariance(kernel, model.X, params.noise, params.grad_noise, model.jitter)
+        K = build_full_covariance(
+            kernel, model.X, params.noise, params.grad_noise, model.jitter
+        )
         L = try
             _robust_cholesky(K)
         catch
@@ -381,7 +386,7 @@ function train_model!(model::GPModel{Tk}; iterations = 1000, verbose::Bool = tru
         objective ∘ unflatten,
         flat_initial_params,
         NelderMead(),
-        Optim.Options(iterations = iterations, show_trace = false),
+        Optim.Options(; iterations=iterations, show_trace=false),
     )
 
     best_params = unflatten(Optim.minimizer(res))
@@ -401,12 +406,14 @@ by minimizing the negative log marginal likelihood via Nelder-Mead.
 
 Matches the MATLAB GPstuff `gp_optim` behavior for `gpcf_sexp`.
 """
-function train_model!(model::GPModel{CartesianSE{T}}; iterations = 1000, verbose::Bool = true) where {T}
+function train_model!(
+    model::GPModel{CartesianSE{T}}; iterations=1000, verbose::Bool=true
+) where {T}
     raw_initial_params = (
-        signal_var = positive(model.kernel.signal_variance),
-        lengthscale = positive(model.kernel.lengthscale),
-        noise = positive(model.noise_var),
-        grad_noise = positive(model.grad_noise_var),
+        signal_var=positive(model.kernel.signal_variance),
+        lengthscale=positive(model.kernel.lengthscale),
+        noise=positive(model.noise_var),
+        grad_noise=positive(model.grad_noise_var),
     )
 
     flat_initial_params, unflatten = ParameterHandling.value_flatten(raw_initial_params)
@@ -426,7 +433,7 @@ function train_model!(model::GPModel{CartesianSE{T}}; iterations = 1000, verbose
         objective ∘ unflatten,
         flat_initial_params,
         NelderMead(),
-        Optim.Options(iterations = iterations, show_trace = false),
+        Optim.Options(; iterations=iterations, show_trace=false),
     )
 
     best_params = unflatten(Optim.minimizer(res))
@@ -434,8 +441,12 @@ function train_model!(model::GPModel{CartesianSE{T}}; iterations = 1000, verbose
     model.noise_var = best_params.noise
     model.grad_noise_var = best_params.grad_noise
 
-    verbose && @printf("CartesianSE training: NLL = %.4f, sigma2 = %.4f, ell = %.4f\n",
-            Optim.minimum(res), best_params.signal_var, best_params.lengthscale)
+    verbose && @printf(
+        "CartesianSE training: NLL = %.4f, sigma2 = %.4f, ell = %.4f\n",
+        Optim.minimum(res),
+        best_params.signal_var,
+        best_params.lengthscale
+    )
     return model
 end
 
@@ -465,11 +476,7 @@ function predict(model::GPModel, X_test::Matrix{Float64})
     D, N_train = size(model.X)
 
     K_train = build_full_covariance(
-        model.kernel,
-        model.X,
-        model.noise_var,
-        model.grad_noise_var,
-        model.jitter,
+        model.kernel, model.X, model.noise_var, model.grad_noise_var, model.jitter
     )
 
     L = _robust_cholesky(K_train)
@@ -478,15 +485,15 @@ function predict(model::GPModel, X_test::Matrix{Float64})
     dim_test_block = 1 + D
     K_star = zeros(N_test * dim_test_block, length(model.y))
 
-    for i = 1:N_test
+    for i in 1:N_test
         xt = view(X_test, :, i)
         r_e = (i-1)*dim_test_block + 1
-        r_g = (r_e+1):(r_e+D)
+        r_g = (r_e + 1):(r_e + D)
 
-        for j = 1:N_train
+        for j in 1:N_train
             xtrain = view(model.X, :, j)
             c_e = j
-            c_g = (N_train+(j-1)*D+1):(N_train+j*D)
+            c_g = (N_train + (j - 1) * D + 1):(N_train + j * D)
 
             k_ee, k_ef, k_fe, k_ff = kernel_blocks(model.kernel, xt, xtrain)
 
@@ -527,11 +534,7 @@ function predict_with_variance(model::GPModel, X_test::Matrix{Float64})
     D, N_train = size(model.X)
 
     K_train = build_full_covariance(
-        model.kernel,
-        model.X,
-        model.noise_var,
-        model.grad_noise_var,
-        model.jitter,
+        model.kernel, model.X, model.noise_var, model.grad_noise_var, model.jitter
     )
 
     L = _robust_cholesky(K_train)
@@ -543,15 +546,15 @@ function predict_with_variance(model::GPModel, X_test::Matrix{Float64})
     K_star = zeros(n_out, length(model.y))
 
     # Build K_* (cross-covariance between test and training)
-    for i = 1:N_test
+    for i in 1:N_test
         xt = view(X_test, :, i)
         r_e = (i-1)*dim_test_block + 1
-        r_g = (r_e+1):(r_e+D)
+        r_g = (r_e + 1):(r_e + D)
 
-        for j = 1:N_train
+        for j in 1:N_train
             xtrain = view(model.X, :, j)
             c_e = j
-            c_g = (N_train+(j-1)*D+1):(N_train+j*D)
+            c_g = (N_train + (j - 1) * D + 1):(N_train + j * D)
 
             k_ee, k_ef, k_fe, k_ff = kernel_blocks(model.kernel, xt, xtrain)
 
@@ -577,7 +580,7 @@ function predict_with_variance(model::GPModel, X_test::Matrix{Float64})
         k_ee, _, _, k_ff = kernel_blocks(model.kernel, xt, xt)
 
         r_e = (i-1)*dim_test_block + 1
-        r_g = (r_e+1):(r_e+D)
+        r_g = (r_e + 1):(r_e + D)
 
         variance[r_e] = k_ee
         for d in 1:D

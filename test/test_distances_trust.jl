@@ -22,9 +22,11 @@
 
     @testset "trust_min_distance finds closest training point" begin
         D = 3
-        X_train = Float64[0.0 1.0 5.0;
-                           0.0 0.0 0.0;
-                           0.0 0.0 0.0]
+        X_train = Float64[
+            0.0 1.0 5.0;
+            0.0 0.0 0.0;
+            0.0 0.0 0.0
+        ]
         x_query = Float64[0.9, 0.0, 0.0]
 
         d = trust_min_distance(x_query, X_train, :euclidean)
@@ -42,26 +44,25 @@
         X_train = reshape(x1, :, 1)
 
         # EMD should recognize the permutation => distance ~ 0
-        d = trust_min_distance(x2, X_train, :emd; atom_types = Int[1, 1])
+        d = trust_min_distance(x2, X_train, :emd; atom_types=Int[1, 1])
         @test d < 1e-10
     end
 
     @testset "adaptive_trust_threshold fixed mode" begin
         # When disabled, returns fixed trust_radius
-        t = adaptive_trust_threshold(0.5, 100, 3; use_adaptive = false)
+        t = adaptive_trust_threshold(0.5, 100, 3; use_adaptive=false)
         @test t == 0.5
     end
 
     @testset "adaptive_trust_threshold adaptive mode" begin
         # Enabled: threshold should decay with n_data
-        t_small = adaptive_trust_threshold(0.5, 10, 3; use_adaptive = true)
-        t_large = adaptive_trust_threshold(0.5, 200, 3; use_adaptive = true)
+        t_small = adaptive_trust_threshold(0.5, 10, 3; use_adaptive=true)
+        t_large = adaptive_trust_threshold(0.5, 200, 3; use_adaptive=true)
 
         @test t_small > t_large  # decays with more data
 
         # Floor is respected
-        t_huge = adaptive_trust_threshold(0.5, 100000, 3;
-            use_adaptive = true, floor = 0.2)
+        t_huge = adaptive_trust_threshold(0.5, 100000, 3; use_adaptive=true, floor=0.2)
         @test t_huge >= 0.2
     end
 end

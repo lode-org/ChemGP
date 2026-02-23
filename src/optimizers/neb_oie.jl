@@ -23,8 +23,9 @@
 
 Effective CI convergence threshold. Returns `conv_tol` when `ci_force_tol < 0`.
 """
-_oie_effective_ci_tol(cfg::NEBConfig) =
+function _oie_effective_ci_tol(cfg::NEBConfig)
     cfg.ci_force_tol < 0 ? cfg.conv_tol : cfg.ci_force_tol
+end
 
 """
     _oie_gp_tol(cfg, smallest_acc_force)
@@ -55,7 +56,7 @@ Used to normalize `max_step_frac`.
 function _oie_path_scale(images::Vector{Vector{Float64}})
     s = 0.0
     for i in 1:(length(images) - 1)
-        s += norm(images[i+1] - images[i])
+        s += norm(images[i + 1] - images[i])
     end
     return s
 end
@@ -80,10 +81,7 @@ Two checks (matching Koistinen's atomic_GP_NEB_OIE2.m):
    point. This prevents the optimizer from wandering into unexplored regions.
 """
 function _oie_check_early_stop(
-    R_new::Vector{Vector{Float64}},
-    td::TrainingData,
-    cfg::NEBConfig,
-    path_scale::Float64,
+    R_new::Vector{Vector{Float64}}, td::TrainingData, cfg::NEBConfig, path_scale::Float64
 )
     N = length(R_new)
     N_train = npoints(td)
@@ -184,8 +182,9 @@ function _oie_inner_relax(
             gp_optim = cfg.optimizer == :lbfgs ? OptimState(cfg.lbfgs_memory) : nothing
             # Recompute forces with CI
             gp_forces, gp_max_f, _, gp_i_max = compute_all_neb_forces(gp_path, cfg; ci_on)
-            cfg.verbose && @printf("    Inner iter %d: CI activated (image %d)\n",
-                                   inner_iter, gp_i_max)
+            cfg.verbose && @printf(
+                "    Inner iter %d: CI activated (image %d)\n", inner_iter, gp_i_max
+            )
         end
         i_CI = ci_on ? gp_i_max : 0
 
@@ -194,12 +193,13 @@ function _oie_inner_relax(
         end
 
         # Compute step
-        cur_x = vcat(gp_images[2:N-1]...)
-        cur_force = vcat(gp_forces[2:N-1]...)
+        cur_x = vcat(gp_images[2:(N - 1)]...)
+        cur_force = vcat(gp_forces[2:(N - 1)]...)
 
         if gp_optim !== nothing
-            displacement = optim_step!(gp_optim, cur_x, cur_force, cfg.max_move;
-                                       n_coords_per_atom = 3)
+            displacement = optim_step!(
+                gp_optim, cur_x, cur_force, cfg.max_move; n_coords_per_atom=3
+            )
         else
             displacement = cfg.step_size * cur_force
             displacement = _clip_to_max_move(displacement, cfg.max_move, 3)
@@ -211,7 +211,7 @@ function _oie_inner_relax(
         candidate_images = deepcopy(gp_images)
         for img_idx in 1:N_mov
             offset = (img_idx - 1) * D
-            candidate = new_x[offset+1:offset+D]
+            candidate = new_x[(offset + 1):(offset + D)]
             disp = candidate - start_images[img_idx + 1]
             dn = norm(disp)
             if dn > cfg.trust_radius
@@ -224,8 +224,11 @@ function _oie_inner_relax(
         stop, offending = _oie_check_early_stop(candidate_images, td, cfg, path_scale)
         if stop
             early_stop_img = offending
-            cfg.verbose && @printf("    Inner iter %d: early stop (image %d violated trust)\n",
-                                   inner_iter, offending)
+            cfg.verbose && @printf(
+                "    Inner iter %d: early stop (image %d violated trust)\n",
+                inner_iter,
+                offending
+            )
             break  # reject step, return current gp_images (not candidate)
         end
 
@@ -269,8 +272,8 @@ function gp_neb_oie(
     x_start::Vector{Float64},
     x_end::Vector{Float64},
     kernel;
-    config::NEBConfig = NEBConfig(),
-    on_step::Union{Function,Nothing} = nothing,
+    config::NEBConfig=NEBConfig(),
+    on_step::Union{Function,Nothing}=nothing,
 )
     cfg = config
     N = cfg.images + 2
@@ -293,7 +296,8 @@ function gp_neb_oie(
 
     # Virtual Hessian points
     hess_X, hess_E, hess_G, n_hess, hess_calls = _init_hessian_data(
-        cfg, ep_oracle, x_start, x_end, D)
+        cfg, ep_oracle, x_start, x_end, D
+    )
     oracle_calls += hess_calls
 
     # Path state
@@ -337,22 +341,31 @@ function gp_neb_oie(
             # Priority 1: image that caused early stopping
             i_eval = eval_next_early
             eval_next_early = 0
-            cfg.verbose && @printf("GP-NEB-OIE %d: evaluate early-stopped image %d\n",
-                                   outer_iter, i_eval)
+            cfg.verbose && @printf(
+                "GP-NEB-OIE %d: evaluate early-stopped image %d\n", outer_iter, i_eval
+            )
         elseif eval_next_ci && cfg.climbing_image
             # Priority 2: climbing image (during convergence check)
-            i_max = argmax(energies[2:end-1]) + 1
+            i_max = argmax(energies[2:(end - 1)]) + 1
             i_eval = i_max
             eval_next_ci = false
-            cfg.verbose && @printf("GP-NEB-OIE %d: evaluate climbing image %d\n",
-                                   outer_iter, i_eval)
+            cfg.verbose &&
+                @printf("GP-NEB-OIE %d: evaluate climbing image %d\n", outer_iter, i_eval)
         else
             # Priority 3: image with highest predictive variance
             # Need a trained GP to compute variance -- train first
             model, E_ref, y_std, prev_kern = _train_neb_gp(
-                td, kernel, cfg, prev_kern,
-                hess_X, hess_E, hess_G, n_hess, outer_iter;
-                images)
+                td,
+                kernel,
+                cfg,
+                prev_kern,
+                hess_X,
+                hess_E,
+                hess_G,
+                n_hess,
+                outer_iter;
+                images,
+            )
 
             # Predict at unevaluated images to get variance
             max_var = -Inf
@@ -378,8 +391,12 @@ function gp_neb_oie(
                     end
                 end
             end
-            cfg.verbose && @printf("GP-NEB-OIE %d: evaluate max-variance image %d (var=%.3e)\n",
-                                   outer_iter, i_eval, max_var)
+            cfg.verbose && @printf(
+                "GP-NEB-OIE %d: evaluate max-variance image %d (var=%.3e)\n",
+                outer_iter,
+                i_eval,
+                max_var
+            )
         end
 
         # =====================================================================
@@ -402,14 +419,20 @@ function gp_neb_oie(
         # =====================================================================
         n_uneval = count(uneval)
         if n_uneval == 0
-            forces, max_f, ci_f, i_max = compute_all_neb_forces(path, cfg; ci_on=cfg.climbing_image)
+            forces, max_f, ci_f, i_max = compute_all_neb_forces(
+                path, cfg; ci_on=cfg.climbing_image
+            )
             if max_f < cfg.conv_tol && ci_f < ci_tol
                 push!(history["max_force"], max_f)
                 push!(history["ci_force"], ci_f)
                 push!(history["oracle_calls"], oracle_calls)
                 push!(history["max_energy"], maximum(energies))
-                cfg.verbose && @printf("GP-NEB-OIE converged! max|F|=%.5f, CI|F|=%.5f, calls=%d\n",
-                                       max_f, ci_f, oracle_calls)
+                cfg.verbose && @printf(
+                    "GP-NEB-OIE converged! max|F|=%.5f, CI|F|=%.5f, calls=%d\n",
+                    max_f,
+                    ci_f,
+                    oracle_calls
+                )
                 converged = true
                 break
             end
@@ -422,9 +445,8 @@ function gp_neb_oie(
         # STEP 3: Train GP and update estimates at unevaluated images
         # =====================================================================
         model, E_ref, y_std, prev_kern = _train_neb_gp(
-            td, kernel, cfg, prev_kern,
-            hess_X, hess_E, hess_G, n_hess, outer_iter;
-            images)
+            td, kernel, cfg, prev_kern, hess_X, hess_E, hess_G, n_hess, outer_iter; images
+        )
 
         # Predict at unevaluated images
         for i in 2:(N - 1)
@@ -440,7 +462,9 @@ function gp_neb_oie(
         path.gradients = gradients
 
         # Compute forces (with CI if configured)
-        forces, max_f, ci_f, i_max = compute_all_neb_forces(path, cfg; ci_on=cfg.climbing_image)
+        forces, max_f, ci_f, i_max = compute_all_neb_forces(
+            path, cfg; ci_on=cfg.climbing_image
+        )
 
         # Track smallest accurate perpendicular gradient
         # (use the force at the just-evaluated image if it's accurate)
@@ -455,8 +479,14 @@ function gp_neb_oie(
         push!(history["max_energy"], maximum(energies))
 
         n_total = npoints(td) + (outer_iter <= cfg.num_hess_iter ? n_hess : 0)
-        cfg.verbose && @printf("  max|F|=%.5f CI|F|=%.5f N_train=%d calls=%d uneval=%d\n",
-                               max_f, ci_f, n_total, oracle_calls, n_uneval)
+        cfg.verbose && @printf(
+            "  max|F|=%.5f CI|F|=%.5f N_train=%d calls=%d uneval=%d\n",
+            max_f,
+            ci_f,
+            n_total,
+            oracle_calls,
+            n_uneval
+        )
 
         # =====================================================================
         # STEP 4: Decide whether to relax or continue convergence check
@@ -491,8 +521,18 @@ function gp_neb_oie(
             cfg.verbose && @printf("  Starting relaxation (GP tol=%.5f)\n", gp_tol)
 
             images, i_CI, early_stop = _oie_inner_relax(
-                model, images, energies, gradients, td, cfg,
-                cfg.climbing_image, E_ref, y_std, gp_tol, path_scale)
+                model,
+                images,
+                energies,
+                gradients,
+                td,
+                cfg,
+                cfg.climbing_image,
+                E_ref,
+                y_std,
+                gp_tol,
+                path_scale,
+            )
 
             # EMD trust clip at outer boundary
             _emd_trust_clip!(images, td, cfg)
@@ -520,6 +560,6 @@ function gp_neb_oie(
         on_step !== nothing && on_step(path, outer_iter)
     end
 
-    i_max = argmax(energies[2:end-1]) + 1
+    i_max = argmax(energies[2:(end - 1)]) + 1
     return NEBResult(path, converged, oracle_calls, i_max, history)
 end

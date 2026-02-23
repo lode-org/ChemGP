@@ -26,9 +26,7 @@ Create a linearly interpolated path of `n_images` images (including fixed
 endpoints) between `x_start` and `x_end`.
 """
 function linear_interpolation(
-    x_start::Vector{Float64},
-    x_end::Vector{Float64},
-    n_images::Int,
+    x_start::Vector{Float64}, x_end::Vector{Float64}, n_images::Int
 )
     images = Vector{Float64}[]
     for i in 0:(n_images - 1)
@@ -47,20 +45,16 @@ estimate (Henkelman & Jonsson 2000).
 Uses energy-weighted bisection at local extrema to avoid kinks in the
 tangent that cause path oscillations.
 """
-function path_tangent(
-    images::Vector{Vector{Float64}},
-    energies::Vector{Float64},
-    i::Int,
-)
+function path_tangent(images::Vector{Vector{Float64}}, energies::Vector{Float64}, i::Int)
     N = length(images)
     @assert 2 <= i <= N - 1 "Tangent only defined for intermediate images"
 
-    tau_plus = images[i+1] - images[i]
-    tau_minus = images[i] - images[i-1]
+    tau_plus = images[i + 1] - images[i]
+    tau_minus = images[i] - images[i - 1]
 
-    E_prev = energies[i-1]
+    E_prev = energies[i - 1]
     E_curr = energies[i]
-    E_next = energies[i+1]
+    E_next = energies[i + 1]
 
     if E_prev < E_curr < E_next
         tau = tau_plus
@@ -89,13 +83,10 @@ Compute the spring force parallel to the tangent at image `i`.
     F_spring = k * (||R_{i+1} - R_i|| - ||R_i - R_{i-1}||) * tangent
 """
 function spring_force(
-    images::Vector{Vector{Float64}},
-    i::Int,
-    k_spring::Float64,
-    tangent::Vector{Float64},
+    images::Vector{Vector{Float64}}, i::Int, k_spring::Float64, tangent::Vector{Float64}
 )
-    d_next = norm(images[i+1] - images[i])
-    d_prev = norm(images[i] - images[i-1])
+    d_next = norm(images[i + 1] - images[i])
+    d_prev = norm(images[i] - images[i - 1])
     return k_spring * (d_next - d_prev) * tangent
 end
 
@@ -110,11 +101,7 @@ Reference: Asgeirsson, V. et al. (2021). J. Chem. Theory Comput., 17(8),
 4929-4945.
 """
 function energy_weighted_k(
-    energies::Vector{Float64},
-    i_lo::Int,
-    i_hi::Int,
-    k_min::Float64,
-    k_max::Float64,
+    energies::Vector{Float64}, i_lo::Int, i_hi::Int, k_min::Float64, k_max::Float64
 )
     E_ref = max(energies[1], energies[end])
     E_max = maximum(energies)
@@ -142,8 +129,8 @@ function neb_force(
     gradient::Vector{Float64},
     spring_f::Vector{Float64},
     tangent::Vector{Float64};
-    climbing::Bool = false,
-    is_highest::Bool = false,
+    climbing::Bool=false,
+    is_highest::Bool=false,
 )
     if climbing && is_highest
         return -gradient + 2 * dot(gradient, tangent) * tangent
@@ -167,9 +154,7 @@ Reference: Koistinen, O.-P. et al. (2017). J. Chem. Phys. 147, 152720.
 Implementation follows MATLAB GPR/aux/get_hessian_points.m.
 """
 function get_hessian_points(
-    x_start::Vector{Float64},
-    x_end::Vector{Float64},
-    epsilon::Float64,
+    x_start::Vector{Float64}, x_end::Vector{Float64}, epsilon::Float64
 )
     D = length(x_start)
     points = Vector{Vector{Float64}}(undef, 2 * D)
@@ -205,11 +190,11 @@ higher energy of the two connected images (Asgeirsson et al. 2021).
 - `ci_f`: Force norm at the highest-energy image (the CI candidate)
 - `i_max`: Index of the highest-energy intermediate image
 """
-function compute_all_neb_forces(path::NEBPath, config::NEBConfig; ci_on::Bool = false)
+function compute_all_neb_forces(path::NEBPath, config::NEBConfig; ci_on::Bool=false)
     N = length(path.images)
     forces = [zeros(length(path.images[1])) for _ in 1:N]
 
-    i_max = argmax(path.energies[2:end-1]) + 1
+    i_max = argmax(path.energies[2:(end - 1)]) + 1
 
     max_f_norm = 0.0
     ci_f_norm = 0.0
@@ -218,21 +203,27 @@ function compute_all_neb_forces(path::NEBPath, config::NEBConfig; ci_on::Bool = 
         tau = path_tangent(path.images, path.energies, i)
 
         if config.energy_weighted
-            k_prev = energy_weighted_k(path.energies, i - 1, i,
-                                       config.ew_k_min, config.ew_k_max)
-            k_next = energy_weighted_k(path.energies, i, i + 1,
-                                       config.ew_k_min, config.ew_k_max)
-            d_next = norm(path.images[i+1] - path.images[i])
-            d_prev = norm(path.images[i] - path.images[i-1])
+            k_prev = energy_weighted_k(
+                path.energies, i - 1, i, config.ew_k_min, config.ew_k_max
+            )
+            k_next = energy_weighted_k(
+                path.energies, i, i + 1, config.ew_k_min, config.ew_k_max
+            )
+            d_next = norm(path.images[i + 1] - path.images[i])
+            d_prev = norm(path.images[i] - path.images[i - 1])
             f_spring = (k_next * d_next - k_prev * d_prev) * tau
         else
             f_spring = spring_force(path.images, i, path.spring_constant, tau)
         end
 
         is_highest = (i == i_max)
-        f = neb_force(path.gradients[i], f_spring, tau;
-                      climbing = ci_on && config.climbing_image,
-                      is_highest = is_highest)
+        f = neb_force(
+            path.gradients[i],
+            f_spring,
+            tau;
+            climbing=ci_on && config.climbing_image,
+            is_highest=is_highest,
+        )
 
         forces[i] = f
         fn = norm(f)

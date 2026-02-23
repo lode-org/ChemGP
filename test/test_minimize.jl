@@ -6,13 +6,13 @@
         E, G = lj_energy_gradient(x)
 
         # At equilibrium, energy should be -epsilon = -1.0
-        @test isapprox(E, -1.0, atol = 1e-10)
+        @test isapprox(E, -1.0, atol=1e-10)
         # Gradient should be ~ 0 at equilibrium
         @test norm(G) < 1e-10
     end
 
     @testset "random_cluster" begin
-        x = random_cluster(4; min_dist = 1.0)
+        x = random_cluster(4; min_dist=1.0)
         @test length(x) == 12  # 4 atoms * 3 coords
         # Check minimum distance constraint
         dists = interatomic_distances(x)
@@ -25,14 +25,14 @@
         kernel = MolInvDistSE(1.0, [0.5], Float64[])
 
         config = MinimizationConfig(
-            trust_radius = 0.3,
-            conv_tol = 0.5,     # Very loose for fast test
-            max_iter = 5,       # Few iterations
-            gp_train_iter = 50, # Minimal training
-            verbose = false,
+            trust_radius=0.3,
+            conv_tol=0.5,     # Very loose for fast test
+            max_iter=5,       # Few iterations
+            gp_train_iter=50, # Minimal training
+            verbose=false,
         )
 
-        result = gp_minimize(lj_energy_gradient, x_init, kernel; config = config)
+        result = gp_minimize(lj_energy_gradient, x_init, kernel; config=config)
 
         @test result.oracle_calls >= 5  # At least initial points
         @test length(result.trajectory) >= 1

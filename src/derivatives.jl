@@ -2,7 +2,6 @@
 # Derivative Block Logic
 # ==============================================================================
 
-
 """
     kernel_blocks(k::Kernel, x1, x2)
 
@@ -65,7 +64,9 @@ Returns `features` (length nf) and `J` (nf x D) where D = length(x_flat).
 
 Matches C++ gpr_optim Gradient.cpp calculateGradientBetweenMovingAtoms.
 """
-function _invdist_jacobian(x_flat::AbstractVector{Float64}, frozen_flat::AbstractVector{Float64})
+function _invdist_jacobian(
+    x_flat::AbstractVector{Float64}, frozen_flat::AbstractVector{Float64}
+)
     N_mov = div(length(x_flat), 3)
     N_fro = div(length(frozen_flat), 3)
     D = length(x_flat)
@@ -99,9 +100,9 @@ function _invdist_jacobian(x_flat::AbstractVector{Float64}, frozen_flat::Abstrac
             J[idx, xi[1]] = -dx * invr3
             J[idx, xi[2]] = -dy * invr3
             J[idx, xi[3]] = -dz * invr3
-            J[idx, xj[1]] =  dx * invr3
-            J[idx, xj[2]] =  dy * invr3
-            J[idx, xj[3]] =  dz * invr3
+            J[idx, xj[1]] = dx * invr3
+            J[idx, xj[2]] = dy * invr3
+            J[idx, xj[3]] = dz * invr3
 
             idx += 1
         end

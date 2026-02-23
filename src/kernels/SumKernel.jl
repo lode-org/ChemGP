@@ -40,7 +40,7 @@ k_total = MolSumKernel(k_se, OffsetKernel(1.0))
 
 See also: [`OffsetKernel`](@ref), [`MolInvDistSE`](@ref)
 """
-struct MolSumKernel{K1<:Kernel, K2<:Kernel} <: Kernel
+struct MolSumKernel{K1<:Kernel,K2<:Kernel} <: Kernel
     k1::K1
     k2::K2
 end

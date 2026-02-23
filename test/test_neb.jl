@@ -7,12 +7,12 @@
         @test length(images) == 5
         @test images[1] == x_start
         @test images[end] == x_end
-        @test isapprox(images[3], [0.5, 0.5], atol = 1e-12)
+        @test isapprox(images[3], [0.5, 0.5], atol=1e-12)
 
         # Images should be evenly spaced
         for i in 1:(length(images) - 1)
-            d = norm(images[i+1] - images[i])
-            @test isapprox(d, norm(x_end - x_start) / 4, atol = 1e-12)
+            d = norm(images[i + 1] - images[i])
+            @test isapprox(d, norm(x_end - x_start) / 4, atol=1e-12)
         end
     end
 
@@ -40,11 +40,11 @@
         tangent = [1.0, 0.0]  # Unit vector along x
         spring_f = [0.5, 0.0]  # Parallel spring
 
-        f = neb_force(gradient, spring_f, tangent; climbing = false, is_highest = false)
+        f = neb_force(gradient, spring_f, tangent; climbing=false, is_highest=false)
 
         # The gradient perpendicular component is [0, 2], negated -> [0, -2]
         # Plus spring parallel: [0.5, 0]
-        @test isapprox(f, [0.5, -2.0], atol = 1e-12)
+        @test isapprox(f, [0.5, -2.0], atol=1e-12)
     end
 
     @testset "Climbing image force" begin
@@ -52,10 +52,10 @@
         tangent = [1.0, 0.0]
         spring_f = [0.5, 0.0]  # Should be ignored for CI
 
-        f = neb_force(gradient, spring_f, tangent; climbing = true, is_highest = true)
+        f = neb_force(gradient, spring_f, tangent; climbing=true, is_highest=true)
 
         # CI force: -G + 2*(G.tau)tau = -[1,2] + 2*1*[1,0] = [1, -2]
-        @test isapprox(f, [1.0, -2.0], atol = 1e-12)
+        @test isapprox(f, [1.0, -2.0], atol=1e-12)
     end
 
     @testset "Standard NEB on Muller-Brown" begin
@@ -64,16 +64,16 @@
         x_C = [-0.050, 0.467]
 
         cfg = NEBConfig(
-            images = 5,           # 5 movable + 2 endpoints = 7 total
-            spring_constant = 10.0,
-            climbing_image = false,
-            max_iter = 300,
-            conv_tol = 1.0,
-            step_size = 1e-4,
-            verbose = false,
+            images=5,           # 5 movable + 2 endpoints = 7 total
+            spring_constant=10.0,
+            climbing_image=false,
+            max_iter=300,
+            conv_tol=1.0,
+            step_size=1e-4,
+            verbose=false,
         )
 
-        result = neb_optimize(muller_brown_energy_gradient, x_B, x_C; config = cfg)
+        result = neb_optimize(muller_brown_energy_gradient, x_B, x_C; config=cfg)
 
         # Path should have correct number of images (movable + 2 endpoints)
         @test length(result.path.images) == 7
@@ -84,13 +84,16 @@
 
         # Energy at endpoints should match oracle
         E_B, _ = muller_brown_energy_gradient(x_B)
-        @test isapprox(result.path.energies[1], E_B, atol = 0.1)
+        @test isapprox(result.path.energies[1], E_B, atol=0.1)
 
         # Maximum energy along path should be higher than both endpoints
-        @test maximum(result.path.energies) > min(result.path.energies[1], result.path.energies[end])
+        @test maximum(result.path.energies) >
+            min(result.path.energies[1], result.path.energies[end])
 
         # Barrier should be in the correct range (known: 35.92 with CI-NEB)
-        barrier = maximum(result.path.energies) - min(result.path.energies[1], result.path.energies[end])
+        barrier =
+            maximum(result.path.energies) -
+            min(result.path.energies[1], result.path.energies[end])
         @test 20.0 < barrier < 60.0
     end
 
@@ -101,18 +104,18 @@
         k = KernelFunctions.SqExponentialKernel()
 
         cfg = NEBConfig(
-            images = 3,           # 3 movable + 2 endpoints = 5 total
-            spring_constant = 10.0,
-            climbing_image = false,
-            max_iter = 200,
-            conv_tol = 2.0,  # Relaxed for test speed
-            step_size = 1e-4,
-            gp_train_iter = 50,
-            max_outer_iter = 5,
-            verbose = false,
+            images=3,           # 3 movable + 2 endpoints = 5 total
+            spring_constant=10.0,
+            climbing_image=false,
+            max_iter=200,
+            conv_tol=2.0,  # Relaxed for test speed
+            step_size=1e-4,
+            gp_train_iter=50,
+            max_outer_iter=5,
+            verbose=false,
         )
 
-        result = gp_neb_aie(muller_brown_energy_gradient, x_B, x_C, k; config = cfg)
+        result = gp_neb_aie(muller_brown_energy_gradient, x_B, x_C, k; config=cfg)
 
         # Oracle calls: 2 endpoints + 3 images * 5 outer iters = 17 max
         @test 2 < result.oracle_calls <= 20
@@ -134,18 +137,18 @@
         k = KernelFunctions.SqExponentialKernel()
 
         cfg = NEBConfig(
-            images = 3,           # 3 movable + 2 endpoints = 5 total
-            spring_constant = 10.0,
-            climbing_image = false,
-            max_iter = 200,
-            conv_tol = 2.0,
-            step_size = 1e-4,
-            gp_train_iter = 50,
-            max_outer_iter = 5,
-            verbose = false,
+            images=3,           # 3 movable + 2 endpoints = 5 total
+            spring_constant=10.0,
+            climbing_image=false,
+            max_iter=200,
+            conv_tol=2.0,
+            step_size=1e-4,
+            gp_train_iter=50,
+            max_outer_iter=5,
+            verbose=false,
         )
 
-        result = gp_neb_oie(muller_brown_energy_gradient, x_B, x_C, k; config = cfg)
+        result = gp_neb_oie(muller_brown_energy_gradient, x_B, x_C, k; config=cfg)
 
         # OIE: 2 endpoints + 1 midpoint bootstrap + 1 per outer iter = 8 max
         @test 3 < result.oracle_calls <= 10
@@ -170,18 +173,18 @@
         k = KernelFunctions.SqExponentialKernel()
 
         cfg = NEBConfig(
-            images = 3,
-            spring_constant = 10.0,
-            climbing_image = false,
-            max_iter = 200,
-            conv_tol = 2.0,
-            step_size = 1e-4,
-            gp_train_iter = 50,
-            max_outer_iter = 5,
-            verbose = false,
+            images=3,
+            spring_constant=10.0,
+            climbing_image=false,
+            max_iter=200,
+            conv_tol=2.0,
+            step_size=1e-4,
+            gp_train_iter=50,
+            max_outer_iter=5,
+            verbose=false,
         )
 
-        result = gp_neb_oie_naive(muller_brown_energy_gradient, x_B, x_C, k; config = cfg)
+        result = gp_neb_oie_naive(muller_brown_energy_gradient, x_B, x_C, k; config=cfg)
 
         # OIE-naive: 2 endpoints + 1 midpoint + 5 outer = 8
         @test 3 < result.oracle_calls <= 10
@@ -200,19 +203,19 @@
         k = KernelFunctions.SqExponentialKernel()
 
         cfg = NEBConfig(
-            images = 3,
-            spring_constant = 10.0,
-            climbing_image = false,
-            max_iter = 200,
-            conv_tol = 2.0,
-            step_size = 1e-4,
-            gp_train_iter = 50,
-            max_outer_iter = 5,
-            max_gp_points = 6,   # force FPS subset after a few iterations
-            verbose = false,
+            images=3,
+            spring_constant=10.0,
+            climbing_image=false,
+            max_iter=200,
+            conv_tol=2.0,
+            step_size=1e-4,
+            gp_train_iter=50,
+            max_outer_iter=5,
+            max_gp_points=6,   # force FPS subset after a few iterations
+            verbose=false,
         )
 
-        result = gp_neb_aie(muller_brown_energy_gradient, x_B, x_C, k; config = cfg)
+        result = gp_neb_aie(muller_brown_energy_gradient, x_B, x_C, k; config=cfg)
 
         @test 2 < result.oracle_calls <= 20
         @test length(result.path.images) == 5
@@ -235,20 +238,20 @@
         x_p = copy(LEPS_PRODUCT)
 
         cfg = NEBConfig(
-            images = 5,           # 5 movable + 2 endpoints = 7 total
-            spring_constant = 5.0,
-            climbing_image = true,
-            ci_activation_tol = 0.5,
-            max_iter = 500,
-            conv_tol = 0.05,
-            optimizer = :lbfgs,
-            max_move = 0.1,
-            lbfgs_memory = 20,
-            initializer = :linear,
-            verbose = false,
+            images=5,           # 5 movable + 2 endpoints = 7 total
+            spring_constant=5.0,
+            climbing_image=true,
+            ci_activation_tol=0.5,
+            max_iter=500,
+            conv_tol=0.05,
+            optimizer=:lbfgs,
+            max_move=0.1,
+            lbfgs_memory=20,
+            initializer=:linear,
+            verbose=false,
         )
 
-        result = neb_optimize(leps_energy_gradient, x_r, x_p; config = cfg)
+        result = neb_optimize(leps_energy_gradient, x_r, x_p; config=cfg)
 
         # Must converge
         @test result.converged
@@ -258,10 +261,9 @@
         @test max_force_seen < 50.0
 
         # Barrier: known value is 1.3291 eV from converged CI-NEB
-        barrier = result.path.energies[result.max_energy_image] -
-                  result.path.energies[1]
+        barrier = result.path.energies[result.max_energy_image] - result.path.energies[1]
         @test 0.5 < barrier < 2.5
-        @test isapprox(barrier, 1.33, atol = 0.15)
+        @test isapprox(barrier, 1.33, atol=0.15)
     end
 
     @testset "CI-NEB convergence with SD (LEPS 9D)" begin
@@ -270,19 +272,19 @@
         x_p = copy(LEPS_PRODUCT)
 
         cfg = NEBConfig(
-            images = 5,           # 5 movable + 2 endpoints = 7 total
-            spring_constant = 5.0,
-            climbing_image = true,
-            ci_activation_tol = 0.5,
-            max_iter = 1000,
-            conv_tol = 0.05,
-            optimizer = :sd,
-            max_move = 0.1,
-            initializer = :linear,
-            verbose = false,
+            images=5,           # 5 movable + 2 endpoints = 7 total
+            spring_constant=5.0,
+            climbing_image=true,
+            ci_activation_tol=0.5,
+            max_iter=1000,
+            conv_tol=0.05,
+            optimizer=:sd,
+            max_move=0.1,
+            initializer=:linear,
+            verbose=false,
         )
 
-        result = neb_optimize(leps_energy_gradient, x_r, x_p; config = cfg)
+        result = neb_optimize(leps_energy_gradient, x_r, x_p; config=cfg)
 
         @test result.converged
 
@@ -291,9 +293,8 @@
         @test max_force_seen < 50.0
 
         # Barrier matches L-BFGS result
-        barrier = result.path.energies[result.max_energy_image] -
-                  result.path.energies[1]
-        @test isapprox(barrier, 1.33, atol = 0.15)
+        barrier = result.path.energies[result.max_energy_image] - result.path.energies[1]
+        @test isapprox(barrier, 1.33, atol=0.15)
     end
 
     @testset "GP-NEB-OIE-naive converges on LEPS with MolInvDistSE" begin
@@ -305,19 +306,19 @@
         kernel = MolInvDistSE(1.0, [1.0], Float64[])
 
         cfg = NEBConfig(
-            images = 3,
-            spring_constant = 5.0,
-            climbing_image = true,
-            ci_activation_tol = 1.0,
-            max_iter = 200,
-            conv_tol = 0.3,
-            step_size = 1e-4,
-            gp_train_iter = 100,
-            max_outer_iter = 30,
-            verbose = false,
+            images=3,
+            spring_constant=5.0,
+            climbing_image=true,
+            ci_activation_tol=1.0,
+            max_iter=200,
+            conv_tol=0.3,
+            step_size=1e-4,
+            gp_train_iter=100,
+            max_outer_iter=30,
+            verbose=false,
         )
 
-        result = gp_neb_oie_naive(leps_energy_gradient, x_r, x_p, kernel; config = cfg)
+        result = gp_neb_oie_naive(leps_energy_gradient, x_r, x_p, kernel; config=cfg)
 
         # Must converge
         @test result.converged
@@ -326,9 +327,8 @@
         @test result.oracle_calls < 30
 
         # Barrier must match standard NEB (known: 1.3291)
-        barrier = result.path.energies[result.max_energy_image] -
-                  result.path.energies[1]
-        @test isapprox(barrier, 1.33, atol = 0.10)
+        barrier = result.path.energies[result.max_energy_image] - result.path.energies[1]
+        @test isapprox(barrier, 1.33, atol=0.10)
 
         # Forces must stay bounded throughout (no divergence)
         @test all(f -> f < 20.0, result.history["max_force"])
@@ -337,8 +337,8 @@
         forces = result.history["max_force"]
         n = length(forces)
         if n >= 4
-            first_half = mean(forces[1:div(n,2)])
-            last_half = mean(forces[div(n,2)+1:end])
+            first_half = mean(forces[1:div(n, 2)])
+            last_half = mean(forces[(div(n, 2) + 1):end])
             @test last_half < first_half * 1.5  # allow some slack
         end
     end
@@ -351,19 +351,19 @@
         kernel = MolInvDistSE(1.0, [1.0], Float64[])
 
         cfg = NEBConfig(
-            images = 3,
-            spring_constant = 5.0,
-            climbing_image = true,
-            ci_activation_tol = 1.0,
-            max_iter = 200,
-            conv_tol = 0.3,
-            step_size = 1e-4,
-            gp_train_iter = 100,
-            max_outer_iter = 10,
-            verbose = false,
+            images=3,
+            spring_constant=5.0,
+            climbing_image=true,
+            ci_activation_tol=1.0,
+            max_iter=200,
+            conv_tol=0.3,
+            step_size=1e-4,
+            gp_train_iter=100,
+            max_outer_iter=10,
+            verbose=false,
         )
 
-        result = gp_neb_aie(leps_energy_gradient, x_r, x_p, kernel; config = cfg)
+        result = gp_neb_aie(leps_energy_gradient, x_r, x_p, kernel; config=cfg)
 
         # Oracle calls: 2 endpoints + 3 images * 10 outer = 32 max
         @test result.oracle_calls <= 40
@@ -372,8 +372,7 @@
         @test all(f -> f < 20.0, result.history["max_force"])
 
         # Barrier should be positive and in plausible range
-        barrier = result.path.energies[result.max_energy_image] -
-                  result.path.energies[1]
+        barrier = result.path.energies[result.max_energy_image] - result.path.energies[1]
         @test 0.5 < barrier < 3.0
 
         # Forces should trend downward (last force < first force)
@@ -391,28 +390,27 @@
         kernel = MolInvDistSE(1.0, [1.0], Float64[])
 
         cfg = NEBConfig(
-            images = 3,
-            spring_constant = 5.0,
-            climbing_image = true,
-            ci_activation_tol = 1.0,
-            max_iter = 200,
-            conv_tol = 0.3,
-            step_size = 1e-4,
-            gp_train_iter = 100,
-            max_outer_iter = 15,
-            max_gp_points = 15,  # triggers per-bead selection after ~5 outer iters
-            verbose = false,
+            images=3,
+            spring_constant=5.0,
+            climbing_image=true,
+            ci_activation_tol=1.0,
+            max_iter=200,
+            conv_tol=0.3,
+            step_size=1e-4,
+            gp_train_iter=100,
+            max_outer_iter=15,
+            max_gp_points=15,  # triggers per-bead selection after ~5 outer iters
+            verbose=false,
         )
 
-        result = gp_neb_aie(leps_energy_gradient, x_r, x_p, kernel; config = cfg)
+        result = gp_neb_aie(leps_energy_gradient, x_r, x_p, kernel; config=cfg)
 
         # Must converge even with FPS active
         @test result.converged
 
         # Barrier must match known value
-        barrier = result.path.energies[result.max_energy_image] -
-                  result.path.energies[1]
-        @test isapprox(barrier, 1.33, atol = 0.10)
+        barrier = result.path.energies[result.max_energy_image] - result.path.energies[1]
+        @test isapprox(barrier, 1.33, atol=0.10)
 
         # Forces must stay bounded (no bead starvation)
         @test all(f -> f < 10.0, result.history["max_force"])
@@ -435,21 +433,21 @@
         kernel = MolInvDistSE(1.0, [1.0], Float64[])
 
         cfg = NEBConfig(
-            images = 3,
-            spring_constant = 5.0,
-            climbing_image = true,
-            ci_activation_tol = 1.0,
-            max_iter = 200,
-            conv_tol = 0.3,
-            step_size = 1e-4,
-            gp_train_iter = 100,
-            max_outer_iter = 30,
-            max_gp_points = 10,
-            rff_features = 200,
-            verbose = false,
+            images=3,
+            spring_constant=5.0,
+            climbing_image=true,
+            ci_activation_tol=1.0,
+            max_iter=200,
+            conv_tol=0.3,
+            step_size=1e-4,
+            gp_train_iter=100,
+            max_outer_iter=30,
+            max_gp_points=10,
+            rff_features=200,
+            verbose=false,
         )
 
-        result = gp_neb_oie_naive(leps_energy_gradient, x_r, x_p, kernel; config = cfg)
+        result = gp_neb_oie_naive(leps_energy_gradient, x_r, x_p, kernel; config=cfg)
 
         # Must converge
         @test result.converged
@@ -458,9 +456,8 @@
         @test result.oracle_calls < 35
 
         # Barrier must match known value
-        barrier = result.path.energies[result.max_energy_image] -
-                  result.path.energies[1]
-        @test isapprox(barrier, 1.33, atol = 0.15)
+        barrier = result.path.energies[result.max_energy_image] - result.path.energies[1]
+        @test isapprox(barrier, 1.33, atol=0.15)
 
         # Forces: RFF approximation causes transient spikes when it activates,
         # but must stay bounded (no Nystrom-style divergence to 10^6).
@@ -471,8 +468,8 @@
         forces = result.history["max_force"]
         n = length(forces)
         if n >= 4
-            first_half = mean(forces[1:div(n,2)])
-            last_half = mean(forces[div(n,2)+1:end])
+            first_half = mean(forces[1:div(n, 2)])
+            last_half = mean(forces[(div(n, 2) + 1):end])
             @test last_half < first_half * 2.0  # generous for RFF noise
         end
     end
@@ -486,20 +483,20 @@
         k = KernelFunctions.SqExponentialKernel()
 
         cfg = NEBConfig(
-            images = 3,
-            spring_constant = 5.0,
-            climbing_image = false,
-            max_iter = 200,
-            conv_tol = 2.0,
-            step_size = 1e-4,
-            gp_train_iter = 50,
-            max_outer_iter = 10,
-            trust_radius = 0.05,
-            trust_metric = :emd,
-            verbose = false,
+            images=3,
+            spring_constant=5.0,
+            climbing_image=false,
+            max_iter=200,
+            conv_tol=2.0,
+            step_size=1e-4,
+            gp_train_iter=50,
+            max_outer_iter=10,
+            trust_radius=0.05,
+            trust_metric=:emd,
+            verbose=false,
         )
 
-        result = gp_neb_oie(leps_energy_gradient, x_r, x_p, k; config = cfg)
+        result = gp_neb_oie(leps_energy_gradient, x_r, x_p, k; config=cfg)
 
         # Path should be structurally valid
         @test length(result.path.images) == 5
