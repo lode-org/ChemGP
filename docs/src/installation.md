@@ -54,6 +54,32 @@ ChemGP depends on the following Julia packages:
 | `Printf` | Formatted output during optimization |
 | `Statistics` | Mean and standard deviation for normalization |
 
+### Optional: AtomsBase Integration
+
+ChemGP provides a package extension that activates when
+[AtomsBase.jl](https://github.com/JuliaMolSim/AtomsBase.jl) is loaded. This
+allows converting between AtomsBase systems and ChemGP's flat-vector
+convention. To use it:
+
+```julia
+using AtomsBase
+using AtomsIO    # for reading structure files
+using ChemGP
+
+sys = load_system("structure.extxyz")
+(; positions, atomic_numbers, box) = chemgp_coords(sys)
+```
+
+Install AtomsBase and AtomsIO in your environment:
+
+```julia
+using Pkg
+Pkg.add(["AtomsBase", "AtomsIO"])
+```
+
+AtomsIO supports extended XYZ, POSCAR, CIF, and other common formats.
+See [AtomsBase Integration](@ref) for the full API.
+
 ### Optional: RPC Potentials
 
 To use remote potentials via rgpot, you need to build the

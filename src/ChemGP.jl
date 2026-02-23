@@ -86,6 +86,46 @@ include("io/extxyz.jl")
 include("io/hdf5.jl")
 
 # ==============================================================================
+# AtomsBase integration (implemented in ext/ChemGPAtomsBaseExt.jl)
+# ==============================================================================
+
+"""
+    chemgp_coords(sys::AbstractSystem) -> NamedTuple
+
+Convert an AtomsBase `AbstractSystem` to ChemGP's flat-vector convention.
+Returns `(positions, atomic_numbers, box)` where `positions` is a
+`Vector{Float64}` of length `3N` (Angstroms), `atomic_numbers` is
+`Vector{Int32}`, and `box` is a `Vector{Float64}` of length 9 (row-major
+cell vectors). Non-periodic systems get a default 20 Angstrom cubic box.
+
+Requires `using AtomsBase` to activate the package extension.
+"""
+function chemgp_coords end
+
+"""
+    atomsbase_system(positions, atomic_numbers, box; pbc=false)
+
+Convert ChemGP flat vectors back to an AtomsBase `FlexibleSystem`.
+`positions` is `3N` floats in Angstroms, `atomic_numbers` is integer Z
+values, `box` is 9 floats (row-major cell vectors). Set `pbc=true` to
+create a periodic system.
+
+Requires `using AtomsBase` to activate the package extension.
+"""
+function atomsbase_system end
+
+"""
+    atomsbase_neb_trajectory(result, atomic_numbers, box; pbc=false)
+
+Convert an NEB result (or `NEBPath`) to a `Vector` of AtomsBase systems,
+one per image. Accepts either a `NEBResult` (extracts `.path`) or a
+`NEBPath` directly.
+
+Requires `using AtomsBase` to activate the package extension.
+"""
+function atomsbase_neb_trajectory end
+
+# ==============================================================================
 # Exports
 # ==============================================================================
 
@@ -150,5 +190,8 @@ export min_distance_to_data, check_interatomic_ratio, remove_rigid_body_modes!
 # I/O
 export write_neb_trajectory, write_neb_dat, write_convergence_csv
 export write_neb_hdf5, make_neb_writer, make_neb_hdf5_writer, ELEMENT_SYMBOLS
+
+# AtomsBase integration (available when AtomsBase is loaded)
+export chemgp_coords, atomsbase_system, atomsbase_neb_trajectory
 
 end

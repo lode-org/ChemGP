@@ -22,6 +22,8 @@ dimer (OTGPD).
 -   **OTGPD**: Optimal Transport GP Dimer for transition state search
 -   **Oracles**: Built-in Lennard-Jones, Muller-Brown, and LEPS potentials; RPC
     oracle for remote potential evaluation via [rgpot](https://github.com/HaoZeke/rgpot)
+-   **AtomsBase integration**: Optional package extension for loading structures
+    from standard file formats (extxyz, POSCAR, etc.) via AtomsBase/AtomsIO
 
 
 # Installation
