@@ -19,13 +19,8 @@ using Unitful: @u_str
     end
 
     @testset "chemgp_coords (periodic system)" begin
-        box = ([10.0, 0.0, 0.0]u"Å",
-               [0.0, 12.0, 0.0]u"Å",
-               [0.0, 0.0, 14.0]u"Å")
-        sys = periodic_system([
-            :H => [1.0, 2.0, 3.0]u"Å",
-            :He => [4.0, 5.0, 6.0]u"Å",
-        ], box)
+        box = ([10.0, 0.0, 0.0]u"Å", [0.0, 12.0, 0.0]u"Å", [0.0, 0.0, 14.0]u"Å")
+        sys = periodic_system([:H => [1.0, 2.0, 3.0]u"Å", :He => [4.0, 5.0, 6.0]u"Å"], box)
         c = chemgp_coords(sys)
 
         @test c.positions == Float64[1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
@@ -55,7 +50,7 @@ using Unitful: @u_str
         atnrs = Int32[8, 1]
         box = Float64[10, 0, 0, 0, 10, 0, 0, 0, 10]
 
-        sys = atomsbase_system(pos, atnrs, box; pbc = true)
+        sys = atomsbase_system(pos, atnrs, box; pbc=true)
         @test length(sys) == 2
         @test all(periodicity(sys))
 

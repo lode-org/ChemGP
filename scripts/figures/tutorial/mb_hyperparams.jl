@@ -35,7 +35,7 @@ y_full, y_mean, y_std = ChemGP.normalize(td)
 
 # --- 1D slice ---
 y_slice = 0.5
-x_slice = range(-1.5, 1.2; length = 200)
+x_slice = range(-1.5, 1.2; length=200)
 
 # True surface along slice
 E_true = [muller_brown_energy_gradient([x, y_slice])[1] for x in x_slice]
@@ -49,16 +49,18 @@ sv_labels = [L"$\sigma_f = 0.1$", L"$\sigma_f = 1.0$", L"$\sigma_f = 100.0$"]
 # --- Plot ---
 set_theme!(PUBLICATION_THEME)
 
-fig = Figure(; size = (750, 650))
+fig = Figure(; size=(750, 650))
 
 for (j, ls) in enumerate(lengthscales)
     for (i, sv) in enumerate(signal_vars)
-        ax = Axis(fig[i, j];
-            title = i == 1 ? ls_labels[j] : "",
-            ylabel = j == 1 ? sv_labels[i] : "",
-            xlabel = i == 3 ? L"$x$" : "",
-            xticklabelsvisible = i == 3,
-            yticklabelsvisible = j == 1)
+        ax = Axis(
+            fig[i, j];
+            title=i == 1 ? ls_labels[j] : "",
+            ylabel=j == 1 ? sv_labels[i] : "",
+            xlabel=i == 3 ? L"$x$" : "",
+            xticklabelsvisible=i == 3,
+            yticklabelsvisible=j == 1,
+        )
 
         # Build kernel with fixed hyperparameters
         kernel = sv * with_lengthscale(SqExponentialKernel(), ls)
@@ -78,28 +80,36 @@ for (j, ls) in enumerate(lengthscales)
         end
 
         # Confidence band
-        band!(ax, collect(x_slice),
-            E_pred .- 2 .* E_std, E_pred .+ 2 .* E_std;
-            color = (RUHI.sky, 0.3))
+        band!(
+            ax,
+            collect(x_slice),
+            E_pred .- 2 .* E_std,
+            E_pred .+ 2 .* E_std;
+            color=(RUHI.sky, 0.3),
+        )
 
         # True surface
-        lines!(ax, collect(x_slice), E_true;
-            color = :black, linewidth = 1.0, linestyle = :dash)
+        lines!(ax, collect(x_slice), E_true; color=:black, linewidth=1.0, linestyle=:dash)
 
         # GP mean
-        lines!(ax, collect(x_slice), E_pred;
-            color = RUHI.teal, linewidth = 1.5)
+        lines!(ax, collect(x_slice), E_pred; color=RUHI.teal, linewidth=1.5)
 
         ylims!(ax, -250, 100)
     end
 end
 
 # Legend
-Legend(fig[4, 1:3],
-    [LineElement(; color = :black, linestyle = :dash, linewidth = 1.0),
-        LineElement(; color = RUHI.teal, linewidth = 1.5),
-        PolyElement(; color = (RUHI.sky, 0.3))],
+Legend(
+    fig[4, 1:3],
+    [
+        LineElement(; color=:black, linestyle=:dash, linewidth=1.0),
+        LineElement(; color=RUHI.teal, linewidth=1.5),
+        PolyElement(; color=(RUHI.sky, 0.3)),
+    ],
     ["True surface", "GP mean", L"$\pm 2\sigma$"];
-    orientation = :horizontal, tellwidth = false, tellheight = true)
+    orientation=:horizontal,
+    tellwidth=false,
+    tellheight=true,
+)
 
 save_figure(fig, "mb_hyperparams")

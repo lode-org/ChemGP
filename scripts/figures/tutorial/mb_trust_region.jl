@@ -32,11 +32,11 @@ println("Training points: $(npoints(td))")
 y_full, y_mean, y_std = ChemGP.normalize(td)
 kernel = 1.0 * with_lengthscale(SqExponentialKernel(), 0.3)
 model = GPModel(kernel, td.X, y_full)
-train_model!(model; iterations = 300)
+train_model!(model; iterations=300)
 
 # --- 1D slice at y=0.5 ---
 y_slice = 0.5
-x_slice = range(-1.5, 1.2; length = 300)
+x_slice = range(-1.5, 1.2; length=300)
 
 E_true = Float64[]
 E_pred = Float64[]
@@ -66,26 +66,35 @@ boundary_idx = findall(diff(in_trust) .!= 0)
 # --- Plot ---
 set_theme!(PUBLICATION_THEME)
 
-fig = Figure(; size = (504, 350))
-ax = Axis(fig[1, 1]; xlabel = L"$x$", ylabel = L"$E$ (a.u.)")
+fig = Figure(; size=(504, 350))
+ax = Axis(fig[1, 1]; xlabel=L"$x$", ylabel=L"$E$ (a.u.)")
 
 # Confidence band
-band!(ax, collect(x_slice),
-    E_pred .- 2 .* E_std_vals, E_pred .+ 2 .* E_std_vals;
-    color = (RUHI.sky, 0.25))
+band!(
+    ax,
+    collect(x_slice),
+    E_pred .- 2 .* E_std_vals,
+    E_pred .+ 2 .* E_std_vals;
+    color=(RUHI.sky, 0.25),
+)
 
 # True surface
-lines!(ax, collect(x_slice), E_true;
-    color = :black, linewidth = 1.0, linestyle = :dash, label = "True surface")
+lines!(
+    ax,
+    collect(x_slice),
+    E_true;
+    color=:black,
+    linewidth=1.0,
+    linestyle=:dash,
+    label="True surface",
+)
 
 # GP mean
-lines!(ax, collect(x_slice), E_pred;
-    color = RUHI.teal, linewidth = 1.5, label = "GP mean")
+lines!(ax, collect(x_slice), E_pred; color=RUHI.teal, linewidth=1.5, label="GP mean")
 
 # Trust boundary vertical lines
 for idx in boundary_idx
-    vlines!(ax, [collect(x_slice)[idx]];
-        color = RUHI.magenta, linewidth = 1.0, linestyle = :dot)
+    vlines!(ax, [collect(x_slice)[idx]]; color=RUHI.magenta, linewidth=1.0, linestyle=:dot)
 end
 
 # Training points projected to slice (show their x-coordinates)
@@ -94,45 +103,52 @@ for i in 1:npoints(td)
     ty = td.X[2, i]
     if abs(ty - y_slice) < 0.3  # nearby points
         e_at_slice, _ = muller_brown_energy_gradient([tx, y_slice])
-        scatter!(ax, [tx], [e_at_slice];
-            marker = :circle, markersize = 6,
-            color = :black)
+        scatter!(ax, [tx], [e_at_slice]; marker=:circle, markersize=6, color=:black)
     end
 end
 
 # Hypothetical bad step outside trust region
 x_bad = 1.0
 e_bad_pred = E_pred[argmin(abs.(collect(x_slice) .- x_bad))]
-scatter!(ax, [x_bad], [e_bad_pred];
-    marker = :xcross, markersize = 14,
-    color = RUHI.coral, strokewidth = 2)
+scatter!(
+    ax,
+    [x_bad],
+    [e_bad_pred];
+    marker=:xcross,
+    markersize=14,
+    color=RUHI.coral,
+    strokewidth=2,
+)
 
 # Fallback oracle evaluation
 e_bad_true, _ = muller_brown_energy_gradient([x_bad, y_slice])
-scatter!(ax, [x_bad], [e_bad_true];
-    marker = :star5, markersize = 12,
-    color = RUHI.teal)
+scatter!(ax, [x_bad], [e_bad_true]; marker=:star5, markersize=12, color=RUHI.teal)
 
 # Annotations
-text!(ax, x_bad + 0.05, e_bad_pred + 10;
-    text = "GP step", fontsize = 9, color = RUHI.coral)
-text!(ax, x_bad + 0.05, e_bad_true + 10;
-    text = "Oracle fallback", fontsize = 9, color = RUHI.teal)
+text!(ax, x_bad + 0.05, e_bad_pred + 10; text="GP step", fontsize=9, color=RUHI.coral)
+text!(
+    ax, x_bad + 0.05, e_bad_true + 10; text="Oracle fallback", fontsize=9, color=RUHI.teal
+)
 
 # Trust region label
 if !isempty(boundary_idx)
     bx = collect(x_slice)[boundary_idx[end]]
-    text!(ax, bx + 0.03, -50;
-        text = "trust\nboundary", fontsize = 8, color = RUHI.magenta)
+    text!(ax, bx + 0.03, -50; text="trust\nboundary", fontsize=8, color=RUHI.magenta)
 end
 
 ylims!(ax, -250, 100)
 
-Legend(fig[2, 1],
-    [LineElement(; color = :black, linestyle = :dash),
-        LineElement(; color = RUHI.teal, linewidth = 1.5),
-        PolyElement(; color = (RUHI.sky, 0.25))],
+Legend(
+    fig[2, 1],
+    [
+        LineElement(; color=:black, linestyle=:dash),
+        LineElement(; color=RUHI.teal, linewidth=1.5),
+        PolyElement(; color=(RUHI.sky, 0.25)),
+    ],
     ["True surface", "GP mean", L"$\pm 2\sigma$"];
-    orientation = :horizontal, tellwidth = false, tellheight = true)
+    orientation=:horizontal,
+    tellwidth=false,
+    tellheight=true,
+)
 
 save_figure(fig, "mb_trust_region")

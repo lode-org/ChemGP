@@ -8,21 +8,19 @@ mkpath(OUTPUT_DIR)
 
 # --- Ruhi color palette ---
 const RUHI = (
-    coral = colorant"#FF655D",
-    sunshine = colorant"#F1DB4B",
-    teal = colorant"#004D40",
-    sky = colorant"#1E88E5",
-    magenta = colorant"#D81B60",
+    coral=colorant"#FF655D",
+    sunshine=colorant"#F1DB4B",
+    teal=colorant"#004D40",
+    sky=colorant"#1E88E5",
+    magenta=colorant"#D81B60",
 )
 
 # Ordered color cycle for line/scatter plots
 const RUHI_CYCLE = [RUHI.teal, RUHI.sky, RUHI.magenta, RUHI.coral, RUHI.sunshine]
 
 # Custom colormaps
-const RUHI_DIVERGING =
-    cgrad([RUHI.teal, RUHI.sky, RUHI.magenta, RUHI.coral, RUHI.sunshine])
-const RUHI_FULL =
-    cgrad([RUHI.coral, RUHI.sunshine, RUHI.teal, RUHI.sky, RUHI.magenta])
+const RUHI_DIVERGING = cgrad([RUHI.teal, RUHI.sky, RUHI.magenta, RUHI.coral, RUHI.sunshine])
+const RUHI_FULL = cgrad([RUHI.coral, RUHI.sunshine, RUHI.teal, RUHI.sky, RUHI.magenta])
 
 # Colormaps for specific uses
 const ENERGY_COLORMAP = RUHI_DIVERGING
@@ -30,32 +28,32 @@ const VARIANCE_COLORMAP = cgrad([colorant"white", RUHI.sky, RUHI.teal])
 
 # --- Publication theme (Jost font, Ruhi colors) ---
 const PUBLICATION_THEME = Theme(;
-    fontsize = 12,
-    fonts = (regular = "Jost", bold = "Jost Bold", italic = "Jost Italic"),
-    Axis = (
-        xlabelsize = 12,
-        ylabelsize = 12,
-        xticklabelsize = 10,
-        yticklabelsize = 10,
-        titlesize = 13,
-        backgroundcolor = :white,
-        xgridcolor = colorant"floralwhite",
-        ygridcolor = colorant"floralwhite",
-        spinecolor = :black,
-        xtickcolor = :black,
-        ytickcolor = :black,
+    fontsize=12,
+    fonts=(regular="Jost", bold="Jost Bold", italic="Jost Italic"),
+    Axis=(
+        xlabelsize=12,
+        ylabelsize=12,
+        xticklabelsize=10,
+        yticklabelsize=10,
+        titlesize=13,
+        backgroundcolor=:white,
+        xgridcolor=colorant"floralwhite",
+        ygridcolor=colorant"floralwhite",
+        spinecolor=:black,
+        xtickcolor=:black,
+        ytickcolor=:black,
     ),
-    Colorbar = (labelsize = 12, ticklabelsize = 10),
-    Lines = (cycle = Cycle([:color]; covary = true),),
-    Scatter = (cycle = Cycle([:color]; covary = true),),
-    palette = (color = RUHI_CYCLE,),
-    figure_padding = 5,
-    size = (504, 378),  # ~7in x 5.25in at 72dpi
+    Colorbar=(labelsize=12, ticklabelsize=10),
+    Lines=(cycle=Cycle([:color]; covary=true),),
+    Scatter=(cycle=Cycle([:color]; covary=true),),
+    palette=(color=RUHI_CYCLE,),
+    figure_padding=5,
+    size=(504, 378),  # ~7in x 5.25in at 72dpi
 )
 
 function save_figure(fig, name)
     path = joinpath(OUTPUT_DIR, name * ".pdf")
-    save(path, fig; pt_per_unit = 1)
+    save(path, fig; pt_per_unit=1)
     println("Saved: $path")
     return path
 end

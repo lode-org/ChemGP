@@ -131,33 +131,48 @@ ax1 = Axis(
     xticklabelsvisible=false,
     title=L"RFF approximation quality on LEPS",
 )
-lines!(ax1, results_df.D_rff, results_df.energy_mae_vs_true; color=RUHI.teal,
-    linewidth=1.5, label="RFF vs true PES")
-scatter!(ax1, results_df.D_rff, results_df.energy_mae_vs_true; color=RUHI.teal,
-    markersize=6)
-lines!(ax1, results_df.D_rff, results_df.energy_mae_vs_gp; color=RUHI.sky,
-    linewidth=1.5, label="RFF vs exact GP")
-scatter!(ax1, results_df.D_rff, results_df.energy_mae_vs_gp; color=RUHI.sky,
-    markersize=6)
-hlines!(ax1, [gp_e_mae]; color=RUHI.magenta, linewidth=0.8, linestyle=:dash,
-    label="Exact GP vs true PES")
+lines!(
+    ax1,
+    results_df.D_rff,
+    results_df.energy_mae_vs_true;
+    color=RUHI.teal,
+    linewidth=1.5,
+    label="RFF vs true PES",
+)
+scatter!(
+    ax1, results_df.D_rff, results_df.energy_mae_vs_true; color=RUHI.teal, markersize=6
+)
+lines!(
+    ax1,
+    results_df.D_rff,
+    results_df.energy_mae_vs_gp;
+    color=RUHI.sky,
+    linewidth=1.5,
+    label="RFF vs exact GP",
+)
+scatter!(ax1, results_df.D_rff, results_df.energy_mae_vs_gp; color=RUHI.sky, markersize=6)
+hlines!(
+    ax1,
+    [gp_e_mae];
+    color=RUHI.magenta,
+    linewidth=0.8,
+    linestyle=:dash,
+    label="Exact GP vs true PES",
+)
 axislegend(ax1; position=:rt, framevisible=false, labelsize=9)
 
 # Gradient panel
 ax2 = Axis(
-    fig[2, 1];
-    xlabel=L"$D_\mathrm{rff}$",
-    ylabel=L"Gradient MAE (eV/\AA)",
-    yscale=log10,
+    fig[2, 1]; xlabel=L"$D_\mathrm{rff}$", ylabel=L"Gradient MAE (eV/\AA)", yscale=log10
 )
-lines!(ax2, results_df.D_rff, results_df.gradient_mae_vs_true; color=RUHI.teal,
-    linewidth=1.5)
-scatter!(ax2, results_df.D_rff, results_df.gradient_mae_vs_true; color=RUHI.teal,
-    markersize=6)
-lines!(ax2, results_df.D_rff, results_df.gradient_mae_vs_gp; color=RUHI.sky,
-    linewidth=1.5)
-scatter!(ax2, results_df.D_rff, results_df.gradient_mae_vs_gp; color=RUHI.sky,
-    markersize=6)
+lines!(
+    ax2, results_df.D_rff, results_df.gradient_mae_vs_true; color=RUHI.teal, linewidth=1.5
+)
+scatter!(
+    ax2, results_df.D_rff, results_df.gradient_mae_vs_true; color=RUHI.teal, markersize=6
+)
+lines!(ax2, results_df.D_rff, results_df.gradient_mae_vs_gp; color=RUHI.sky, linewidth=1.5)
+scatter!(ax2, results_df.D_rff, results_df.gradient_mae_vs_gp; color=RUHI.sky, markersize=6)
 hlines!(ax2, [gp_g_mae]; color=RUHI.magenta, linewidth=0.8, linestyle=:dash)
 
 rowgap!(fig.layout, 5)
