@@ -22,9 +22,7 @@ The default distance function is Euclidean (norm). For rotationally invariant
 checks, pass `distance_fn=max_1d_log_distance`.
 """
 function min_distance_to_data(
-    x::AbstractVector,
-    X_train::Matrix{Float64};
-    distance_fn::Function = (a, b) -> norm(a - b),
+    x::AbstractVector, X_train::Matrix{Float64}; distance_fn::Function=(a, b) -> norm(a - b)
 )
     N = size(X_train, 2)
     return minimum(distance_fn(x, X_train[:, i]) for i in 1:N)
@@ -45,9 +43,7 @@ The `ratio_limit` (e.g., 2/3) means no interatomic distance should change by
 more than a factor of `ratio_limit` relative to the nearest training point.
 """
 function check_interatomic_ratio(
-    x_new::AbstractVector,
-    X_train::Matrix{Float64},
-    ratio_limit::Float64,
+    x_new::AbstractVector, X_train::Matrix{Float64}, ratio_limit::Float64
 )
     # Skip check for non-molecular inputs (< 2 atoms = < 6 coordinates)
     if length(x_new) < 6
@@ -94,7 +90,7 @@ function remove_rigid_body_modes!(step::Vector{Float64}, x::Vector{Float64}, n_a
     # Center of mass
     com = zeros(3)
     for i in 1:n_atoms
-        com .+= @view x[(3*(i-1)+1):(3*i)]
+        com .+= @view x[(3 * (i - 1) + 1):(3 * i)]
     end
     com ./= n_atoms
 
@@ -105,7 +101,7 @@ function remove_rigid_body_modes!(step::Vector{Float64}, x::Vector{Float64}, n_a
     for d in 1:3
         t = zeros(D)
         for i in 1:n_atoms
-            t[3*(i-1)+d] = 1.0
+            t[3 * (i - 1) + d] = 1.0
         end
         push!(basis, t)
     end
@@ -114,17 +110,17 @@ function remove_rigid_body_modes!(step::Vector{Float64}, x::Vector{Float64}, n_a
     for ax in 1:3
         r = zeros(D)
         for i in 1:n_atoms
-            pos = x[(3*(i-1)+1):(3*i)] .- com
+            pos = x[(3 * (i - 1) + 1):(3 * i)] .- com
             # Cross product: ω_ax × pos
             if ax == 1      # ω = (1,0,0): (0, -pz, py)
-                r[3*(i-1)+2] = -pos[3]
-                r[3*(i-1)+3] =  pos[2]
+                r[3 * (i - 1) + 2] = -pos[3]
+                r[3 * (i - 1) + 3] = pos[2]
             elseif ax == 2  # ω = (0,1,0): (pz, 0, -px)
-                r[3*(i-1)+1] =  pos[3]
-                r[3*(i-1)+3] = -pos[1]
+                r[3 * (i - 1) + 1] = pos[3]
+                r[3 * (i - 1) + 3] = -pos[1]
             else            # ω = (0,0,1): (-py, px, 0)
-                r[3*(i-1)+1] = -pos[2]
-                r[3*(i-1)+2] =  pos[1]
+                r[3 * (i - 1) + 1] = -pos[2]
+                r[3 * (i - 1) + 2] = pos[1]
             end
         end
         push!(basis, r)

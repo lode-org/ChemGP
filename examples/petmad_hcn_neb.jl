@@ -7,7 +7,7 @@
 #
 # Per-step output mirrors eOn: neb_NNN.dat + neb_path_NNN.xyz per iteration,
 # plus a single HDF5 file with the full optimization history.
-# 
+#
 # Reference (eOn CI-NEB with PET-MAD): barrier=2.918 eV, C-N=1.195, C-H=1.292, N-H=1.447, angle=71 deg
 #
 # Prerequisites:
@@ -37,16 +37,28 @@ const BOX = Float64[20, 0, 0, 0, 20, 0, 0, 0, 20]  # cluster in vacuum
 
 # HCN reactant (Baker 01_hcn, frame 1)
 const X_HCN = Float64[
-   -0.0000000000, -0.0001901002,  0.4953725273,   # C
-    0.0000000000,  0.0001075881, -0.6502937324,   # N
-   -0.0000000000, -0.0004700964,  1.5653497002,   # H
+    -0.0000000000,
+    -0.0001901002,
+    0.4953725273,   # C
+    0.0000000000,
+    0.0001075881,
+    -0.6502937324,   # N
+    -0.0000000000,
+    -0.0004700964,
+    1.5653497002,   # H
 ]
 
 # HNC product (Baker 01_hcn, frame 2)
 const X_HNC = Float64[
-    0.0000000000,  0.0000000000,  0.7365959260,   # C
-    0.0000000000,  0.0000000000, -0.4276753515,   # N
-    0.0000000000,  0.0000000000, -1.4258476271,   # H
+    0.0000000000,
+    0.0000000000,
+    0.7365959260,   # C
+    0.0000000000,
+    0.0000000000,
+    -0.4276753515,   # N
+    0.0000000000,
+    0.0000000000,
+    -1.4258476271,   # H
 ]
 
 const OUTDIR = get(ENV, "CHEMGP_OUTDIR", "results_hcn_neb")
@@ -67,17 +79,17 @@ function main()
     @printf("HCN energy: %.6f\n", E_r)
     @printf("HNC energy: %.6f\n", E_p)
 
-    neb_cfg = NEBConfig(
-        images = 8,
-        spring_constant = 1.0,
-        climbing_image = true,
-        energy_weighted = true,
-        ew_k_min = 0.972,
-        ew_k_max = 9.72,
-        max_iter = 1000,
-        conv_tol = 0.05,
-        step_size = 0.01,
-        verbose = true,
+    neb_cfg = NEBConfig(;
+        images=8,
+        spring_constant=1.0,
+        climbing_image=true,
+        energy_weighted=true,
+        ew_k_min=0.972,
+        ew_k_max=9.72,
+        max_iter=1000,
+        conv_tol=0.05,
+        step_size=0.01,
+        verbose=true,
     )
 
     # Parallel oracle pool: one connection per movable image (or thread count)
@@ -96,22 +108,28 @@ function main()
     # Per-step .dat/.xyz writer + HDF5 history
     std_writer = make_neb_writer(std_dir, ATOMIC_NUMBERS, BOX)
     std_h5 = make_neb_hdf5_writer(
-        joinpath(std_dir, "neb_history.h5");
-        atomic_numbers = ATOMIC_NUMBERS, cell = BOX,
+        joinpath(std_dir, "neb_history.h5"); atomic_numbers=ATOMIC_NUMBERS, cell=BOX
     )
     std_callback = (path, iter) -> begin
         std_writer(path, iter)
         std_h5(path, iter)
     end
 
-    t_std = @elapsed result_std = neb_optimize(oracles, X_HCN, X_HNC;
-        config = neb_cfg, on_step = std_callback)
+    t_std = @elapsed result_std = neb_optimize(
+        oracles, X_HCN, X_HNC; config=neb_cfg, on_step=std_callback
+    )
     @printf("Standard NEB: %.1f s\n", t_std)
 
     # Final outputs
-    write_neb_trajectory(result_std, joinpath(std_dir, "neb_final.xyz"), ATOMIC_NUMBERS, BOX)
-    write_neb_hdf5(result_std, joinpath(std_dir, "neb_result.h5");
-        atomic_numbers = ATOMIC_NUMBERS, cell = BOX)
+    write_neb_trajectory(
+        result_std, joinpath(std_dir, "neb_final.xyz"), ATOMIC_NUMBERS, BOX
+    )
+    write_neb_hdf5(
+        result_std,
+        joinpath(std_dir, "neb_result.h5");
+        atomic_numbers=ATOMIC_NUMBERS,
+        cell=BOX,
+    )
     write_convergence_csv(result_std, joinpath(std_dir, "convergence.csv"))
 
     # --- GP-NEB AIE (optional, ~15 min; pass --aie to enable) ---
@@ -123,38 +141,44 @@ function main()
 
         gp_writer = make_neb_writer(gp_dir, ATOMIC_NUMBERS, BOX)
         gp_h5 = make_neb_hdf5_writer(
-            joinpath(gp_dir, "neb_history.h5");
-            atomic_numbers = ATOMIC_NUMBERS, cell = BOX,
+            joinpath(gp_dir, "neb_history.h5"); atomic_numbers=ATOMIC_NUMBERS, cell=BOX
         )
         gp_callback = (path, iter) -> begin
             gp_writer(path, iter)
             gp_h5(path, iter)
         end
 
-        gp_cfg = NEBConfig(
-            images = 8,
-            spring_constant = 1.0,
-            climbing_image = true,
-            energy_weighted = true,
-            ew_k_min = 0.972,
-            ew_k_max = 9.72,
-            conv_tol = 0.05,
-            gp_train_iter = 300,
-            max_outer_iter = 50,
-            trust_radius = 0.1,
-            atom_types = Int[6, 7, 1],
-            max_gp_points = 40,  # per-bead subset caps GP training at O(M^3); AIE grows fast (8 imgs/iter)
-            rff_features = 300,  # RFF approximation: train hyperparams on 40-point subset, predict on all N
-            verbose = true,
+        gp_cfg = NEBConfig(;
+            images=8,
+            spring_constant=1.0,
+            climbing_image=true,
+            energy_weighted=true,
+            ew_k_min=0.972,
+            ew_k_max=9.72,
+            conv_tol=0.05,
+            gp_train_iter=300,
+            max_outer_iter=50,
+            trust_radius=0.1,
+            atom_types=Int[6, 7, 1],
+            max_gp_points=40,  # per-bead subset caps GP training at O(M^3); AIE grows fast (8 imgs/iter)
+            rff_features=300,  # RFF approximation: train hyperparams on 40-point subset, predict on all N
+            verbose=true,
         )
 
-        t_aie = @elapsed result_aie = gp_neb_aie(oracles, X_HCN, X_HNC, kernel;
-            config = gp_cfg, on_step = gp_callback)
+        t_aie = @elapsed result_aie = gp_neb_aie(
+            oracles, X_HCN, X_HNC, kernel; config=gp_cfg, on_step=gp_callback
+        )
         @printf("GP-NEB AIE: %.1f s\n", t_aie)
 
-        write_neb_trajectory(result_aie, joinpath(gp_dir, "neb_final.xyz"), ATOMIC_NUMBERS, BOX)
-        write_neb_hdf5(result_aie, joinpath(gp_dir, "neb_result.h5");
-            atomic_numbers = ATOMIC_NUMBERS, cell = BOX)
+        write_neb_trajectory(
+            result_aie, joinpath(gp_dir, "neb_final.xyz"), ATOMIC_NUMBERS, BOX
+        )
+        write_neb_hdf5(
+            result_aie,
+            joinpath(gp_dir, "neb_result.h5");
+            atomic_numbers=ATOMIC_NUMBERS,
+            cell=BOX,
+        )
         write_convergence_csv(result_aie, joinpath(gp_dir, "convergence.csv"))
     else
         println("\n--- Skipping GP-NEB AIE (pass --aie to enable) ---")
@@ -169,39 +193,45 @@ function main()
 
     oie_writer = make_neb_writer(oie_dir, ATOMIC_NUMBERS, BOX)
     oie_h5 = make_neb_hdf5_writer(
-        joinpath(oie_dir, "neb_history.h5");
-        atomic_numbers = ATOMIC_NUMBERS, cell = BOX,
+        joinpath(oie_dir, "neb_history.h5"); atomic_numbers=ATOMIC_NUMBERS, cell=BOX
     )
     oie_callback = (path, iter) -> begin
         oie_writer(path, iter)
         oie_h5(path, iter)
     end
 
-    oie_cfg = NEBConfig(
-        images = 8,
-        spring_constant = 1.0,
-        climbing_image = true,
-        energy_weighted = true,
-        ew_k_min = 0.972,
-        ew_k_max = 9.72,
-        conv_tol = 0.05,
-        trust_radius = 0.1,
-        atom_types = Int[6, 7, 1],
-        gp_train_iter = 300,
-        max_outer_iter = 80,
-        rff_features = 300,
-        max_gp_points = 10,  # per-bead subset caps GP training at O(M^3); AIE grows fast (8 imgs/iter)
+    oie_cfg = NEBConfig(;
+        images=8,
+        spring_constant=1.0,
+        climbing_image=true,
+        energy_weighted=true,
+        ew_k_min=0.972,
+        ew_k_max=9.72,
+        conv_tol=0.05,
+        trust_radius=0.1,
+        atom_types=Int[6, 7, 1],
+        gp_train_iter=300,
+        max_outer_iter=80,
+        rff_features=300,
+        max_gp_points=10,  # per-bead subset caps GP training at O(M^3); AIE grows fast (8 imgs/iter)
         # OIE grows at ~1 point/iter; no FPS needed (max_gp_points=0 = unlimited)
-        verbose = true,
+        verbose=true,
     )
 
-    t_oie = @elapsed result_oie = gp_neb_oie_naive(oracle, X_HCN, X_HNC, kernel;
-        config = oie_cfg, on_step = oie_callback)
+    t_oie = @elapsed result_oie = gp_neb_oie_naive(
+        oracle, X_HCN, X_HNC, kernel; config=oie_cfg, on_step=oie_callback
+    )
     @printf("GP-NEB OIE: %.1f s\n", t_oie)
 
-    write_neb_trajectory(result_oie, joinpath(oie_dir, "neb_final.xyz"), ATOMIC_NUMBERS, BOX)
-    write_neb_hdf5(result_oie, joinpath(oie_dir, "neb_result.h5");
-        atomic_numbers = ATOMIC_NUMBERS, cell = BOX)
+    write_neb_trajectory(
+        result_oie, joinpath(oie_dir, "neb_final.xyz"), ATOMIC_NUMBERS, BOX
+    )
+    write_neb_hdf5(
+        result_oie,
+        joinpath(oie_dir, "neb_result.h5");
+        atomic_numbers=ATOMIC_NUMBERS,
+        cell=BOX,
+    )
     write_convergence_csv(result_oie, joinpath(oie_dir, "convergence.csv"))
 
     # --- Generate profile plots ---
@@ -219,7 +249,14 @@ function main()
 
     # --- Comparison table ---
     println("\n" * "="^80)
-    @printf("%-12s %12s %10s %15s %10s\n", "Method", "Oracle Calls", "Converged", "Barrier (eV)", "Time (s)")
+    @printf(
+        "%-12s %12s %10s %15s %10s\n",
+        "Method",
+        "Oracle Calls",
+        "Converged",
+        "Barrier (eV)",
+        "Time (s)"
+    )
     println("-"^80)
 
     results = [("Standard", result_std, t_std), ("GP-NEB OIE", result_oie, t_oie)]
@@ -229,8 +266,14 @@ function main()
     for (label, res, t) in results
         ts_idx = res.max_energy_image
         barrier = res.path.energies[ts_idx] - res.path.energies[1]
-        @printf("%-12s %12d %10s %15.6f %10.1f\n",
-            label, res.oracle_calls, res.converged, barrier, t)
+        @printf(
+            "%-12s %12d %10s %15.6f %10.1f\n",
+            label,
+            res.oracle_calls,
+            res.converged,
+            barrier,
+            t
+        )
     end
     println("="^80)
 

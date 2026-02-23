@@ -20,7 +20,7 @@ end
         y_vals = Float64[]
         y_grads = Float64[]
 
-        for i = 1:N
+        for i in 1:N
             r = r_vals[i]
             X_train[1, i] = 0.0
             X_train[4, i] = r
@@ -42,8 +42,8 @@ end
         k_init = KType(1.0, [1.0], Float64[])
 
         # 3. Create and Train Model
-        model = GPModel(k_init, X_train, y_full; noise_var = 1e-4, grad_noise_var = 1e-4)
-        train_model!(model; iterations = 150)
+        model = GPModel(k_init, X_train, y_full; noise_var=1e-4, grad_noise_var=1e-4)
+        train_model!(model; iterations=150)
 
         # Test 1: Reconstruction (Training Point r=1.5)
         X_test_1 = zeros(6, 1)
@@ -53,7 +53,7 @@ end
         E_true_1, _ = morse(1.5)
 
         println("  Pred E at 1.5: $E_pred_1 (True: $E_true_1)")
-        @test isapprox(E_pred_1, E_true_1, atol = 0.005)
+        @test isapprox(E_pred_1, E_true_1, atol=0.005)
 
         # Test 2: Generalization (Unseen Point r=1.6)
         test_r = 1.6
@@ -64,7 +64,7 @@ end
         E_true_2, _ = morse(test_r)
 
         println("  Pred E at $test_r: $E_pred_2 (True: $E_true_2)")
-        @test isapprox(E_pred_2, E_true_2, atol = 0.05)
+        @test isapprox(E_pred_2, E_true_2, atol=0.05)
     end
 end
 
@@ -101,8 +101,8 @@ end
     ee_sum, ef_sum, fe_sum, ff_sum = kernel_blocks(k_sum, x1, x2)
     ee_se, ef_se, fe_se, ff_se = kernel_blocks(k_se, x1, x2)
 
-    @test isapprox(ee_sum, ee_se + 0.5, atol = 1e-12)
-    @test isapprox(ef_sum, ef_se, atol = 1e-12)
-    @test isapprox(fe_sum, fe_se, atol = 1e-12)
-    @test isapprox(ff_sum, ff_se, atol = 1e-12)
+    @test isapprox(ee_sum, ee_se + 0.5, atol=1e-12)
+    @test isapprox(ef_sum, ef_se, atol=1e-12)
+    @test isapprox(fe_sum, fe_se, atol=1e-12)
+    @test isapprox(ff_sum, ff_se, atol=1e-12)
 end

@@ -128,6 +128,6 @@
             x = x_new
         end
 
-        @test isapprox(x, [1.0, 1.0], atol = 1e-4)
+        @test isapprox(x, [1.0, 1.0], atol=1e-4)
     end
 end

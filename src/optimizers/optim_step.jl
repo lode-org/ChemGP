@@ -38,17 +38,13 @@ end
 
 # Clip a direction vector so that no atom moves more than max_move.
 # Matches eOn helper_functions::maxAtomMotionAppliedV.
-function _clip_to_max_move(
-    d::Vector{Float64},
-    max_move::Float64,
-    n_coords_per_atom::Int,
-)
+function _clip_to_max_move(d::Vector{Float64}, max_move::Float64, n_coords_per_atom::Int)
     result = copy(d)
     n_atoms = div(length(d), n_coords_per_atom)
     max_disp = 0.0
     for a in 1:n_atoms
         off = (a - 1) * n_coords_per_atom
-        disp = norm(@view result[off+1:off+n_coords_per_atom])
+        disp = norm(@view result[(off + 1):(off + n_coords_per_atom)])
         max_disp = max(max_disp, disp)
     end
     if max_disp > max_move
@@ -76,7 +72,7 @@ function optim_step!(
     x::Vector{Float64},
     force::Vector{Float64},
     max_move::Float64;
-    n_coords_per_atom::Int = 3,
+    n_coords_per_atom::Int=3,
 )
     g = -force  # gradient (uphill) for L-BFGS
 
@@ -121,7 +117,7 @@ function optim_step!(
     max_disp = 0.0
     for a in 1:n_atoms
         off = (a - 1) * n_coords_per_atom
-        disp = norm(@view direction[off+1:off+n_coords_per_atom])
+        disp = norm(@view direction[(off + 1):(off + n_coords_per_atom)])
         max_disp = max(max_disp, disp)
     end
     if max_disp > max_move

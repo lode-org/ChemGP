@@ -26,10 +26,10 @@ function interatomic_distances(x::AbstractVector{<:Real})
     n_pairs = div(N * (N - 1), 2)
     dists = zeros(eltype(x), n_pairs)
     idx = 1
-    for j in 1:(N-1)
-        xj = @view x[(3j-2):(3j)]
-        for i in (j+1):N
-            xi = @view x[(3i-2):(3i)]
+    for j in 1:(N - 1)
+        xj = @view x[(3j - 2):(3j)]
+        for i in (j + 1):N
+            xi = @view x[(3i - 2):(3i)]
             dists[idx] = sqrt(sum((xi .- xj) .^ 2))
             idx += 1
         end

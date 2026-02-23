@@ -5,7 +5,9 @@
             gnorm = norm(G)
             # These are approximate minima, so gradient should be small but not zero
             @test gnorm < 5.0
-            println("  Minimum $i: E = $(round(E, digits=1)), |G| = $(round(gnorm, digits=3))")
+            println(
+                "  Minimum $i: E = $(round(E, digits=1)), |G| = $(round(gnorm, digits=3))"
+            )
         end
     end
 
@@ -14,7 +16,9 @@
             E, G = muller_brown_energy_gradient(x_sp)
             gnorm = norm(G)
             @test gnorm < 5.0
-            println("  Saddle $i: E = $(round(E, digits=1)), |G| = $(round(gnorm, digits=3))")
+            println(
+                "  Saddle $i: E = $(round(E, digits=1)), |G| = $(round(gnorm, digits=3))"
+            )
         end
     end
 
@@ -44,7 +48,7 @@
             G_fd[i] = (Ep - Em) / (2h)
         end
 
-        @test isapprox(G0, G_fd, rtol = 1e-5)
+        @test isapprox(G0, G_fd, rtol=1e-5)
     end
 
     @testset "Steepest descent to minimum A" begin

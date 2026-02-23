@@ -28,7 +28,7 @@ k_prod = MolProductKernel(k_se, k_offset)  # Scales SE by constant factor
 
 See also: [`MolSumKernel`](@ref), [`OffsetKernel`](@ref)
 """
-struct MolProductKernel{K1<:Kernel, K2<:Kernel} <: Kernel
+struct MolProductKernel{K1<:Kernel,K2<:Kernel} <: Kernel
     k1::K1
     k2::K2
 end

@@ -72,52 +72,52 @@ Configuration parameters for NEB path optimization.
 - `verbose`: Print progress (default true)
 """
 Base.@kwdef struct NEBConfig
-    images::Int             = 5
+    images::Int = 5
     spring_constant::Float64 = 5.0
-    climbing_image::Bool    = true
+    climbing_image::Bool = true
     ci_activation_tol::Float64 = 0.5
     ci_trigger_rel::Float64 = 0.8
     ci_converged_only::Bool = true
-    max_iter::Int           = 1000
-    conv_tol::Float64       = 0.05
-    step_size::Float64      = 0.01
+    max_iter::Int = 1000
+    conv_tol::Float64 = 0.05
+    step_size::Float64 = 0.01
     # Optimizer: :lbfgs or :sd (steepest descent)
-    optimizer::Symbol       = :lbfgs
-    max_move::Float64       = 0.1
-    lbfgs_memory::Int       = 20
+    optimizer::Symbol = :lbfgs
+    max_move::Float64 = 0.1
+    lbfgs_memory::Int = 20
     # Path initialization: :sidpp, :idpp, or :linear
-    initializer::Symbol     = :sidpp
+    initializer::Symbol = :sidpp
     # Energy-weighted springs (Henkelman & Jonsson 2000)
-    energy_weighted::Bool   = false
-    ew_k_min::Float64       = 1.0
-    ew_k_max::Float64       = 10.0
+    energy_weighted::Bool = false
+    ew_k_min::Float64 = 1.0
+    ew_k_max::Float64 = 10.0
     # GP-specific
-    gp_train_iter::Int      = 300
-    max_outer_iter::Int     = 50
-    max_gp_points::Int      = 0     # max training points for GP (0 = no limit; per-bead subset when exceeded)
-    rff_features::Int       = 0     # RFF feature dimension (0 = exact GP; >0 = RFF approximation for MolInvDistSE)
-    trust_radius::Float64   = 0.1
+    gp_train_iter::Int = 300
+    max_outer_iter::Int = 50
+    max_gp_points::Int = 0     # max training points for GP (0 = no limit; per-bead subset when exceeded)
+    rff_features::Int = 0     # RFF feature dimension (0 = exact GP; >0 = RFF approximation for MolInvDistSE)
+    trust_radius::Float64 = 0.1
     # Trust region metric and adaptive threshold (shared with OTGPD; see distances_trust.jl)
-    trust_metric::Symbol         = :emd
-    atom_types::Vector{Int}      = Int[]
+    trust_metric::Symbol = :emd
+    atom_types::Vector{Int} = Int[]
     use_adaptive_threshold::Bool = false
-    adaptive_t_min::Float64      = 0.15
-    adaptive_delta_t::Float64    = 0.35
-    adaptive_n_half::Int         = 50
-    adaptive_A::Float64          = 1.3
-    adaptive_floor::Float64      = 0.2
+    adaptive_t_min::Float64 = 0.15
+    adaptive_delta_t::Float64 = 0.35
+    adaptive_n_half::Int = 50
+    adaptive_A::Float64 = 1.3
+    adaptive_floor::Float64 = 0.2
     # OIE early stopping (Koistinen et al. 2019):
-    ci_force_tol::Float64     = -1.0    # CI convergence threshold (-1 = use conv_tol)
+    ci_force_tol::Float64 = -1.0    # CI convergence threshold (-1 = use conv_tol)
     inner_ci_threshold::Float64 = 0.5   # GP force level to activate CI in inner loop (0 = no CI)
-    gp_tol_divisor::Int       = 10      # GP inner tol = smallest_accurate_force / divisor (0 = fixed)
-    max_step_frac::Float64    = 0.1     # max displacement from training data / initial path length
+    gp_tol_divisor::Int = 10      # GP inner tol = smallest_accurate_force / divisor (0 = fixed)
+    max_step_frac::Float64 = 0.1     # max displacement from training data / initial path length
     bond_stretch_limit::Float64 = 2.0/3.0 # bond ratio limit for early stopping
     # Virtual Hessian points (Koistinen et al. 2017):
     # Generate finite-difference perturbation points around endpoints to
     # bootstrap GP training with curvature information.
-    num_hess_iter::Int      = 0     # outer iterations to include hessian pts (0=off)
-    eps_hess::Float64       = 0.01  # displacement for hessian points (Angstrom)
-    verbose::Bool           = true
+    num_hess_iter::Int = 0     # outer iterations to include hessian pts (0=off)
+    eps_hess::Float64 = 0.01  # displacement for hessian points (Angstrom)
+    verbose::Bool = true
 end
 
 """

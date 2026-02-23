@@ -35,19 +35,19 @@ ChemGP.jl is not yet registered. Install directly from GitHub:
 # Quick Start
 
     using ChemGP
-    
+
     # Create a GP model with a molecular kernel
     kernel = MolInvDistSE(1.0, 1.0)
     model = GPModel(kernel; noise=1e-6)
-    
+
     # Set up training data for a 3-atom system
     td = TrainingData(3)
-    
+
     # Evaluate oracle and add point
     coords = random_cluster(3, 2.0)
     E, G = lj_energy_gradient(coords)
     add_point!(td, coords, E, G)
-    
+
     # Train and predict
     train_model!(model, td)
     E_pred, G_pred = predict(model, td, coords)
@@ -106,18 +106,18 @@ Run all hooks manually:
 # Contributing
 
 1.  Clone and set up the environment:
-    
+
         git clone https://github.com/HaoZeke/ChemGP.jl.git
         cd ChemGP.jl
         pixi install
         pixi r instantiate
 
 2.  Install pre-commit hooks:
-    
+
         uvx pre-commit install
 
 3.  Make your changes, then verify:
-    
+
         pixi r test
         pixi r lint
 
@@ -131,4 +131,3 @@ Run all hooks manually:
 # License
 
 MIT License. See [LICENSE](LICENSE) for details.
-

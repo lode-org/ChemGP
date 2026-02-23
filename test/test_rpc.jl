@@ -24,12 +24,12 @@ using LinearAlgebra
 function rpc_tests_available()
     if !rgpot_available()
         @warn "Skipping RPC tests: rgpot shared library not found. " *
-              "Set RGPOT_LIB_PATH or RGPOT_BUILD_DIR."
+            "Set RGPOT_LIB_PATH or RGPOT_BUILD_DIR."
         return false
     end
     if !potserv_available()
         @warn "Skipping RPC tests: potserv executable not found. " *
-              "Build rgpot with -Dwith_rpc=true."
+            "Build rgpot with -Dwith_rpc=true."
         return false
     end
     return true
@@ -64,9 +64,7 @@ const LJ_BOX = Float64[100, 0, 0, 0, 100, 0, 0, 0, 100]  # Large non-periodic bo
     @testset "LJ potential via RPC" begin
         with_potserv(TEST_PORT, "LJ") do
             # Connect
-            pot = RpcPotential("localhost", TEST_PORT,
-                               find_rgpot_lib(),
-                               LJ_ATMNRS, LJ_BOX)
+            pot = RpcPotential("localhost", TEST_PORT, find_rgpot_lib(), LJ_ATMNRS, LJ_BOX)
 
             # Three atoms in a line
             x = [0.0, 0.0, 0.0, 2.0, 0.0, 0.0, 4.0, 0.0, 0.0]
@@ -83,7 +81,7 @@ const LJ_BOX = Float64[100, 0, 0, 0, 100, 0, 0, 0, 100]  # Large non-periodic bo
 
             @test E == E_rpc
             # G should be -F (gradient = -forces)
-            @test isapprox(G, -F_rpc; atol = 1e-12)
+            @test isapprox(G, -F_rpc; atol=1e-12)
 
             close(pot)
         end
@@ -92,8 +90,7 @@ const LJ_BOX = Float64[100, 0, 0, 0, 100, 0, 0, 0, 100]  # Large non-periodic bo
     @testset "Auto-discovery constructor" begin
         with_potserv(TEST_PORT + 1, "LJ") do
             # This constructor should find the library automatically
-            pot = RpcPotential("localhost", TEST_PORT + 1,
-                               LJ_ATMNRS, LJ_BOX)
+            pot = RpcPotential("localhost", TEST_PORT + 1, LJ_ATMNRS, LJ_BOX)
 
             x = [0.0, 0.0, 0.0, 2.0, 0.0, 0.0, 4.0, 0.0, 0.0]
             E, F = ChemGP.calculate(pot, x)
@@ -107,8 +104,7 @@ const LJ_BOX = Float64[100, 0, 0, 0, 100, 0, 0, 0, 100]  # Large non-periodic bo
 
     @testset "GP minimize with RPC oracle" begin
         with_potserv(TEST_PORT + 2, "LJ") do
-            pot = RpcPotential("localhost", TEST_PORT + 2,
-                               LJ_ATMNRS, LJ_BOX)
+            pot = RpcPotential("localhost", TEST_PORT + 2, LJ_ATMNRS, LJ_BOX)
             oracle = make_rpc_oracle(pot)
 
             # 3-atom LJ cluster with reasonable initial geometry
@@ -116,14 +112,14 @@ const LJ_BOX = Float64[100, 0, 0, 0, 100, 0, 0, 0, 100]  # Large non-periodic bo
             kernel = MolInvDistSE(1.0, [0.5], Float64[])
 
             config = MinimizationConfig(
-                trust_radius = 0.3,
-                conv_tol = 0.5,     # Loose for fast test
-                max_iter = 3,       # Very few iterations
-                gp_train_iter = 50,
-                verbose = false,
+                trust_radius=0.3,
+                conv_tol=0.5,     # Loose for fast test
+                max_iter=3,       # Very few iterations
+                gp_train_iter=50,
+                verbose=false,
             )
 
-            result = gp_minimize(oracle, x_init, kernel; config = config)
+            result = gp_minimize(oracle, x_init, kernel; config=config)
 
             @test result.oracle_calls >= 3
             @test isfinite(result.E_final)

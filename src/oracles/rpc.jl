@@ -44,13 +44,10 @@
 # Library and executable discovery
 # ==============================================================================
 
-const _RGPOT_BRIDGE_NAMES = Sys.isapple() ?
-    ["libpot_client_bridge.dylib"] :
-    ["libpot_client_bridge.so"]
+const _RGPOT_BRIDGE_NAMES =
+    Sys.isapple() ? ["libpot_client_bridge.dylib"] : ["libpot_client_bridge.so"]
 
-const _RGPOT_CORE_NAMES = Sys.isapple() ?
-    ["librgpot_core.dylib"] :
-    ["librgpot_core.so"]
+const _RGPOT_CORE_NAMES = Sys.isapple() ? ["librgpot_core.dylib"] : ["librgpot_core.so"]
 
 # Subdirectories within a meson/cmake build tree where libraries may appear
 const _LIB_SEARCH_SUBDIRS = ["CppCore/rgpot/rpc", "lib", "lib64", ""]
@@ -68,7 +65,7 @@ Checks (in order):
 
 Returns the absolute path if found, `nothing` otherwise.
 """
-function find_rgpot_lib(; variant::Symbol = :bridge)
+function find_rgpot_lib(; variant::Symbol=:bridge)
     names = variant == :bridge ? _RGPOT_BRIDGE_NAMES : _RGPOT_CORE_NAMES
 
     # 1. Direct path from environment
@@ -116,7 +113,7 @@ Search for the `potserv` executable in common locations.
 Checks `RGPOT_BUILD_DIR`, `CONDA_PREFIX`, and relative paths.
 Returns the absolute path if found, `nothing` otherwise.
 """
-function find_potserv(; build_dir::Union{AbstractString,Nothing} = nothing)
+function find_potserv(; build_dir::Union{AbstractString,Nothing}=nothing)
     dirs = String[]
     if build_dir !== nothing
         push!(dirs, build_dir)
@@ -162,8 +159,8 @@ function with_potserv(
     f::Function,
     port::Integer,
     potential::AbstractString;
-    build_dir::Union{AbstractString,Nothing} = nothing,
-    startup_time::Real = 2.0,
+    build_dir::Union{AbstractString,Nothing}=nothing,
+    startup_time::Real=2.0,
 )
     exe = find_potserv(; build_dir)
     exe === nothing && error(
@@ -172,8 +169,7 @@ function with_potserv(
     )
 
     proc = run(
-        pipeline(`$exe $port $potential`; stdout = devnull, stderr = devnull);
-        wait = false,
+        pipeline(`$exe $port $potential`; stdout=devnull, stderr=devnull); wait=false
     )
     sleep(startup_time)
 
@@ -190,15 +186,16 @@ end
 
 Return `true` if the rgpot shared library can be found.
 """
-rgpot_available(; variant::Symbol = :bridge) = find_rgpot_lib(; variant) !== nothing
+rgpot_available(; variant::Symbol=:bridge) = find_rgpot_lib(; variant) !== nothing
 
 """
     potserv_available(; build_dir=nothing)
 
 Return `true` if the potserv executable can be found.
 """
-potserv_available(; build_dir::Union{AbstractString,Nothing} = nothing) =
+function potserv_available(; build_dir::Union{AbstractString,Nothing}=nothing)
     find_potserv(; build_dir) !== nothing
+end
 
 # ==============================================================================
 # RpcPotential: Wraps a connection to an rgpot Cap'n Proto server
@@ -290,8 +287,10 @@ function RpcPotential(
 
     if fn_init == C_NULL || fn_calc == C_NULL || fn_free == C_NULL
         Libc.Libdl.dlclose(lib)
-        error("Library $lib_path does not export pot_bridge functions. " *
-              "Ensure it was built with RPC support.")
+        error(
+            "Library $lib_path does not export pot_bridge functions. " *
+            "Ensure it was built with RPC support.",
+        )
     end
 
     # Connect to server
@@ -302,8 +301,7 @@ function RpcPotential(
         error("Failed to connect to $host:$port: $err_msg")
     end
 
-    pot = RpcPotential(client, lib, atmnrs32, box_flat, n_atoms,
-                       fn_calc, fn_free, fn_err)
+    pot = RpcPotential(client, lib, atmnrs32, box_flat, n_atoms, fn_calc, fn_free, fn_err)
 
     # Register finalizer to clean up on GC
     finalizer(pot) do p
@@ -345,7 +343,7 @@ function RpcPotential(
     atmnrs::Vector{<:Integer},
     box::Union{Vector{Float64},Matrix{Float64}},
 )
-    lib_path = find_rgpot_lib(; variant = :bridge)
+    lib_path = find_rgpot_lib(; variant=:bridge)
     lib_path === nothing && error(
         "Could not find rgpot shared library. " *
         "Set RGPOT_LIB_PATH or RGPOT_BUILD_DIR environment variable. " *
@@ -384,9 +382,17 @@ function calculate(pot::RpcPotential, positions::AbstractVector{Float64})
     energy = Ref{Float64}(0.0)
 
     status = ccall(
-        pot._calculate, Int32,
-        (Ptr{Cvoid}, Int32, Ptr{Float64}, Ptr{Int32}, Ptr{Float64},
-         Ptr{Float64}, Ptr{Float64}),
+        pot._calculate,
+        Int32,
+        (
+            Ptr{Cvoid},
+            Int32,
+            Ptr{Float64},
+            Ptr{Int32},
+            Ptr{Float64},
+            Ptr{Float64},
+            Ptr{Float64},
+        ),
         pot.client_ptr,
         Int32(pot.n_atoms),
         positions,
@@ -521,8 +527,10 @@ function RpcPotentialCore(
 
     if fn_new == C_NULL || fn_calc == C_NULL || fn_free == C_NULL
         Libc.Libdl.dlclose(lib)
-        error("Library $lib_path does not export rgpot_rpc_* functions. " *
-              "Ensure it was built with the 'rpc' feature.")
+        error(
+            "Library $lib_path does not export rgpot_rpc_* functions. " *
+            "Ensure it was built with the 'rpc' feature.",
+        )
     end
 
     client = ccall(fn_new, Ptr{Cvoid}, (Cstring, UInt16), host, UInt16(port))
@@ -533,8 +541,18 @@ function RpcPotentialCore(
         error("Failed to connect to $host:$port: $err")
     end
 
-    pot = RpcPotentialCore(client, lib, atmnrs32, box_flat, n_atoms,
-                           fn_calc, fn_free, fn_err, fn_input, fn_output)
+    pot = RpcPotentialCore(
+        client,
+        lib,
+        atmnrs32,
+        box_flat,
+        n_atoms,
+        fn_calc,
+        fn_free,
+        fn_err,
+        fn_input,
+        fn_output,
+    )
 
     finalizer(pot) do p
         if p.client_ptr != C_NULL
@@ -559,17 +577,17 @@ function calculate(pot::RpcPotentialCore, positions::AbstractVector{Float64})
 
     # Build C structs
     input = CForceInput(
-        Csize_t(pot.n_atoms),
-        pointer(positions),
-        pointer(pot.atmnrs),
-        pointer(pot.box),
+        Csize_t(pot.n_atoms), pointer(positions), pointer(pot.atmnrs), pointer(pot.box)
     )
     output = CForceOutput(pointer(forces), 0.0, 0.0)
 
     status = ccall(
-        pot._calculate, Cint,
+        pot._calculate,
+        Cint,
         (Ptr{Cvoid}, Ref{CForceInput}, Ref{CForceOutput}),
-        pot.client_ptr, input, output,
+        pot.client_ptr,
+        input,
+        output,
     )
 
     if status != 0  # RGPOT_SUCCESS = 0
@@ -628,6 +646,5 @@ function make_oracle_pool(
     box::Union{Vector{Float64},Matrix{Float64}},
     n_workers::Int,
 )
-    return [make_rpc_oracle(RpcPotential(host, port, atmnrs, box))
-            for _ in 1:n_workers]
+    return [make_rpc_oracle(RpcPotential(host, port, atmnrs, box)) for _ in 1:n_workers]
 end

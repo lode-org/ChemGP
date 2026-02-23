@@ -16,7 +16,7 @@ Supports `:emd`, `:max_1d_log`, `:euclidean`.
 
 When `metric == :emd`, falls back to Euclidean for non-3D coordinate vectors.
 """
-function trust_distance_fn(metric::Symbol, atom_types::Vector{Int} = Int[])
+function trust_distance_fn(metric::Symbol, atom_types::Vector{Int}=Int[])
     if metric == :emd
         return (x1, x2) -> begin
             if length(x1) % 3 == 0
@@ -42,7 +42,7 @@ function trust_min_distance(
     x::AbstractVector,
     X_train::AbstractMatrix,
     metric::Symbol;
-    atom_types::Vector{Int} = Int[],
+    atom_types::Vector{Int}=Int[],
 )
     N = size(X_train, 2)
     N == 0 && return Inf
@@ -71,12 +71,12 @@ function adaptive_trust_threshold(
     trust_radius::Float64,
     n_data::Int,
     n_atoms::Int;
-    use_adaptive::Bool = false,
-    t_min::Float64 = 0.15,
-    delta_t::Float64 = 0.35,
-    n_half::Int = 50,
-    A::Float64 = 1.3,
-    floor::Float64 = 0.2,
+    use_adaptive::Bool=false,
+    t_min::Float64=0.15,
+    delta_t::Float64=0.35,
+    n_half::Int=50,
+    A::Float64=1.3,
+    floor::Float64=0.2,
 )
     if !use_adaptive
         return trust_radius
