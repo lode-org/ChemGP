@@ -15,7 +15,7 @@ println("Running GP-NEB AIE on LEPS to collect training points...")
 kernel = MolInvDistSE(1.0, [1.0, 1.0, 1.0], Float64[], Int[])
 
 config = NEBConfig(;
-    n_images=7,
+    images=7,
     spring_constant=5.0,
     climbing_image=true,
     conv_tol=0.5,  # Loose tolerance -- just need training points, not convergence

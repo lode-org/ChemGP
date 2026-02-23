@@ -126,10 +126,10 @@ fig = Figure(; size=(504, 400))
 # Energy panel
 ax1 = Axis(
     fig[1, 1];
-    ylabel=L"Energy MAE (eV)",
+    ylabel=L"\text{Energy MAE (eV)}",
     yscale=log10,
     xticklabelsvisible=false,
-    title=L"RFF approximation quality on LEPS",
+    title=L"\text{RFF approximation quality on LEPS}",
 )
 lines!(
     ax1,
@@ -163,7 +163,10 @@ axislegend(ax1; position=:rt, framevisible=false, labelsize=9)
 
 # Gradient panel
 ax2 = Axis(
-    fig[2, 1]; xlabel=L"$D_\mathrm{rff}$", ylabel=L"Gradient MAE (eV/\AA)", yscale=log10
+    fig[2, 1];
+    xlabel=L"D_\mathrm{rff}",
+    ylabel=L"\text{Gradient MAE (eV/\AA)}",
+    yscale=log10,
 )
 lines!(
     ax2, results_df.D_rff, results_df.gradient_mae_vs_true; color=RUHI.teal, linewidth=1.5

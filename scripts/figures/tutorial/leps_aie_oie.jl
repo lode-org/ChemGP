@@ -14,7 +14,7 @@ include(joinpath(@__DIR__, "common.jl"))
 kernel = MolInvDistSE(1.0, [1.0, 1.0, 1.0], Float64[], Int[])
 
 config = NEBConfig(;
-    n_images=7,
+    images=7,
     spring_constant=5.0,
     climbing_image=true,
     conv_tol=0.1,
@@ -38,7 +38,7 @@ println("AIE converged: $(result_aie.converged), oracle calls: $(result_aie.orac
 # --- GP-NEB OIE ---
 println("Running GP-NEB OIE on LEPS...")
 oie_config = NEBConfig(;
-    n_images=7,
+    images=7,
     spring_constant=5.0,
     climbing_image=true,
     conv_tol=0.1,
