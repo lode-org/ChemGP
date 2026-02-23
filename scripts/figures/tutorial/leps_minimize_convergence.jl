@@ -26,7 +26,7 @@ function main()
     Random.seed!(42)
 
     # --- Starting geometry: perturbed LEPS reactant ---
-    x_init = Float64.(LEPS_REACTANT) .+ 0.15 .* (rand(9) .- 0.5)
+    x_init = Float64.(LEPS_REACTANT) .+ 0.4 .* (rand(9) .- 0.5)
     D = length(x_init)
     oracle = leps_energy_gradient
 
@@ -37,7 +37,7 @@ function main()
 
     gp_config = MinimizationConfig(;
         trust_radius=0.15,
-        conv_tol=1e-3,
+        conv_tol=0.01,
         max_iter=80,
         gp_opt_tol=1e-2,
         gp_train_iter=200,
@@ -91,7 +91,7 @@ function main()
 
         push!(classical_fatom, max_fatom(G_curr))
 
-        if max_fatom(G_curr) < 1e-3
+        if max_fatom(G_curr) < 0.01
             println("Classical converged at iter $iter")
             break
         end
@@ -134,7 +134,7 @@ function main()
         ax, df_cl.oracle_calls, df_cl.max_fatom; color=RUHI.sky, linewidth=1.5,
         label="Classical L-BFGS",
     )
-    hlines!(ax, [1e-3]; color=:gray, linewidth=0.8, linestyle=:dash)
+    hlines!(ax, [0.01]; color=:gray, linewidth=0.8, linestyle=:dash)
 
     axislegend(ax; position=:rt, framevisible=false, labelsize=10)
 
