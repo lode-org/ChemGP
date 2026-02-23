@@ -28,4 +28,6 @@ using Random
     if ChemGP.rgpot_available() && ChemGP.potserv_available()
         include("test_rpc.jl")
     end
+
+    include("test_atomsbase.jl")
 end
