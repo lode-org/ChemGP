@@ -108,13 +108,11 @@ Train the GP model for NEB, handling both molecular kernels (energy shift,
 fixed noise) and generic kernels (normalize, optimize noise).
 
 When `cfg.max_gp_points > 0` and the training set exceeds that limit,
-a FPS subset is selected for hyperparameter optimization, then a
-[`NystromGP`](@ref) is built using all data for prediction. This caps
-training cost at O(M^3) while prediction uses all N points.
+a FPS subset is selected for training. This caps cost at O(M^3) while
+keeping diverse coverage of the configuration space.
 
-Returns `(model, E_ref, y_std, kern)` where `model` is either a
-`GPModel` (exact) or `NystromGP` (approximate), and `kern` is the
-trained kernel for warm-starting.
+Returns `(model, E_ref, y_std, kern)` where `kern` is the trained kernel
+for warm-starting the next iteration.
 """
 function _train_neb_gp(
     td::TrainingData,
@@ -127,18 +125,20 @@ function _train_neb_gp(
     n_hess::Int,
     outer_iter::Int,
 )
-    # FPS subset selection when training set exceeds max_gp_points
+    # FPS subset selection when training set exceeds max_gp_points.
+    # This caps training cost at O(M^3) while keeping diverse coverage.
+    #
+    # NOTE: Nystrom (FITC) wrapping was tested but is numerically unstable
+    # with low-noise molecular kernels (noise_var=1e-6): the low-rank
+    # approximation Q_NN loses covariance directions that Lambda^{-1}
+    # amplifies, causing force divergence. The FPS subset alone provides
+    # the computational savings; predictions use the M-point exact GP.
+    # The standalone NystromGP module (src/nystrom.jl) remains available
+    # for kernels with larger noise or direct experimentation.
     fps_fn = trust_distance_fn(cfg.trust_metric, cfg.atom_types)
     td_use = _fps_subset_td(td, cfg.max_gp_points; distance_fn=fps_fn)
-    # Only use Nystrom when compression is meaningful (at least 20% reduction).
-    # With M ~ N the Woodbury inner matrix is ill-conditioned and there is
-    # no computational benefit. FPS subset is still used for training either way.
-    use_nystrom = npoints(td_use) < npoints(td) * 0.8
-    if use_nystrom
-        cfg.verbose && @printf("  Nystrom: %d inducing / %d total training points\n",
-                               npoints(td_use), npoints(td))
-    elseif npoints(td_use) < npoints(td)
-        cfg.verbose && @printf("  FPS subset: %d/%d training points (Nystrom skipped, low compression)\n",
+    if npoints(td_use) < npoints(td)
+        cfg.verbose && @printf("  FPS subset: %d/%d training points\n",
                                npoints(td_use), npoints(td))
     end
 
@@ -160,19 +160,11 @@ function _train_neb_gp(
 
         # Warm-start: reuse previous kernel, only init on first iteration
         kern = prev_kern === nothing ? init_mol_invdist_se(td_use, kernel) : prev_kern
-        base = GPModel(kern, X_train, y_target;
-                       noise_var = 1e-6, grad_noise_var = 1e-4, jitter = 1e-6)
-        train_model!(base; iterations = cfg.gp_train_iter,
+        model = GPModel(kern, X_train, y_target;
+                        noise_var = 1e-6, grad_noise_var = 1e-4, jitter = 1e-6)
+        train_model!(model; iterations = cfg.gp_train_iter,
                      fix_noise = true, verbose = cfg.verbose)
-
-        if use_nystrom
-            # Build Nystrom using all data (same normalization)
-            y_all = vcat(td.energies .- E_ref, td.gradients)
-            model = build_nystrom(base, td.X, y_all)
-        else
-            model = base
-        end
-        return model, E_ref, 1.0, base.kernel
+        return model, E_ref, 1.0, model.kernel
     else
         y_gp, E_ref, y_std = normalize(td_use)
         kern = if prev_kern !== nothing
@@ -182,18 +174,10 @@ function _train_neb_gp(
         else
             kernel
         end
-        base = GPModel(kern, td_use.X, y_gp;
-                       noise_var = 1e-6, grad_noise_var = 1e-6, jitter = 1e-4)
-        train_model!(base; iterations = cfg.gp_train_iter, verbose = cfg.verbose)
-
-        if use_nystrom
-            # Build Nystrom using all data (same normalization)
-            y_all = vcat((td.energies .- E_ref) ./ y_std, td.gradients ./ y_std)
-            model = build_nystrom(base, td.X, y_all)
-        else
-            model = base
-        end
-        return model, E_ref, y_std, base.kernel
+        model = GPModel(kern, td_use.X, y_gp;
+                        noise_var = 1e-6, grad_noise_var = 1e-6, jitter = 1e-4)
+        train_model!(model; iterations = cfg.gp_train_iter, verbose = cfg.verbose)
+        return model, E_ref, y_std, model.kernel
     end
 end
 
