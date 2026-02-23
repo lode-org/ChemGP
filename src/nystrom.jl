@@ -139,7 +139,7 @@ function build_nystrom(
     li_y = lambda_inv .* y_all                             # N_block
     li_K_NM = lambda_inv .* K_NM                           # N_block x M_block
 
-    inner = K_MM + K_NM' * li_K_NM                         # M_block x M_block
+    inner = Symmetric(K_MM + K_NM' * li_K_NM)               # M_block x M_block
     L_inner = _robust_cholesky(inner)
 
     v = L_inner.L \ (K_NM' * li_y)                         # M_block
