@@ -18,7 +18,7 @@ x_start = Float64.(MULLER_BROWN_MINIMA[1])  # A: deepest
 x_end = Float64.(MULLER_BROWN_MINIMA[2])    # B: second
 
 config = NEBConfig(;
-    n_images=11,
+    images=11,
     spring_constant=10.0,
     climbing_image=true,
     max_iter=500,

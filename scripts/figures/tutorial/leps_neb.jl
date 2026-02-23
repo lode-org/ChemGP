@@ -15,7 +15,7 @@ E_clipped = clamp.(E, -5.0, 5.0)
 
 # --- NEB optimization in 9D ---
 config = NEBConfig(;
-    n_images=9,
+    images=9,
     spring_constant=5.0,
     climbing_image=true,
     max_iter=500,

@@ -39,10 +39,10 @@ function main()
     # Energy panel
     ax1 = Axis(
         fig[1, 1];
-        ylabel=L"Energy MAE (eV)",
+        ylabel=L"\text{Energy MAE (eV)}",
         yscale=log10,
         xticklabelsvisible=false,
-        title=L"RFF vs exact GP approximation error",
+        title=L"\text{RFF vs exact GP approximation error}",
     )
     lines!(
         ax1,
@@ -68,7 +68,10 @@ function main()
 
     # Gradient panel
     ax2 = Axis(
-        fig[2, 1]; xlabel=L"$D_\mathrm{rff}$", ylabel=L"Gradient MAE (eV/\AA)", yscale=log10
+        fig[2, 1];
+        xlabel=L"D_\mathrm{rff}",
+        ylabel=L"\text{Gradient MAE (eV/\AA)}",
+        yscale=log10,
     )
     lines!(ax2, df_leps.D_rff, df_leps.gradient_mae_vs_gp; color=RUHI.teal, linewidth=1.5)
     scatter!(ax2, df_leps.D_rff, df_leps.gradient_mae_vs_gp; color=RUHI.teal, markersize=6)

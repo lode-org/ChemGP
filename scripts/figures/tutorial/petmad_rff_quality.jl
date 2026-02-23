@@ -190,10 +190,10 @@ function main()
 
     ax1 = Axis(
         fig[1, 1];
-        ylabel=L"Energy MAE (eV)",
+        ylabel=L"\text{Energy MAE (eV)}",
         yscale=log10,
         xticklabelsvisible=false,
-        title=L"RFF approximation quality on PET-MAD",
+        title=L"\text{RFF approximation quality on PET-MAD}",
     )
     lines!(
         ax1,
@@ -228,7 +228,10 @@ function main()
     axislegend(ax1; position=:rt, framevisible=false, labelsize=9)
 
     ax2 = Axis(
-        fig[2, 1]; xlabel=L"$D_\mathrm{rff}$", ylabel=L"Gradient MAE (eV/\AA)", yscale=log10
+        fig[2, 1];
+        xlabel=L"D_\mathrm{rff}",
+        ylabel=L"\text{Gradient MAE (eV/\AA)}",
+        yscale=log10,
     )
     lines!(
         ax2,
