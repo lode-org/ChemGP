@@ -24,6 +24,8 @@ energy structures and transition states.
 - **GP-NEB (AIE/OIE)**: GP-accelerated nudged elastic band for minimum energy
   paths, with warm-started hyperparameters and parallel oracle evaluation
   (Goswami, Gunde & Jonsson 2026)
+- **Random Fourier Features (RFF)**: Scalable GP approximation for MolInvDistSE,
+  reducing prediction cost from O(N^3) to O(D_rff^3) via Bayesian linear regression
 - **Remote potential integration**: Connect to external potential servers via rgpot RPC
 - **Kernel composition**: Combine molecular kernels with constant offsets via `MolSumKernel`
 

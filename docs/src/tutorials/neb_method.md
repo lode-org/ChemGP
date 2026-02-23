@@ -207,10 +207,51 @@ The [`NEBConfig`](@ref) struct controls all parameters:
 | `step_size` | 0.01 | Steepest descent step size |
 | `gp_train_iter` | 300 | GP hyperparameter optimization iterations |
 | `max_outer_iter` | 50 | Max outer iterations (GP-NEB) |
+| `max_gp_points` | 0 | Cap GP training set via FPS subset (0 = all data) |
+| `rff_features` | 0 | RFF feature dimension (0 = exact GP; >0 = RFF for MolInvDistSE) |
 | `trust_radius` | 0.1 | Maximum distance from training data |
 | `trust_metric` | `:emd` | Distance metric (`:emd`, `:max_1d_log`, `:euclidean`) |
 | `atom_types` | `Int[]` | Element labels per atom for EMD (empty = all same) |
 | `use_adaptive_threshold` | false | Sigmoidal trust decay with training set size |
+
+## Random Fourier Features (RFF)
+
+For large training sets, exact GP scales as ``O((N(D+1))^3)``. When
+`rff_features > 0` and the kernel is `MolInvDistSE`, the GP-NEB pipeline
+replaces the exact GP with a Random Fourier Features approximation:
+
+1. Hyperparameters are optimized on the FPS subset (exact GP, ``O(M^3)``)
+2. An RFF model is built using ALL training data (``O(N \cdot D \cdot D_\text{rff} + D_\text{rff}^3)``)
+3. Predictions use the RFF model (``O(D_\text{rff} \cdot D)`` per test point)
+
+RFF is a Bayesian linear regression in a ``D_\text{rff}``-dimensional random
+feature space that approximates the kernel. The feature map is derived from
+Bochner's theorem: the SE kernel's spectral density is Gaussian, so random
+frequencies are sampled from ``\mathcal{N}(0, 2\theta^2 I)`` where ``\theta``
+is the trained inverse lengthscale.
+
+```julia
+# Enable RFF with 200 features on an OIE run
+cfg = NEBConfig(
+    images = 3,
+    max_gp_points = 10,   # FPS subset for hyperparameter training
+    rff_features = 200,   # RFF approximation for prediction
+    conv_tol = 0.3,
+    verbose = true,
+)
+
+kernel = MolInvDistSE(1.0, [1.0], Float64[])
+result = gp_neb_oie_naive(oracle, x_start, x_end, kernel; config = cfg)
+```
+
+RFF activates only when the full training set exceeds the FPS subset
+(i.e., `npoints(td) > npoints(td_subset)`). With fewer data points than
+the subset cap, the exact GP is used directly.
+
+On the LEPS benchmark, RFF with 200 features converges in 25-26 oracle
+calls with a barrier of 1.3293 eV (exact GP: 22 calls, 1.3291 eV). The
+approximation introduces transient force spikes when it activates, but
+these recover within a few iterations.
 
 ## Trust Region Configuration
 
