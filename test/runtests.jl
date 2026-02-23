@@ -3,6 +3,7 @@ using Test
 using Statistics
 using LinearAlgebra
 using KernelFunctions
+using Random
 
 @testset "ChemGP" begin
     include("test_lbfgs.jl")
