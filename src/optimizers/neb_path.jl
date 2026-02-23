@@ -226,7 +226,9 @@ function compute_all_neb_forces(path::NEBPath, config::NEBConfig; ci_on::Bool=fa
         )
 
         forces[i] = f
-        fn = norm(f)
+        # Per-atom max force: max over atoms of 3D force magnitude (matching eOn)
+        n_atoms = div(length(f), 3)
+        fn = maximum(norm(@view f[(3 * (a - 1) + 1):(3 * a)]) for a in 1:n_atoms)
         max_f_norm = max(max_f_norm, fn)
 
         if is_highest
