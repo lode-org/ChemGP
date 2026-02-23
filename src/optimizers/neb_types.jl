@@ -49,6 +49,21 @@ Configuration parameters for NEB path optimization.
 - `gp_train_iter`: Nelder-Mead iterations for GP hyperparameter optimization (default 300)
 - `max_outer_iter`: Maximum outer iterations for GP-NEB (default 50)
 - `trust_radius`: Maximum displacement from training data (default 0.1)
+- `trust_metric`: Distance metric for trust region (:emd, :max_1d_log, :euclidean; default :emd)
+- `atom_types`: Integer element labels per atom for EMD (default Int[] = all same type)
+- `use_adaptive_threshold`: Enable sigmoidal trust decay with training set size (default false)
+- `adaptive_t_min`: Asymptotic minimum threshold (default 0.15)
+- `adaptive_delta_t`: Initial excess range (default 0.35)
+- `adaptive_n_half`: Half-life in effective data points (default 50)
+- `adaptive_A`: Steepness of sigmoidal transition (default 1.3)
+- `adaptive_floor`: Absolute minimum threshold (default 0.2)
+
+# OIE early stopping (Koistinen et al. 2019, J. Chem. Phys. 150, 094106)
+- `ci_force_tol`: Convergence threshold on CI force, separate from band `conv_tol` (default -1 = use conv_tol)
+- `inner_ci_threshold`: GP force level at which CI turns on during inner relaxation; 0 = no CI (default 0.5)
+- `gp_tol_divisor`: Adaptive GP convergence tolerance = smallest_observed_force / divisor; 0 = fixed min(conv_tol, ci_force_tol)/10 (default 10)
+- `max_step_frac`: Reject inner step if any image moves further than this fraction of the initial path length from nearest training point (default 0.1)
+- `bond_stretch_limit`: Reject inner step if any interatomic distance ratio to nearest training point exceeds |log(limit)|, e.g. 2/3 means bonds cannot shrink below 2/3 or stretch above 3/2 (default 2/3)
 
 # Virtual Hessian points (Koistinen et al. 2017, J. Chem. Phys. 147, 152720)
 - `num_hess_iter`: Outer iterations to include Hessian perturbation points; 0 disables (default 0)
@@ -79,6 +94,21 @@ Base.@kwdef struct NEBConfig
     gp_train_iter::Int      = 300
     max_outer_iter::Int     = 50
     trust_radius::Float64   = 0.1
+    # Trust region metric and adaptive threshold (shared with OTGPD; see distances_trust.jl)
+    trust_metric::Symbol         = :emd
+    atom_types::Vector{Int}      = Int[]
+    use_adaptive_threshold::Bool = false
+    adaptive_t_min::Float64      = 0.15
+    adaptive_delta_t::Float64    = 0.35
+    adaptive_n_half::Int         = 50
+    adaptive_A::Float64          = 1.3
+    adaptive_floor::Float64      = 0.2
+    # OIE early stopping (Koistinen et al. 2019):
+    ci_force_tol::Float64     = -1.0    # CI convergence threshold (-1 = use conv_tol)
+    inner_ci_threshold::Float64 = 0.5   # GP force level to activate CI in inner loop (0 = no CI)
+    gp_tol_divisor::Int       = 10      # GP inner tol = smallest_accurate_force / divisor (0 = fixed)
+    max_step_frac::Float64    = 0.1     # max displacement from training data / initial path length
+    bond_stretch_limit::Float64 = 2.0/3.0 # bond ratio limit for early stopping
     # Virtual Hessian points (Koistinen et al. 2017):
     # Generate finite-difference perturbation points around endpoints to
     # bootstrap GP training with curvature information.

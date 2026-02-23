@@ -164,7 +164,12 @@ end
     _gp_inner_relax(model, images, energies, gradients, cfg, ci_on, E_ref, y_std, gp_tol)
 
 Relax NEB images on the GP surrogate surface using L-BFGS (or SD) with
-trust radius clipping. Returns a new vector of relaxed image positions.
+Euclidean trust radius clipping. Returns a new vector of relaxed image positions.
+
+The inner loop uses a simple Euclidean clip from the oracle-evaluated anchor
+to prevent cumulative drift over many L-BFGS steps. EMD-based trust checking
+is applied at the outer loop boundary instead (see `_emd_trust_clip!`),
+where it cannot disrupt L-BFGS curvature estimates.
 """
 function _gp_inner_relax(
     model,
@@ -229,6 +234,47 @@ function _gp_inner_relax(
     end
 
     return gp_images
+end
+
+"""
+    _emd_trust_clip!(images, td, cfg)
+
+Post-inner-loop EMD trust region clip. For each movable image, check the
+minimum distance (using `cfg.trust_metric`) to all training data. If an
+image exceeds the adaptive threshold, scale its displacement from the
+nearest training point back to the boundary.
+
+This is applied AFTER inner relaxation completes -- never inside the inner
+loop -- because per-step clipping disrupts L-BFGS curvature estimates and
+causes force divergence.
+"""
+function _emd_trust_clip!(
+    images::Vector{Vector{Float64}},
+    td::TrainingData,
+    cfg::NEBConfig,
+)
+    N = length(images)
+    D = length(images[1])
+    n_atoms = div(D, 3)
+    thresh = adaptive_trust_threshold(cfg.trust_radius, npoints(td), n_atoms;
+                 use_adaptive=cfg.use_adaptive_threshold,
+                 t_min=cfg.adaptive_t_min, delta_t=cfg.adaptive_delta_t,
+                 n_half=cfg.adaptive_n_half, A=cfg.adaptive_A,
+                 floor=cfg.adaptive_floor)
+
+    for i in 2:(N - 1)
+        d = trust_min_distance(images[i], td.X, cfg.trust_metric;
+                               atom_types=cfg.atom_types)
+        if d > thresh
+            # Find nearest training point and scale back toward it
+            dist_fn = trust_distance_fn(cfg.trust_metric, cfg.atom_types)
+            nearest_idx = argmin(dist_fn(images[i], view(td.X, :, j))
+                                for j in 1:npoints(td))
+            nearest = td.X[:, nearest_idx]
+            disp = images[i] - nearest
+            images[i] = nearest + disp * (thresh / d * 0.95)
+        end
+    end
 end
 
 # ==============================================================================
@@ -529,6 +575,11 @@ function gp_neb_aie(
         images = _gp_inner_relax(model, images, energies, gradients,
                                  cfg, ci_on, E_ref, y_std, gp_tol)
 
+        # EMD trust clip: scale back images that drifted beyond the adaptive
+        # threshold from all training data. Applied AFTER inner relaxation
+        # to avoid disrupting L-BFGS curvature estimates.
+        _emd_trust_clip!(images, td, cfg)
+
         # Evaluate oracle at new positions (parallel); deduplicate training data
         oracle_calls += _eval_images!(oracle, images, energies, gradients, 2:(N-1))
         for i in 2:(N-1)
@@ -548,187 +599,4 @@ function gp_neb_aie(
     return NEBResult(path, converged, oracle_calls, i_max, history)
 end
 
-# ==============================================================================
-# GP-NEB OIE (One Image Evaluated)
-# ==============================================================================
-
-"""
-    gp_neb_oie(oracle, x_start, x_end, kernel; config) -> NEBResult
-
-GP-NEB with One Image Evaluated per outer iteration (uncertainty-based).
-
-At each outer iteration:
-1. Train the GP on accumulated data
-2. Relax the path on the GP surface
-3. Compute predictive variance at all images
-4. Evaluate the oracle at the image with maximum uncertainty
-5. Check convergence
-
-This is the most oracle-efficient variant. Uses [`predict_with_variance`](@ref)
-to select the most informative evaluation point.
-
-Training data is deduplicated to prevent near-singular covariance matrices.
-"""
-function gp_neb_oie(
-    oracle::OracleOrPool,
-    x_start::Vector{Float64},
-    x_end::Vector{Float64},
-    kernel;
-    config::NEBConfig = NEBConfig(),
-    on_step::Union{Function,Nothing} = nothing,
-)
-    cfg = config
-    N = cfg.images + 2
-    D = length(x_start)
-    ep_oracle = _single_oracle(oracle)
-    dedup_tol = cfg.conv_tol * 0.1
-
-    images = _init_neb_images(cfg, x_start, x_end)
-
-    # Evaluate endpoints
-    E_start, G_start = ep_oracle(x_start)
-    E_end, G_end = ep_oracle(x_end)
-    oracle_calls = 2
-
-    # Training data accumulator
-    td = TrainingData(D)
-    add_point!(td, x_start, E_start, G_start)
-    add_point!(td, x_end, E_end, G_end)
-
-    # Virtual Hessian points
-    hess_X, hess_E, hess_G, n_hess, hess_calls = _init_hessian_data(
-        cfg, ep_oracle, x_start, x_end, D)
-    oracle_calls += hess_calls
-
-    # Bootstrap: evaluate midpoint
-    energies = zeros(N)
-    gradients = [zeros(D) for _ in 1:N]
-    energies[1] = E_start
-    energies[end] = E_end
-    gradients[1] = G_start
-    gradients[end] = G_end
-    evaluated = falses(N)
-    evaluated[1] = true
-    evaluated[end] = true
-
-    mid = div(N, 2) + 1
-    E_mid, G_mid = ep_oracle(images[mid])
-    energies[mid] = E_mid
-    gradients[mid] = G_mid
-    add_point!(td, images[mid], E_mid, G_mid)
-    evaluated[mid] = true
-    oracle_calls += 1
-
-    path = NEBPath(images, energies, gradients, cfg.spring_constant)
-
-    history = Dict(
-        "max_force" => Float64[],
-        "ci_force" => Float64[],
-        "oracle_calls" => Int[],
-        "max_energy" => Float64[],
-        "image_evaluated" => Int[],
-    )
-
-    ci_on = false
-    converged = false
-    prev_kern = nothing
-    baseline_force = 0.0
-
-    for outer_iter in 1:(cfg.max_outer_iter)
-        # Train GP
-        model, E_ref, y_std, prev_kern = _train_neb_gp(
-            td, kernel, cfg, prev_kern,
-            hess_X, hess_E, hess_G, n_hess, outer_iter)
-
-        # Predict at all intermediate images
-        for i in 2:(N - 1)
-            pred = predict(model, reshape(images[i], :, 1))
-            energies[i] = pred[1] * y_std + E_ref
-            gradients[i] = pred[2:end] .* y_std
-        end
-
-        path.energies = energies
-        path.gradients = gradients
-        forces, max_f, ci_f, i_max = compute_all_neb_forces(path, cfg; ci_on)
-
-        # Select image with maximum predictive variance
-        max_var = -Inf
-        i_eval = 2
-
-        for i in 2:(N - 1)
-            _, var_vec = predict_with_variance(model, reshape(images[i], :, 1))
-            var_E = var_vec[1]
-            if var_E > max_var
-                max_var = var_E
-                i_eval = i
-            end
-        end
-
-        # Prioritize CI image if not yet evaluated
-        if ci_on && !evaluated[i_max]
-            i_eval = i_max
-        end
-
-        # Evaluate oracle at selected image; deduplicate
-        E_eval, G_eval = ep_oracle(images[i_eval])
-        energies[i_eval] = E_eval
-        gradients[i_eval] = G_eval
-        evaluated[i_eval] = true
-        oracle_calls += 1
-
-        if min_distance_to_data(images[i_eval], td.X) > dedup_tol
-            add_point!(td, images[i_eval], E_eval, G_eval)
-        end
-
-        push!(history["image_evaluated"], i_eval)
-
-        # Recompute forces with the new accurate value
-        path.energies = energies
-        path.gradients = gradients
-        forces, max_f, ci_f, i_max = compute_all_neb_forces(path, cfg; ci_on)
-
-        push!(history["max_force"], max_f)
-        push!(history["ci_force"], ci_f)
-        push!(history["oracle_calls"], oracle_calls)
-        push!(history["max_energy"], maximum(energies))
-
-        if outer_iter == 1
-            baseline_force = max_f
-        end
-
-        cfg.verbose && @printf("GP-NEB-OIE outer %d: eval image %d | max|F| = %.5f | var = %.3e | N_train = %d | calls = %d\n",
-                               outer_iter, i_eval, max_f, max_var, npoints(td), oracle_calls)
-
-        # Dynamic CI activation
-        ci_on, conv_metric, ci_activated = _check_ci(
-            cfg, ci_on, max_f, ci_f, baseline_force, outer_iter)
-        if ci_activated
-            cfg.verbose && @printf("  Climbing image activated (image %d)\n", i_max)
-        end
-
-        # Check convergence: CI image must be oracle-evaluated when ci_converged_only
-        conv_check = ci_on || !cfg.climbing_image
-        ci_verified = !cfg.ci_converged_only || evaluated[i_max]
-        if conv_check && ci_verified && conv_metric < cfg.conv_tol
-            cfg.verbose && println("GP-NEB-OIE converged!")
-            converged = true
-            break
-        end
-
-        # Inner loop: relax on GP surface
-        gp_tol = max(max_f / 10, cfg.conv_tol / 10)
-        images = _gp_inner_relax(model, images, energies, gradients,
-                                 cfg, ci_on, E_ref, y_std, gp_tol)
-        path.images = images
-
-        on_step !== nothing && on_step(path, outer_iter)
-
-        # Reset evaluation flags for moved images
-        for i in 2:(N - 1)
-            evaluated[i] = false
-        end
-    end
-
-    i_max = argmax(energies[2:end-1]) + 1
-    return NEBResult(path, converged, oracle_calls, i_max, history)
-end
+# GP-NEB OIE variants are in neb_oie.jl (Koistinen) and neb_oie_naive.jl (pedagogical)

@@ -56,8 +56,9 @@ Properties:
 - Rotationally and translationally invariant (in the assignment sense)
 - More expensive than MAX\_1D\_LOG but handles identical-atom clusters correctly
 
-The EMD metric is the default for OTGPD trust regions (`trust_metric = :emd`)
-and FPS subset selection (`fps_metric = :emd`). For systems without
+The EMD metric is the default for both OTGPD and GP-NEB trust regions
+(`trust_metric = :emd`) and FPS subset selection (`fps_metric = :emd`). The
+shared implementation lives in `distances_trust.jl`. For systems without
 permutation symmetry (e.g., organic molecules with unique atoms), MAX\_1D\_LOG
 or Euclidean may be equally effective and faster.
 
@@ -111,7 +112,8 @@ sparse, a generous radius lets the optimizer make large steps. As the
 training set grows and the GP becomes better calibrated, tighter trust
 regions improve accuracy near the saddle point (Goswami & Jonsson 2025).
 
-OTGPD implements a sigmoidal schedule that decays with training set size:
+Both OTGPD and GP-NEB implement a sigmoidal schedule that decays with
+training set size:
 
 ```math
 T(n) = T_{\min} + \frac{\Delta T}{1 + A \exp(n / n_{1/2})}
@@ -150,7 +152,8 @@ When `use_adaptive_threshold = false`, the fixed `trust_radius` is used.
 | Small organic molecule (unique atoms) | `:max_1d_log` | Optional |
 | Metal cluster (identical atoms) | `:emd` | Recommended |
 | 2D test surface (Muller-Brown) | `:euclidean` | No |
-| Production molecular search | `:emd` | Yes |
+| Production molecular search (OTGPD) | `:emd` | Yes |
+| GP-NEB (molecular systems) | `:emd` | Optional |
 
 ## Tuning the Trust Radius
 
@@ -171,4 +174,5 @@ larger values (0.2--0.3) may be appropriate.
 - Goswami & Jonsson, *ChemPhysChem* (2025) [doi:10.1002/cphc.202500730](https://doi.org/10.1002/cphc.202500730) -- adaptive pruning and trust region management
 - Goswami, *Efficient exploration of chemical kinetics* (2025) [arXiv:2510.21368](https://arxiv.org/abs/2510.21368) -- thesis
 - [OTGPD tutorial](@ref) for EMD trust and adaptive threshold in context
+- [NEB Method](@ref) for trust region configuration in GP-NEB
 - [References](@ref references)

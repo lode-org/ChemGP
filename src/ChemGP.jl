@@ -47,6 +47,7 @@ include("functions.jl")
 # ==============================================================================
 include("distances.jl")
 include("distances_emd.jl")
+include("distances_trust.jl")
 include("sampling.jl")
 
 # ==============================================================================
@@ -71,6 +72,8 @@ include("optimizers/neb_types.jl")
 include("optimizers/neb_path.jl")
 include("optimizers/idpp.jl")
 include("optimizers/neb.jl")
+include("optimizers/neb_oie_naive.jl")
+include("optimizers/neb_oie.jl")
 include("optimizers/otgpd.jl")
 
 # ==============================================================================
@@ -99,6 +102,7 @@ export kernel_blocks, compute_inverse_distances
 # Distance metrics
 export interatomic_distances, max_1d_log_distance, rmsd_distance
 export emd_distance
+export trust_distance_fn, trust_min_distance, adaptive_trust_threshold
 
 # Sampling
 export farthest_point_sampling, prune_training_data!
@@ -131,7 +135,7 @@ export NEBPath, NEBConfig, NEBResult
 export linear_interpolation, idpp_interpolation, sidpp_interpolation
 export path_tangent, spring_force, neb_force
 export energy_weighted_k, get_hessian_points
-export neb_optimize, gp_neb_aie, gp_neb_oie
+export neb_optimize, gp_neb_aie, gp_neb_oie, gp_neb_oie_naive
 
 # OTGPD (Optimal Transport GP Dimer)
 export otgpd, OTGPDConfig, OTGPDResult
