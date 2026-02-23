@@ -42,9 +42,6 @@ include("types.jl")
 # GP functions: build_full_covariance, train_model!, predict, predict_with_variance
 include("functions.jl")
 
-# Nystrom GP approximation (DTC)
-include("nystrom.jl")
-
 # ==============================================================================
 # Distance metrics and sampling
 # ==============================================================================
@@ -94,7 +91,6 @@ export GPModel, TrainingData, add_point!, npoints, normalize
 
 # GP core
 export train_model!, predict, predict_with_variance, build_full_covariance
-export NystromGP, build_nystrom
 
 # Kernels
 export AbstractMoleculeKernel
