@@ -192,9 +192,15 @@ function gp_minimize(
         cfg.verbose && println("Calling oracle...")
         E_true, G_true = oracle(x_curr)
         oracle_calls += 1
-        # Per-atom max force (matching eOn convention)
-        n_atoms = div(length(G_true), 3)
-        G_norm = maximum(norm(@view G_true[(3 * (a - 1) + 1):(3 * a)]) for a in 1:n_atoms)
+        # Per-atom max force for molecular systems (3D per atom);
+        # fall back to full norm for non-molecular (e.g. 2D) coordinates
+        D_g = length(G_true)
+        n_atoms = div(D_g, 3)
+        G_norm = if n_atoms >= 1 && D_g == 3 * n_atoms
+            maximum(norm(@view G_true[(3 * (a - 1) + 1):(3 * a)]) for a in 1:n_atoms)
+        else
+            norm(G_true)
+        end
 
         cfg.verbose && @printf("  True: E = %.4f | max|F_atom| = %.5f\n", E_true, G_norm)
 
