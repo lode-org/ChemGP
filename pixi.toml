@@ -41,6 +41,30 @@ fortran-compiler = ">=1.9.0"
 
 [environments]
 docs = { features = ["docs"] }
+figures = { features = ["figures"] }
+
+[feature.figures.dependencies]
+uv = ">=0.6.0"
+
+[feature.figures.tasks]
+fig-install = { cmd = "julia --project=scripts/figures/tutorial -e 'using Pkg; Pkg.develop(PackageSpec(path=pwd())); Pkg.instantiate()'", description = "Install figure script Julia dependencies" }
+fig-pyinstall = { cmd = "uv pip install -e ${RGPYCRUMBS_PATH:?Set RGPYCRUMBS_PATH}[surfaces,analysis] -e ${CHEMPARSEPLOT_PATH:?Set CHEMPARSEPLOT_PATH}[plot,neb]", description = "Install Python plotting deps (set RGPYCRUMBS_PATH, CHEMPARSEPLOT_PATH)" }
+fig-mb-pes = { cmd = "julia --project=scripts/figures/tutorial scripts/figures/tutorial/mb_pes.jl", depends-on = ["fig-install"], description = "MB-1: PES contour with stationary points" }
+fig-mb-neb = { cmd = "julia --project=scripts/figures/tutorial scripts/figures/tutorial/mb_neb.jl", depends-on = ["fig-install"], description = "MB-2: NEB path on Muller-Brown" }
+fig-mb-gp = { cmd = "julia --project=scripts/figures/tutorial scripts/figures/tutorial/mb_gp_progression.jl", depends-on = ["fig-install"], description = "MB-3: GP surrogate progression" }
+fig-mb-var = { cmd = "julia --project=scripts/figures/tutorial scripts/figures/tutorial/mb_variance.jl", depends-on = ["fig-install"], description = "MB-4: GP variance heatmap" }
+fig-mb-hyp = { cmd = "julia --project=scripts/figures/tutorial scripts/figures/tutorial/mb_hyperparams.jl", depends-on = ["fig-install"], description = "MB-5: Hyperparameter sensitivity" }
+fig-mb-dimer = { cmd = "julia --project=scripts/figures/tutorial scripts/figures/tutorial/mb_dimer_convergence.jl", depends-on = ["fig-install"], description = "MB-6: GP-dimer convergence" }
+fig-mb-trust = { cmd = "julia --project=scripts/figures/tutorial scripts/figures/tutorial/mb_trust_region.jl", depends-on = ["fig-install"], description = "MB-7: Trust region illustration" }
+fig-leps-pes = { cmd = "julia --project=scripts/figures/tutorial scripts/figures/tutorial/leps_contour.jl", depends-on = ["fig-install"], description = "LEPS-1: 2D PES contour" }
+fig-leps-neb = { cmd = "julia --project=scripts/figures/tutorial scripts/figures/tutorial/leps_neb.jl", depends-on = ["fig-install"], description = "LEPS-2: NEB path on LEPS" }
+fig-leps-aie = { cmd = "julia --project=scripts/figures/tutorial scripts/figures/tutorial/leps_aie_oie.jl", depends-on = ["fig-install"], description = "LEPS-3: AIE vs OIE comparison" }
+fig-leps-fps = { cmd = "julia --project=scripts/figures/tutorial scripts/figures/tutorial/leps_fps.jl", depends-on = ["fig-install"], description = "LEPS-4: FPS subset selection" }
+fig-hcn = { cmd = "julia --project=scripts/figures/tutorial scripts/figures/tutorial/hcn_neb_profile.jl", depends-on = ["fig-install"], description = "REAL-1: HCN energy profile" }
+fig-hcn-land = { cmd = "bash scripts/figures/tutorial/hcn_landscape.sh", depends-on = ["fig-pyinstall", "fig-hcn"], description = "REAL-1B: HCN 2D landscape" }
+fig-hcn-conv = { cmd = "julia --project=scripts/figures/tutorial scripts/figures/tutorial/hcn_convergence.jl", depends-on = ["fig-install"], description = "REAL-2: HCN convergence comparison" }
+fig-tier1 = { depends-on = ["fig-mb-pes", "fig-mb-neb", "fig-mb-gp", "fig-mb-var", "fig-mb-hyp", "fig-leps-pes", "fig-leps-neb"], description = "Run all P1 figures (MB + LEPS, no RPC)" }
+fig-tier2 = { depends-on = ["fig-mb-dimer", "fig-mb-trust", "fig-leps-aie", "fig-leps-fps"], description = "Run all P2 figures (no RPC)" }
 
 [feature.docs.dependencies]
 emacs = ">=30.2,<31"
