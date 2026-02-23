@@ -12,8 +12,16 @@
 # Prediction uses all N points via the Woodbury identity, so no data
 # is discarded.
 #
-# This is the "Deterministic Training Conditional" (DTC) approximation
-# (Seeger et al. 2003, Quinonero-Candela & Rasmussen 2005).
+# This uses the FITC (Fully Independent Training Conditional) approximation
+# (Snelson & Ghahramani 2006), which adds the diagonal approximation error
+# diag(K_NN - Q_NN) to the noise. This prevents numerical instability when
+# observation noise is very small (e.g. 1e-6 for molecular kernels).
+#
+# References:
+#   Quinonero-Candela & Rasmussen (2005), "A Unifying View of Sparse
+#   Approximate Gaussian Process Regression"
+#   Snelson & Ghahramani (2006), "Sparse Gaussian Processes using
+#   Pseudo-inputs"
 
 """
     _blocked_cross_covariance(kernel, X1, X2)
@@ -89,12 +97,17 @@ end
 Build a Nystrom GP from a base model (trained on inducing subset) and
 the full training data.
 
+Uses the FITC noise correction: Lambda_i = max(K_ii - Q_ii, 0) + sigma_i^2,
+which adds the diagonal approximation error to the noise. This prevents
+numerical instability when observation noise is very small (e.g. 1e-6
+for molecular kernels with fixed noise).
+
 The Woodbury identity gives the Nystrom weights:
 
     alpha = Lambda^{-1} (y - K_NM * inner^{-1} * K_MN * Lambda^{-1} * y)
 
 where `inner = K_MM + K_MN * Lambda^{-1} * K_NM` and `Lambda` is the
-diagonal noise matrix.
+FITC-corrected diagonal noise matrix.
 
 `y_all` must be in **blocked** layout: `[E1, ..., EN, G1_1, ..., GN_D]`,
 matching `build_full_covariance`. This is the concatenation of
@@ -124,20 +137,49 @@ function build_nystrom(
     # K_NM (cross-covariance: all x inducing, blocked layout)
     K_NM = _blocked_cross_covariance(base_model.kernel, X_all, base_model.X)
 
-    # Diagonal noise Lambda
+    # FITC noise correction (Snelson & Ghahramani 2006).
+    #
+    # DTC uses Lambda = diag(observation noise), but this breaks when noise
+    # is tiny (1e-6): the low-rank approximation Q_NN loses small eigenvalues
+    # of K_NN, and Lambda^{-1} amplifies those lost directions to ~1e6.
+    #
+    # FITC adds the approximation error to Lambda:
+    #   lambda_i = max(K_ii - Q_ii, 0) + sigma_i^2
+    # where Q_ii = diag(K_NM K_MM^{-1} K_MN). When the rank-M approximation
+    # is perfect (Q = K), the correction is zero and FITC = DTC. When Q is
+    # poor, the extra noise naturally regularizes the solve.
+
+    # Diagonal of K_NN (self-covariance at each training point)
+    K_diag = zeros(n_block)
+    for i in 1:N
+        xi = view(X_all, :, i)
+        k_ee, _, _, k_ff = kernel_blocks(base_model.kernel, xi, xi)
+        K_diag[i] = k_ee
+        for d in 1:D
+            K_diag[N + (i-1)*D + d] = k_ff[d, d]
+        end
+    end
+
+    # Diagonal of Q_NN = K_NM K_MM^{-1} K_MN via V = L^{-1} K_MN
+    V_fitc = L_MM.L \ K_NM'
+    Q_diag = zeros(n_block)
+    for j in 1:n_block
+        Q_diag[j] = dot(view(V_fitc, :, j), view(V_fitc, :, j))
+    end
+
+    # FITC Lambda: approximation error + observation noise
     lambda = zeros(n_block)
     nv = base_model.noise_var + base_model.jitter
     gv = base_model.grad_noise_var + base_model.jitter
     for i in 1:N
-        lambda[i] = nv
+        lambda[i] = max(K_diag[i] - Q_diag[i], 0.0) + nv
     end
     for i in 1:(N * D)
-        lambda[N + i] = gv
+        lambda[N + i] = max(K_diag[N + i] - Q_diag[N + i], 0.0) + gv
     end
     lambda_inv = 1.0 ./ lambda
 
-    # Woodbury: (Q + Lambda)^{-1} y
-    # where Q = K_NM K_MM^{-1} K_MN
+    # Woodbury: (Q + Lambda_FITC)^{-1} y
     # alpha = Lambda^{-1} y - Lambda^{-1} K_NM inner^{-1} K_MN Lambda^{-1} y
     # inner = K_MM + K_MN Lambda^{-1} K_NM
 
