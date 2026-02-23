@@ -38,4 +38,54 @@
         @test length(result.trajectory) >= 1
         @test isfinite(result.E_final)
     end
+
+    @testset "backward-compatible defaults" begin
+        cfg = MinimizationConfig()
+        @test cfg.max_move == 0.1
+        @test cfg.dedup_tol == 0.0
+        @test cfg.explosion_recovery == :perturb_best
+        @test cfg.max_training_points == 0
+    end
+
+    @testset "guardrails smoke test" begin
+        # 3-atom LJ with guardrails enabled
+        x_init = [0.0, 0.0, 0.0, 2.0, 0.0, 0.0, 1.0, 1.5, 0.0]
+        kernel = MolInvDistSE(1.0, [0.5], Float64[])
+
+        config = MinimizationConfig(;
+            trust_radius=0.3,
+            conv_tol=0.5,
+            max_iter=5,
+            gp_train_iter=50,
+            max_move=0.05,
+            dedup_tol=0.01,
+            explosion_recovery=:perturb_best,
+            max_training_points=20,
+            verbose=false,
+        )
+
+        result = gp_minimize(lj_energy_gradient, x_init, kernel; config=config)
+
+        @test result.oracle_calls >= 5
+        @test length(result.trajectory) >= 1
+        @test isfinite(result.E_final)
+    end
+
+    @testset "reset_prev explosion recovery" begin
+        # Verify :reset_prev mode runs without error
+        x_init = [0.0, 0.0, 0.0, 2.0, 0.0, 0.0, 1.0, 1.5, 0.0]
+        kernel = MolInvDistSE(1.0, [0.5], Float64[])
+
+        config = MinimizationConfig(;
+            trust_radius=0.3,
+            conv_tol=0.5,
+            max_iter=3,
+            gp_train_iter=50,
+            explosion_recovery=:reset_prev,
+            verbose=false,
+        )
+
+        result = gp_minimize(lj_energy_gradient, x_init, kernel; config=config)
+        @test isfinite(result.E_final)
+    end
 end

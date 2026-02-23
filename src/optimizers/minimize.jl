@@ -31,6 +31,10 @@ Base.@kwdef struct MinimizationConfig
     n_initial_perturb::Int = 4       # Number of perturbed initial points
     perturb_scale::Float64 = 0.1     # Scale of initial perturbations
     penalty_coeff::Float64 = 1e3     # Soft trust region penalty coefficient
+    max_move::Float64 = 0.1          # Per-atom max displacement (Ang)
+    dedup_tol::Float64 = 0.0         # 0 = auto (conv_tol * 0.1)
+    explosion_recovery::Symbol = :perturb_best  # or :reset_prev
+    max_training_points::Int = 0     # 0 = no pruning
     verbose::Bool = true
 end
 
@@ -123,6 +127,7 @@ function gp_minimize(
     )
 
     converged = false
+    eff_dedup = cfg.dedup_tol > 0 ? cfg.dedup_tol : cfg.conv_tol * 0.1
 
     for outer_step in 1:(cfg.max_iter)
         cfg.verbose && println("-"^60)
@@ -178,6 +183,8 @@ function gp_minimize(
             end
         end
 
+        x_prev = copy(x_curr)
+
         result = Optim.optimize(
             gp_objective,
             gp_gradient!,
@@ -187,6 +194,20 @@ function gp_minimize(
         )
 
         x_curr = Optim.minimizer(result)
+
+        # Hard trust clip: limit total displacement from anchor
+        disp = x_curr - x_prev
+        dn = norm(disp)
+        if dn > cfg.trust_radius
+            x_curr = x_prev + disp * (cfg.trust_radius / dn)
+        end
+
+        # Per-atom max-move clip for 3D molecular systems
+        D_curr = length(x_curr)
+        n_at = div(D_curr, 3)
+        if n_at >= 2 && D_curr == 3 * n_at
+            x_curr = x_prev + _clip_to_max_move(x_curr - x_prev, cfg.max_move, 3)
+        end
 
         # Step 4: Call oracle at new point
         cfg.verbose && println("Calling oracle...")
@@ -204,17 +225,33 @@ function gp_minimize(
 
         cfg.verbose && @printf("  True: E = %.4f | max|F_atom| = %.5f\n", E_true, G_norm)
 
-        # Sanity check
+        # Explosion recovery
         if !isfinite(E_true) || E_true > 1e6
-            cfg.verbose && println("  Energy exploded - resetting to previous point")
-            x_curr = td.X[:, end]
+            cfg.verbose && println("  Energy exploded - recovering")
+            if cfg.explosion_recovery == :perturb_best
+                best_idx = argmin(td.energies)
+                x_curr = td.X[:, best_idx] + (rand(D) .- 0.5) .* (cfg.perturb_scale * 0.5)
+            else
+                x_curr = td.X[:, end]
+            end
             continue
         end
 
-        # Add to training set
-        add_point!(td, x_curr, E_true, G_true)
+        # Always record in trajectory for convergence plots
         push!(trajectory, copy(x_curr))
         push!(all_energies, E_true)
+
+        # Conditionally add to GP training set (deduplication)
+        if min_distance_to_data(x_curr, td.X) > eff_dedup
+            add_point!(td, x_curr, E_true, G_true)
+        end
+
+        # Optional training data pruning
+        if cfg.max_training_points > 0
+            prune_training_data!(
+                td, x_curr, cfg.max_training_points; distance_fn=(a, b) -> norm(a - b)
+            )
+        end
 
         # Step 5: Check TRUE convergence
         if G_norm < cfg.conv_tol
