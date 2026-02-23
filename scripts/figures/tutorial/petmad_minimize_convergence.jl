@@ -31,15 +31,33 @@ end
 # --- System100 reactant: 9-atom fragment (2C, 1O, 2N, 4H) ---
 # Source: system100-react.xyz from eOn ewNEB benchmark set
 const SYSTEM100_REACT = Float64[
-    -1.58572291100237, -0.84160847213746, -0.00000339907657,  # C
-    -0.53056971192710, -1.65722303210517,  0.00000434652695,  # C
-     1.82767320854265,  0.45290828278285, -0.00002187280664,  # O
-     0.97442679271533,  1.26997020651757,  0.00006031628749,  # N
-     0.15721755319950,  2.05013813569860, -0.00004056288043,  # N
-    -2.04209833505612, -0.48866007686699,  0.93039929342888,  # H
-    -2.04208985274357, -0.48866569200588, -0.93041253064561,  # H
-    -0.07175706986641, -2.00739679244130,  0.93006512898811,  # H
-    -0.07174967386193, -2.00740255964219, -0.93005072002220,  # H
+    -1.58572291100237,
+    -0.84160847213746,
+    -0.00000339907657,  # C
+    -0.53056971192710,
+    -1.65722303210517,
+    0.00000434652695,  # C
+    1.82767320854265,
+    0.45290828278285,
+    -0.00002187280664,  # O
+    0.97442679271533,
+    1.26997020651757,
+    0.00006031628749,  # N
+    0.15721755319950,
+    2.05013813569860,
+    -0.00004056288043,  # N
+    -2.04209833505612,
+    -0.48866007686699,
+    0.93039929342888,  # H
+    -2.04208985274357,
+    -0.48866569200588,
+    -0.93041253064561,  # H
+    -0.07175706986641,
+    -2.00739679244130,
+    0.93006512898811,  # H
+    -0.07174967386193,
+    -2.00740255964219,
+    -0.93005072002220,  # H
 ]
 const SYSTEM100_ATMNRS = Int32[6, 6, 8, 7, 7, 1, 1, 1, 1]
 const SYSTEM100_BOX = Float64[20, 0, 0, 0, 20, 0, 0, 0, 20]
@@ -69,6 +87,8 @@ function run_convergence()
         n_initial_perturb=4,
         perturb_scale=0.08,
         penalty_coeff=1e3,
+        max_move=0.1,
+        explosion_recovery=:perturb_best,
         verbose=true,
     )
 
@@ -185,11 +205,19 @@ function main()
     df_cl = filter(:method => ==("Classical L-BFGS"), df)
 
     lines!(
-        ax, df_gp.oracle_calls, df_gp.max_fatom; color=RUHI.teal, linewidth=1.5,
+        ax,
+        df_gp.oracle_calls,
+        df_gp.max_fatom;
+        color=RUHI.teal,
+        linewidth=1.5,
         label="GP-minimization",
     )
     lines!(
-        ax, df_cl.oracle_calls, df_cl.max_fatom; color=RUHI.sky, linewidth=1.5,
+        ax,
+        df_cl.oracle_calls,
+        df_cl.max_fatom;
+        color=RUHI.sky,
+        linewidth=1.5,
         label="Classical L-BFGS",
     )
     hlines!(ax, [0.015]; color=:gray, linewidth=0.8, linestyle=:dash)

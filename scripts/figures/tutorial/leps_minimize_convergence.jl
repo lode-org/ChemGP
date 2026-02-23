@@ -44,6 +44,8 @@ function main()
         n_initial_perturb=4,
         perturb_scale=0.08,
         penalty_coeff=1e3,
+        max_move=0.1,
+        explosion_recovery=:perturb_best,
         verbose=true,
     )
 
@@ -127,11 +129,19 @@ function main()
     )
 
     lines!(
-        ax, df_gp.oracle_calls, df_gp.max_fatom; color=RUHI.teal, linewidth=1.5,
+        ax,
+        df_gp.oracle_calls,
+        df_gp.max_fatom;
+        color=RUHI.teal,
+        linewidth=1.5,
         label="GP-minimization",
     )
     lines!(
-        ax, df_cl.oracle_calls, df_cl.max_fatom; color=RUHI.sky, linewidth=1.5,
+        ax,
+        df_cl.oracle_calls,
+        df_cl.max_fatom;
+        color=RUHI.sky,
+        linewidth=1.5,
         label="Classical L-BFGS",
     )
     hlines!(ax, [0.01]; color=:gray, linewidth=0.8, linestyle=:dash)
