@@ -107,6 +107,11 @@ end
 Train the GP model for NEB, handling both molecular kernels (energy shift,
 fixed noise) and generic kernels (normalize, optimize noise).
 
+When `cfg.max_gp_points > 0` and the training set exceeds that limit,
+a FPS subset is selected (using `cfg.trust_metric` as the distance)
+before training. This caps GP cost at O(M^3) while keeping all data
+available for trust checks and deduplication at the caller.
+
 Returns `(model, E_ref, y_std, kern)` where `kern` is the trained kernel
 suitable for warm-starting the next iteration.
 """
@@ -121,39 +126,47 @@ function _train_neb_gp(
     n_hess::Int,
     outer_iter::Int,
 )
+    # FPS subset selection when training set exceeds max_gp_points
+    fps_fn = trust_distance_fn(cfg.trust_metric, cfg.atom_types)
+    td_use = _fps_subset_td(td, cfg.max_gp_points; distance_fn=fps_fn)
+    if npoints(td_use) < npoints(td)
+        cfg.verbose && @printf("  FPS subset: %d/%d training points\n",
+                               npoints(td_use), npoints(td))
+    end
+
     if kernel isa AbstractMoleculeKernel
-        E_ref = td.energies[1]
+        E_ref = td_use.energies[1]
 
         use_hess = n_hess > 0 && outer_iter <= cfg.num_hess_iter
         if use_hess
-            X_train = hcat(hess_X, td.X)
-            E_train = vcat(hess_E, td.energies)
-            G_train = vcat(hess_G, td.gradients)
+            X_train = hcat(hess_X, td_use.X)
+            E_train = vcat(hess_E, td_use.energies)
+            G_train = vcat(hess_G, td_use.gradients)
         else
-            X_train = td.X
-            E_train = td.energies
-            G_train = td.gradients
+            X_train = td_use.X
+            E_train = td_use.energies
+            G_train = td_use.gradients
         end
 
         y_target = vcat(E_train .- E_ref, G_train)
 
         # Warm-start: reuse previous kernel, only init on first iteration
-        kern = prev_kern === nothing ? init_mol_invdist_se(td, kernel) : prev_kern
+        kern = prev_kern === nothing ? init_mol_invdist_se(td_use, kernel) : prev_kern
         model = GPModel(kern, X_train, y_target;
                         noise_var = 1e-6, grad_noise_var = 1e-4, jitter = 1e-6)
         train_model!(model; iterations = cfg.gp_train_iter,
                      fix_noise = true, verbose = cfg.verbose)
         return model, E_ref, 1.0, model.kernel
     else
-        y_gp, E_ref, y_std = normalize(td)
+        y_gp, E_ref, y_std = normalize(td_use)
         kern = if prev_kern !== nothing
             prev_kern
         elseif kernel isa CartesianSE
-            init_cartesian_se(td)
+            init_cartesian_se(td_use)
         else
             kernel
         end
-        model = GPModel(kern, td.X, y_gp;
+        model = GPModel(kern, td_use.X, y_gp;
                         noise_var = 1e-6, grad_noise_var = 1e-6, jitter = 1e-4)
         train_model!(model; iterations = cfg.gp_train_iter, verbose = cfg.verbose)
         return model, E_ref, y_std, model.kernel
@@ -454,6 +467,51 @@ function neb_optimize(
 end
 
 # ==============================================================================
+# FPS subset selection for GP training
+# ==============================================================================
+
+"""
+    _fps_subset_td(td, max_points; distance_fn=max_1d_log_distance)
+
+Return a new TrainingData containing at most `max_points` from `td`,
+selected by Farthest Point Sampling for maximum diversity.
+
+The first two points (endpoints) are always kept. When `max_points <= 0`
+or `npoints(td) <= max_points`, returns `td` unchanged (no copy).
+"""
+function _fps_subset_td(
+    td::TrainingData,
+    max_points::Int;
+    distance_fn::Function = max_1d_log_distance,
+)
+    N = npoints(td)
+    if max_points <= 0 || N <= max_points
+        return td
+    end
+
+    D = size(td.X, 1)
+
+    # Seed FPS with the first point (endpoint 1)
+    seed = td.X[:, 1:1]
+    # Select max_points - 1 more from all data
+    fps_idx = farthest_point_sampling(td.X, seed, max_points - 1; distance_fn)
+    # Combine seed + FPS selections, deduplicate and sort
+    keep = sort(unique([1; fps_idx]))
+    # Ensure we don't exceed max_points
+    if length(keep) > max_points
+        keep = keep[1:max_points]
+    end
+
+    td_sub = TrainingData(D)
+    for i in keep
+        s = (i - 1) * D + 1
+        e = i * D
+        add_point!(td_sub, td.X[:, i], td.energies[i], td.gradients[s:e])
+    end
+    return td_sub
+end
+
+# ==============================================================================
 # GP-NEB AIE (All Images Evaluated)
 # ==============================================================================
 
@@ -565,7 +623,7 @@ function gp_neb_aie(
             break
         end
 
-        # Train GP
+        # Train GP (FPS subset applied inside _train_neb_gp when max_gp_points > 0)
         model, E_ref, y_std, prev_kern = _train_neb_gp(
             td, kernel, cfg, prev_kern,
             hess_X, hess_E, hess_G, n_hess, outer_iter)
