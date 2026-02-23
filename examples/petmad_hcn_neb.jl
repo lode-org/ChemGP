@@ -22,6 +22,8 @@
 
 using ChemGP
 using Printf
+using AtomsBase
+using AtomsIO
 
 const RUN_AIE = "--aie" in ARGS
 
@@ -31,35 +33,14 @@ const RUN_AIE = "--aie" in ARGS
 const SERVER_HOST = get(ENV, "RGPOT_HOST", "localhost")
 const SERVER_PORT = parse(Int, get(ENV, "RGPOT_PORT", "12345"))
 
-# System: C, N, H (order matches initial.xyz)
-const ATOMIC_NUMBERS = Int32[6, 7, 1]
-const BOX = Float64[20, 0, 0, 0, 20, 0, 0, 0, 20]  # cluster in vacuum
+# Load endpoints from extxyz files (Baker test set 01_hcn)
+const DATA_DIR = joinpath(@__DIR__, "data")
+const SYS_HCN = load_system(joinpath(DATA_DIR, "hcn.extxyz"))
+const SYS_HNC = load_system(joinpath(DATA_DIR, "hnc.extxyz"))
 
-# HCN reactant (Baker 01_hcn, frame 1)
-const X_HCN = Float64[
-    -0.0000000000,
-    -0.0001901002,
-    0.4953725273,   # C
-    0.0000000000,
-    0.0001075881,
-    -0.6502937324,   # N
-    -0.0000000000,
-    -0.0004700964,
-    1.5653497002,   # H
-]
-
-# HNC product (Baker 01_hcn, frame 2)
-const X_HNC = Float64[
-    0.0000000000,
-    0.0000000000,
-    0.7365959260,   # C
-    0.0000000000,
-    0.0000000000,
-    -0.4276753515,   # N
-    0.0000000000,
-    0.0000000000,
-    -1.4258476271,   # H
-]
+const (; positions = X_HCN, atomic_numbers = ATOMIC_NUMBERS, box = BOX) =
+    chemgp_coords(SYS_HCN)
+const (; positions = X_HNC) = chemgp_coords(SYS_HNC)
 
 const OUTDIR = get(ENV, "CHEMGP_OUTDIR", "results_hcn_neb")
 
