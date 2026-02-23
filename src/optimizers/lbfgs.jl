@@ -66,7 +66,7 @@ function push_pair!(hist::LBFGSHistory, s::Vector{Float64}, y::Vector{Float64})
     # Skip pairs that violate the curvature condition
     ys = dot(y, s)
     if ys <= 1e-18
-        return
+        return nothing
     end
 
     # Circular buffer: remove oldest if full

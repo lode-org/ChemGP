@@ -33,3 +33,13 @@ RpcPotential
 RpcPotentialCore
 make_rpc_oracle
 ```
+
+## RPC Library Discovery
+
+```@docs
+find_rgpot_lib
+find_potserv
+with_potserv
+rgpot_available
+potserv_available
+```

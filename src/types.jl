@@ -47,7 +47,9 @@ end
 Add a single oracle evaluation (configuration `x`, energy `E`, gradient `G`)
 to the training set.
 """
-function add_point!(td::TrainingData, x::AbstractVector{Float64}, E::Real, G::AbstractVector{Float64})
+function add_point!(
+    td::TrainingData, x::AbstractVector{Float64}, E::Real, G::AbstractVector{Float64}
+)
     td.X = hcat(td.X, x)
     push!(td.energies, E)
     append!(td.gradients, G)
@@ -115,6 +117,6 @@ mutable struct GPModel{Tk<:Kernel}
     jitter::Float64                  # Numerical stability jitter
 end
 
-function GPModel(kernel, X, y; noise_var = 1e-6, grad_noise_var = 1e-6, jitter = 1e-6)
+function GPModel(kernel, X, y; noise_var=1e-6, grad_noise_var=1e-6, jitter=1e-6)
     return GPModel(kernel, Matrix(X), y, noise_var, grad_noise_var, jitter)
 end

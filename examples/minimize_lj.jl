@@ -21,7 +21,7 @@ using LinearAlgebra
 
 # ---- Step 1: Create a random starting cluster ----
 N_atoms = 4  # Small cluster for quick demonstration
-x_init = random_cluster(N_atoms; min_dist = 1.2)
+x_init = random_cluster(N_atoms; min_dist=1.2)
 
 E_init, G_init = lj_energy_gradient(x_init)
 println("Initial energy: $(round(E_init, digits=4))")
@@ -33,15 +33,11 @@ println("Initial |grad|: $(round(norm(G_init), digits=4))")
 kernel = MolInvDistSE(1.0, [0.5], Float64[])
 
 # ---- Step 3: Configure and run GP-guided minimization ----
-config = MinimizationConfig(
-    trust_radius = 0.15,
-    conv_tol = 1e-2,
-    max_iter = 30,
-    gp_train_iter = 200,
-    verbose = true,
+config = MinimizationConfig(;
+    trust_radius=0.15, conv_tol=1e-2, max_iter=30, gp_train_iter=200, verbose=true
 )
 
-result = gp_minimize(lj_energy_gradient, x_init, kernel; config = config)
+result = gp_minimize(lj_energy_gradient, x_init, kernel; config=config)
 
 # ---- Step 4: Report results ----
 println("\n" * "="^50)

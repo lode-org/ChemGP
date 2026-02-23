@@ -46,11 +46,7 @@ with large systems, consider adding the `Hungarian.jl` package.
 
 See also: [`max_1d_log_distance`](@ref), [`rmsd_distance`](@ref)
 """
-function emd_distance(
-    x1::AbstractVector,
-    x2::AbstractVector;
-    atom_types::Vector{Int} = Int[],
-)
+function emd_distance(x1::AbstractVector, x2::AbstractVector; atom_types::Vector{Int}=Int[])
     n = length(x1)
     @assert length(x2) == n "Coordinate vectors must have same length"
     @assert n % 3 == 0 "Coordinate vector length must be divisible by 3"

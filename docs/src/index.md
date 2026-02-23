@@ -17,7 +17,15 @@ energy structures and transition states.
   kernels operating on inverse interatomic distance features
 - **GP-guided minimization**: Surrogate-based geometry optimization with trust regions
 - **GP-Dimer saddle point search**: Find transition states using the dimer method
-  accelerated by GP predictions
+  accelerated by GP predictions (Goswami et al. 2025)
+- **OTGPD**: Production GP-dimer with FPS subset selection, hyperparameter
+  oscillation detection (HOD), variance barrier, EMD trust regions, and
+  adaptive trust threshold (Goswami & Jonsson 2025)
+- **GP-NEB (AIE/OIE)**: GP-accelerated nudged elastic band for minimum energy
+  paths, with warm-started hyperparameters and parallel oracle evaluation
+  (Goswami, Gunde & Jonsson 2026)
+- **Random Fourier Features (RFF)**: Scalable GP approximation for MolInvDistSE,
+  reducing prediction cost from O(N^3) to O(D_rff^3) via Bayesian linear regression
 - **Remote potential integration**: Connect to external potential servers via rgpot RPC
 - **Kernel composition**: Combine molecular kernels with constant offsets via `MolSumKernel`
 
@@ -52,9 +60,13 @@ Pages = [
     "tutorials/molecular_kernels.md",
     "tutorials/minimization.md",
     "tutorials/dimer_method.md",
+    "tutorials/otgpd.md",
+    "tutorials/neb_method.md",
     "tutorials/rpc_integration.md",
     "guides/kernel_design.md",
+    "guides/algorithms.md",
     "guides/trust_regions.md",
+    "guides/comparison.md",
     "references.md",
 ]
 Depth = 2

@@ -22,7 +22,7 @@ using LinearAlgebra
 
 # ---- Step 1: Start from a configuration ----
 N_atoms = 3  # Small system for demonstration
-x_init = random_cluster(N_atoms; min_dist = 1.2)
+x_init = random_cluster(N_atoms; min_dist=1.2)
 
 E_init, G_init = lj_energy_gradient(x_init)
 println("Starting energy: $(round(E_init, digits=4))")
@@ -35,19 +35,18 @@ orient ./= norm(orient)
 # ---- Step 3: Set up kernel and configuration ----
 kernel = MolInvDistSE(1.0, [0.5], Float64[])
 
-config = DimerConfig(
-    T_force_true = 5e-2,    # Loose tolerance for demo
-    T_force_gp = 1e-1,
-    trust_radius = 0.2,
-    max_outer_iter = 15,
-    max_inner_iter = 30,
-    gp_train_iter = 150,
-    verbose = true,
+config = DimerConfig(;
+    T_force_true=5e-2,    # Loose tolerance for demo
+    T_force_gp=1e-1,
+    trust_radius=0.2,
+    max_outer_iter=15,
+    max_inner_iter=30,
+    gp_train_iter=150,
+    verbose=true,
 )
 
 # ---- Step 4: Run GP-dimer search ----
-result = gp_dimer(lj_energy_gradient, x_init, orient, kernel;
-                  config = config, dimer_sep = 0.01)
+result = gp_dimer(lj_energy_gradient, x_init, orient, kernel; config=config, dimer_sep=0.01)
 
 # ---- Step 5: Report results ----
 E_final, G_final = lj_energy_gradient(result.state.R)

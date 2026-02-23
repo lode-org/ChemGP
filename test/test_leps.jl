@@ -1,7 +1,7 @@
 @testset "LEPS Potential" begin
     @testset "3D interface" begin
         # Collinear A-B-C with B at equilibrium distance from A
-        x = [0.0, 0.0, 0.0,  0.742, 0.0, 0.0,  3.742, 0.0, 0.0]
+        x = [0.0, 0.0, 0.0, 0.742, 0.0, 0.0, 3.742, 0.0, 0.0]
         E, G = leps_energy_gradient(x)
 
         @test isfinite(E)
@@ -26,26 +26,27 @@
         r_AB = 1.0
         r_BC = 1.5
 
-        x_3d = [0.0, 0.0, 0.0,  r_AB, 0.0, 0.0,  r_AB + r_BC, 0.0, 0.0]
+        x_3d = [0.0, 0.0, 0.0, r_AB, 0.0, 0.0, r_AB + r_BC, 0.0, 0.0]
         E_3d, _ = leps_energy_gradient(x_3d)
         E_2d, _ = leps_energy_gradient_2d([r_AB, r_BC])
 
-        @test isapprox(E_3d, E_2d, atol = 1e-10)
+        @test isapprox(E_3d, E_2d, atol=1e-10)
     end
 
     @testset "Finite difference gradient (3D)" begin
-        x = [0.0, 0.0, 0.0,  1.0, 0.0, 0.0,  2.5, 0.0, 0.0]
+        x = [0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 2.5, 0.0, 0.0]
         E0, G = leps_energy_gradient(x)
 
         h = 1e-5
         for i in 1:9
-            xp = copy(x); xp[i] += h
-            xm = copy(x); xm[i] -= h
+            xp = copy(x);
+            xp[i] += h
+            xm = copy(x);
+            xm[i] -= h
             Ep, _ = leps_energy_gradient(xp)
             Em, _ = leps_energy_gradient(xm)
             fd = (Ep - Em) / (2h)
-            @test isapprox(G[i], fd, atol = 1e-4) ||
-                  (abs(G[i]) < 1e-8 && abs(fd) < 1e-4)
+            @test isapprox(G[i], fd, atol=1e-4) || (abs(G[i]) < 1e-8 && abs(fd) < 1e-4)
         end
     end
 
@@ -55,12 +56,14 @@
 
         h = 1e-5
         for i in 1:2
-            rp = copy(r); rp[i] += h
-            rm = copy(r); rm[i] -= h
+            rp = copy(r);
+            rp[i] += h
+            rm = copy(r);
+            rm[i] -= h
             Ep, _ = leps_energy_gradient_2d(rp)
             Em, _ = leps_energy_gradient_2d(rm)
             fd = (Ep - Em) / (2h)
-            @test isapprox(G[i], fd, atol = 1e-4)
+            @test isapprox(G[i], fd, atol=1e-4)
         end
     end
 
@@ -80,7 +83,7 @@
         # Sample along the exchange coordinate
         n_pts = 20
         energies = Float64[]
-        for t in range(0, 1, length = n_pts)
+        for t in range(0, 1, length=n_pts)
             r_AB = 0.742 + t * 2.258    # 0.742 → 3.0
             r_BC = 3.0 - t * 2.258      # 3.0 → 0.742
             E, _ = leps_energy_gradient_2d([r_AB, r_BC])

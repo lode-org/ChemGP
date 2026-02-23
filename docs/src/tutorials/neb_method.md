@@ -67,13 +67,14 @@ for measuring GP speedup.
 
 ```julia
 result = neb_optimize(muller_brown_energy_gradient, x_start, x_end;
-    config = NEBConfig(n_images = 7, spring_constant = 10.0))
+    config = NEBConfig(images = 5, spring_constant = 10.0))
 ```
 
 ### GP-NEB-AIE ([`gp_neb_aie`](@ref))
 
 All Images Evaluated per outer iteration. The inner relaxation (many steps)
-operates on the cheap GP surface.
+operates on the cheap GP surface. Uses warm-started GP hyperparameters and
+regularized noise settings for stability (Goswami, Gunde & Jonsson 2026).
 
 ```julia
 result = gp_neb_aie(oracle, x_start, x_end, kernel; config = NEBConfig())
@@ -102,7 +103,7 @@ x_C = [-0.050, 0.467]
 k = SqExponentialKernel()
 
 config = NEBConfig(
-    n_images = 7,
+    images = 5,
     spring_constant = 10.0,
     climbing_image = true,
     conv_tol = 0.1,
@@ -123,13 +124,81 @@ result_oie = gp_neb_oie(muller_brown_energy_gradient, x_B, x_C, k; config)
 println("GP-NEB-OIE: $(result_oie.oracle_calls) oracle calls")
 ```
 
+## Parallel Oracle Evaluation
+
+Each NEB iteration evaluates the oracle at N-2 intermediate images. These
+evaluations are independent and can run in parallel when the server supports
+concurrent connections.
+
+All three NEB functions (`neb_optimize`, `gp_neb_aie`, `gp_neb_oie`) accept
+either a single oracle function or a vector of oracle functions (an oracle pool).
+When a pool is provided, image evaluations are dispatched across workers using
+`Threads.@spawn`:
+
+```julia
+using ChemGP
+
+# Single oracle (sequential)
+result = neb_optimize(oracle, x_start, x_end; config)
+
+# Oracle pool (parallel evaluation)
+n_workers = min(Threads.nthreads(), config.images)
+oracles = make_oracle_pool("localhost", 12345, atmnrs, box, n_workers)
+result = neb_optimize(oracles, x_start, x_end; config)
+```
+
+Launch Julia with multiple threads for parallel evaluation:
+
+```bash
+julia -t auto --project=. examples/petmad_hcn_neb.jl
+# or specify explicitly:
+julia -t 8 --project=. examples/petmad_hcn_neb.jl
+```
+
+A single `Function` oracle still works -- the pool is optional. For GP-NEB
+OIE, which evaluates one image per iteration, parallelism does not apply.
+
+See also: [RPC Integration](@ref) for setting up parallel servers with
+gateway mode.
+
+## GP Training: Warm-Start and Noise Regularization
+
+The GP-NEB variants (AIE and OIE) share a common GP training strategy
+that differs from naive implementation in two important ways:
+
+### Warm-Start
+
+Rather than re-initializing kernel hyperparameters from scratch at each outer
+iteration, the optimized hyperparameters from the previous iteration seed the
+next optimization. This provides two benefits:
+- Fewer optimization iterations needed (the starting point is already close)
+- More stable convergence, especially for molecular kernels with many
+  lengthscale parameters
+
+### Noise Regularization
+
+For molecular kernels (e.g., `MolInvDistSE`), the gradient-gradient block
+``K_{GG}`` of the covariance matrix can be rank-deficient for small molecules
+where the number of inverse-distance features is less than the number of
+gradient components. The default noise settings prevent numerical instability:
+
+| Parameter | Value | Purpose |
+|:----------|:------|:--------|
+| `noise_var` | 1e-6 | Energy observation noise |
+| `grad_noise_var` | 1e-4 | Gradient observation noise (regularizes K\_GG) |
+| `jitter` | 1e-6 | Diagonal jitter for Cholesky stability |
+
+These are set with `fix_noise = true`, meaning they are not optimized but
+treated as fixed regularization. This is critical for small systems (e.g.,
+HCN with 3 atoms, 3 inverse distances, but 9 gradient components).
+
 ## Configuration
 
 The [`NEBConfig`](@ref) struct controls all parameters:
 
 | Parameter | Default | Description |
 |:----------|:--------|:------------|
-| `n_images` | 7 | Number of images (including endpoints) |
+| `images` | 5 | Number of movable images (total = images + 2) |
 | `spring_constant` | 1.0 | Spring constant for elastic band |
 | `climbing_image` | true | Enable climbing image |
 | `ci_activation_tol` | 0.5 | Force norm to activate climbing image |
@@ -138,6 +207,91 @@ The [`NEBConfig`](@ref) struct controls all parameters:
 | `step_size` | 0.01 | Steepest descent step size |
 | `gp_train_iter` | 300 | GP hyperparameter optimization iterations |
 | `max_outer_iter` | 50 | Max outer iterations (GP-NEB) |
+| `max_gp_points` | 0 | Cap GP training set via FPS subset (0 = all data) |
+| `rff_features` | 0 | RFF feature dimension (0 = exact GP; >0 = RFF for MolInvDistSE) |
+| `trust_radius` | 0.1 | Maximum distance from training data |
+| `trust_metric` | `:emd` | Distance metric (`:emd`, `:max_1d_log`, `:euclidean`) |
+| `atom_types` | `Int[]` | Element labels per atom for EMD (empty = all same) |
+| `use_adaptive_threshold` | false | Sigmoidal trust decay with training set size |
+
+## Random Fourier Features (RFF)
+
+For large training sets, exact GP scales as ``O((N(D+1))^3)``. When
+`rff_features > 0` and the kernel is `MolInvDistSE`, the GP-NEB pipeline
+replaces the exact GP with a Random Fourier Features approximation:
+
+1. Hyperparameters are optimized on the FPS subset (exact GP, ``O(M^3)``)
+2. An RFF model is built using ALL training data (``O(N \cdot D \cdot D_\text{rff} + D_\text{rff}^3)``)
+3. Predictions use the RFF model (``O(D_\text{rff} \cdot D)`` per test point)
+
+RFF is a Bayesian linear regression in a ``D_\text{rff}``-dimensional random
+feature space that approximates the kernel. The feature map is derived from
+Bochner's theorem: the SE kernel's spectral density is Gaussian, so random
+frequencies are sampled from ``\mathcal{N}(0, 2\theta^2 I)`` where ``\theta``
+is the trained inverse lengthscale.
+
+```julia
+# Enable RFF with 200 features on an OIE run
+cfg = NEBConfig(
+    images = 3,
+    max_gp_points = 10,   # FPS subset for hyperparameter training
+    rff_features = 200,   # RFF approximation for prediction
+    conv_tol = 0.3,
+    verbose = true,
+)
+
+kernel = MolInvDistSE(1.0, [1.0], Float64[])
+result = gp_neb_oie_naive(oracle, x_start, x_end, kernel; config = cfg)
+```
+
+RFF activates only when the full training set exceeds the FPS subset
+(i.e., `npoints(td) > npoints(td_subset)`). With fewer data points than
+the subset cap, the exact GP is used directly.
+
+On the LEPS benchmark, RFF with 200 features converges in 25-26 oracle
+calls with a barrier of 1.3293 eV (exact GP: 22 calls, 1.3291 eV). The
+approximation introduces transient force spikes when it activates, but
+these recover within a few iterations.
+
+## Trust Region Configuration
+
+GP-NEB uses the same EMD trust region infrastructure as OTGPD (see
+[Trust Regions](@ref) for details). After inner relaxation on the GP surface
+completes, each image is checked against all training data using the configured
+metric. Images that exceeded the trust threshold are scaled back toward their
+nearest training point before oracle evaluation. The EMD check is applied at
+the outer loop boundary, not inside the inner loop, to avoid disrupting L-BFGS
+curvature estimates.
+
+```julia
+# HCN -> HNC with type-aware EMD trust
+cfg = NEBConfig(
+    images = 8,
+    trust_radius = 0.1,
+    trust_metric = :emd,
+    atom_types = Int[6, 7, 1],  # C, N, H
+)
+```
+
+For systems with identical atoms (e.g., metal clusters), the EMD metric is
+permutation-invariant and prevents the trust check from being confused by
+atom relabeling. For small unique-atom systems, `:euclidean` or `:max_1d_log`
+are equally effective and slightly faster.
+
+The adaptive threshold option tightens the trust region as more training data
+accumulates:
+
+```julia
+cfg = NEBConfig(
+    trust_radius = 0.1,
+    trust_metric = :emd,
+    atom_types = Int[6, 7, 1],
+    use_adaptive_threshold = true,
+    adaptive_t_min = 0.15,
+    adaptive_delta_t = 0.35,
+    adaptive_n_half = 50,
+)
+```
 
 ## Further Reading
 
