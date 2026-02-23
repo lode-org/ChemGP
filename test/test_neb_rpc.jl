@@ -148,6 +148,7 @@ const REFERENCE_BARRIER = 2.918
                 ew_k_max = 9.72,
                 max_iter = 1000,
                 conv_tol = 0.05,
+                atom_types = Int[6, 7, 1],
                 verbose = false,
             )
 
@@ -176,6 +177,7 @@ const REFERENCE_BARRIER = 2.918
                 ew_k_max = 9.72,
                 conv_tol = 0.05,
                 trust_radius = 0.1,
+                atom_types = Int[6, 7, 1],
                 gp_train_iter = 300,
                 max_outer_iter = 80,
                 verbose = false,

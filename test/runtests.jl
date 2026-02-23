@@ -17,6 +17,7 @@ using KernelFunctions
     include("test_otgpd.jl")
     include("test_leps.jl")
     include("test_emd.jl")
+    include("test_distances_trust.jl")
 
     if isfile(joinpath(@__DIR__, "cpp_consistency.jl"))
         include("cpp_consistency.jl")

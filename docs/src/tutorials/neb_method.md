@@ -207,6 +207,50 @@ The [`NEBConfig`](@ref) struct controls all parameters:
 | `step_size` | 0.01 | Steepest descent step size |
 | `gp_train_iter` | 300 | GP hyperparameter optimization iterations |
 | `max_outer_iter` | 50 | Max outer iterations (GP-NEB) |
+| `trust_radius` | 0.1 | Maximum distance from training data |
+| `trust_metric` | `:emd` | Distance metric (`:emd`, `:max_1d_log`, `:euclidean`) |
+| `atom_types` | `Int[]` | Element labels per atom for EMD (empty = all same) |
+| `use_adaptive_threshold` | false | Sigmoidal trust decay with training set size |
+
+## Trust Region Configuration
+
+GP-NEB uses the same EMD trust region infrastructure as OTGPD (see
+[Trust Regions](@ref) for details). After inner relaxation on the GP surface
+completes, each image is checked against all training data using the configured
+metric. Images that exceeded the trust threshold are scaled back toward their
+nearest training point before oracle evaluation. The EMD check is applied at
+the outer loop boundary, not inside the inner loop, to avoid disrupting L-BFGS
+curvature estimates.
+
+```julia
+# HCN -> HNC with type-aware EMD trust
+cfg = NEBConfig(
+    images = 8,
+    trust_radius = 0.1,
+    trust_metric = :emd,
+    atom_types = Int[6, 7, 1],  # C, N, H
+)
+```
+
+For systems with identical atoms (e.g., metal clusters), the EMD metric is
+permutation-invariant and prevents the trust check from being confused by
+atom relabeling. For small unique-atom systems, `:euclidean` or `:max_1d_log`
+are equally effective and slightly faster.
+
+The adaptive threshold option tightens the trust region as more training data
+accumulates:
+
+```julia
+cfg = NEBConfig(
+    trust_radius = 0.1,
+    trust_metric = :emd,
+    atom_types = Int[6, 7, 1],
+    use_adaptive_threshold = true,
+    adaptive_t_min = 0.15,
+    adaptive_delta_t = 0.35,
+    adaptive_n_half = 50,
+)
+```
 
 ## Further Reading
 

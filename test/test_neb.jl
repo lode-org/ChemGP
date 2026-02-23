@@ -153,6 +153,31 @@
         @test length(result.path.images) == 5
     end
 
+    @testset "GP-NEB-OIE-naive on Muller-Brown" begin
+        x_B = [0.623, 0.028]
+        x_C = [-0.050, 0.467]
+
+        k = KernelFunctions.SqExponentialKernel()
+
+        cfg = NEBConfig(
+            images = 3,
+            spring_constant = 10.0,
+            climbing_image = false,
+            max_iter = 200,
+            conv_tol = 2.0,
+            step_size = 1e-4,
+            gp_train_iter = 50,
+            max_outer_iter = 5,
+            verbose = false,
+        )
+
+        result = gp_neb_oie_naive(muller_brown_energy_gradient, x_B, x_C, k; config = cfg)
+
+        @test result.oracle_calls > 0
+        @test haskey(result.history, "image_evaluated")
+        @test length(result.path.images) == 5
+    end
+
     @testset "CI-NEB convergence with L-BFGS (LEPS 9D)" begin
         # Regression test: L-BFGS must not explode after climbing image activation.
         # Without distance_reset, clipped L-BFGS steps corrupt curvature estimates
@@ -187,6 +212,37 @@
         barrier = result.path.energies[result.max_energy_image] -
                   result.path.energies[1]
         @test barrier > 0.0
+    end
+
+    @testset "GP-NEB-OIE with EMD trust on LEPS" begin
+        # Verify that the EMD trust constraint fires (small trust_radius)
+        # but does not prevent convergence.
+        x_r = copy(LEPS_REACTANT)
+        x_p = copy(LEPS_PRODUCT)
+
+        k = KernelFunctions.SqExponentialKernel()
+
+        cfg = NEBConfig(
+            images = 3,
+            spring_constant = 5.0,
+            climbing_image = false,
+            max_iter = 200,
+            conv_tol = 2.0,
+            step_size = 1e-4,
+            gp_train_iter = 50,
+            max_outer_iter = 10,
+            trust_radius = 0.05,
+            trust_metric = :emd,
+            verbose = false,
+        )
+
+        result = gp_neb_oie(leps_energy_gradient, x_r, x_p, k; config = cfg)
+
+        # Path should be structurally valid
+        @test length(result.path.images) == 5
+        @test result.path.images[1] ≈ x_r
+        @test result.path.images[end] ≈ x_p
+        @test result.oracle_calls > 0
     end
 
     @testset "CI-NEB convergence with SD (LEPS 9D)" begin

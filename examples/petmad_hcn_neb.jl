@@ -23,6 +23,8 @@
 using ChemGP
 using Printf
 
+const RUN_AIE = "--aie" in ARGS
+
 # ---------------------------------------------------------------------------
 # Configuration
 # ---------------------------------------------------------------------------
@@ -111,42 +113,48 @@ function main()
         atomic_numbers = ATOMIC_NUMBERS, cell = BOX)
     write_convergence_csv(result_std, joinpath(std_dir, "convergence.csv"))
 
-    # --- GP-NEB AIE ---
-    println("\n=== GP-NEB (AIE) ===")
-    gp_dir = joinpath(OUTDIR, "gp_aie")
-    kernel = MolInvDistSE(1.0, [1.0], Float64[])
+    # --- GP-NEB AIE (optional, ~15 min; pass --aie to enable) ---
+    result_aie = nothing
+    if RUN_AIE
+        println("\n=== GP-NEB (AIE) ===")
+        gp_dir = joinpath(OUTDIR, "gp_aie")
+        kernel = MolInvDistSE(1.0, [1.0], Float64[])
 
-    gp_writer = make_neb_writer(gp_dir, ATOMIC_NUMBERS, BOX)
-    gp_h5 = make_neb_hdf5_writer(
-        joinpath(gp_dir, "neb_history.h5");
-        atomic_numbers = ATOMIC_NUMBERS, cell = BOX,
-    )
-    gp_callback = (path, iter) -> begin
-        gp_writer(path, iter)
-        gp_h5(path, iter)
+        gp_writer = make_neb_writer(gp_dir, ATOMIC_NUMBERS, BOX)
+        gp_h5 = make_neb_hdf5_writer(
+            joinpath(gp_dir, "neb_history.h5");
+            atomic_numbers = ATOMIC_NUMBERS, cell = BOX,
+        )
+        gp_callback = (path, iter) -> begin
+            gp_writer(path, iter)
+            gp_h5(path, iter)
+        end
+
+        gp_cfg = NEBConfig(
+            images = 8,
+            spring_constant = 1.0,
+            climbing_image = true,
+            energy_weighted = true,
+            ew_k_min = 0.972,
+            ew_k_max = 9.72,
+            conv_tol = 0.05,
+            gp_train_iter = 300,
+            max_outer_iter = 50,
+            trust_radius = 0.1,
+            atom_types = Int[6, 7, 1],
+            verbose = true,
+        )
+
+        result_aie = gp_neb_aie(oracles, X_HCN, X_HNC, kernel;
+            config = gp_cfg, on_step = gp_callback)
+
+        write_neb_trajectory(result_aie, joinpath(gp_dir, "neb_final.xyz"), ATOMIC_NUMBERS, BOX)
+        write_neb_hdf5(result_aie, joinpath(gp_dir, "neb_result.h5");
+            atomic_numbers = ATOMIC_NUMBERS, cell = BOX)
+        write_convergence_csv(result_aie, joinpath(gp_dir, "convergence.csv"))
+    else
+        println("\n--- Skipping GP-NEB AIE (pass --aie to enable) ---")
     end
-
-    gp_cfg = NEBConfig(
-        images = 8,
-        spring_constant = 1.0,
-        climbing_image = true,
-        energy_weighted = true,
-        ew_k_min = 0.972,
-        ew_k_max = 9.72,
-        conv_tol = 0.05,
-        gp_train_iter = 300,
-        max_outer_iter = 50,
-        trust_radius = 0.1,
-        verbose = true,
-    )
-
-    result_gp = gp_neb_aie(oracles, X_HCN, X_HNC, kernel;
-        config = gp_cfg, on_step = gp_callback)
-
-    write_neb_trajectory(result_gp, joinpath(gp_dir, "neb_final.xyz"), ATOMIC_NUMBERS, BOX)
-    write_neb_hdf5(result_gp, joinpath(gp_dir, "neb_result.h5");
-        atomic_numbers = ATOMIC_NUMBERS, cell = BOX)
-    write_convergence_csv(result_gp, joinpath(gp_dir, "convergence.csv"))
 
     # --- GP-NEB OIE ---
     # OIE evaluates one image per iteration (max uncertainty), so parallelism
@@ -174,6 +182,7 @@ function main()
         ew_k_max = 9.72,
         conv_tol = 0.05,
         trust_radius = 0.1,
+        atom_types = Int[6, 7, 1],
         gp_train_iter = 300,
         max_outer_iter = 80,
         verbose = true,
@@ -205,7 +214,11 @@ function main()
     @printf("%-12s %12s %10s %15s\n", "Method", "Oracle Calls", "Converged", "Barrier (E_TS)")
     println("-"^70)
 
-    for (label, res) in [("Standard", result_std), ("GP-NEB AIE", result_aie), ("GP-NEB OIE", result_oie)]
+    results = [("Standard", result_std), ("GP-NEB OIE", result_oie)]
+    if result_aie !== nothing
+        push!(results, ("GP-NEB AIE", result_aie))
+    end
+    for (label, res) in results
         ts_idx = res.max_energy_image
         barrier = res.path.energies[ts_idx] - res.path.energies[1]
         @printf("%-12s %12d %10s %15.6f\n",

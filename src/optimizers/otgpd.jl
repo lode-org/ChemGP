@@ -160,27 +160,9 @@ end
 # FPS subset selection for hyperparameter optimization
 # ==============================================================================
 
-"""
-    _fps_distance_fn(metric::Symbol, atom_types::Vector{Int})
-
-Return a distance function matching the given metric symbol.
-"""
-function _fps_distance_fn(metric::Symbol, atom_types::Vector{Int} = Int[])
-    if metric == :emd
-        # EMD requires 3D coordinates; fall back to euclidean for non-3D
-        return (x1, x2) -> begin
-            if length(x1) % 3 == 0
-                emd_distance(x1, x2; atom_types)
-            else
-                norm(x1 - x2)
-            end
-        end
-    elseif metric == :max_1d_log
-        return max_1d_log_distance
-    else  # :euclidean fallback
-        return (x1, x2) -> norm(x1 - x2)
-    end
-end
+# Thin wrapper calling shared trust utility (see distances_trust.jl)
+_fps_distance_fn(metric::Symbol, atom_types::Vector{Int} = Int[]) =
+    trust_distance_fn(metric, atom_types)
 
 """
     _select_optim_subset(td, x_current, n_select, n_latest; distance_fn)
@@ -347,51 +329,22 @@ end
 # Adaptive trust radius threshold
 # ==============================================================================
 
-"""
-    _adaptive_trust_threshold(cfg, n_data, n_atoms)
-
-Compute adaptive trust radius threshold that decays with training set size.
-Based on the sigmoidal schedule from OTGPD:
-
-    T(n) = T_min + delta_T / (1 + A * exp(n / n_half))
-
-with a floor to prevent zero threshold.
-"""
+# Thin wrapper calling shared trust utility (see distances_trust.jl)
 function _adaptive_trust_threshold(cfg::OTGPDConfig, n_data::Int, n_atoms::Int)
-    if !cfg.use_adaptive_threshold
-        return cfg.trust_radius
-    end
-    n_eff = n_data / max(n_atoms, 1)
-    t = cfg.adaptive_t_min + cfg.adaptive_delta_t /
-        (1.0 + cfg.adaptive_A * exp(n_eff / cfg.adaptive_n_half))
-    return max(t, cfg.adaptive_floor)
+    adaptive_trust_threshold(cfg.trust_radius, n_data, n_atoms;
+        use_adaptive=cfg.use_adaptive_threshold, t_min=cfg.adaptive_t_min,
+        delta_t=cfg.adaptive_delta_t, n_half=cfg.adaptive_n_half,
+        A=cfg.adaptive_A, floor=cfg.adaptive_floor)
 end
 
-"""
-    _trust_distance(x1, x2, cfg)
-
-Compute trust region distance using the configured metric.
-"""
+# Thin wrappers calling shared trust utilities (see distances_trust.jl)
 function _trust_distance(x1::AbstractVector, x2::AbstractVector, cfg::OTGPDConfig)
-    dist_fn = _fps_distance_fn(cfg.trust_metric, cfg.atom_types)
+    dist_fn = trust_distance_fn(cfg.trust_metric, cfg.atom_types)
     return dist_fn(x1, x2)
 end
 
-"""
-    _trust_min_distance(x, td, cfg)
-
-Minimum trust distance from `x` to any training point, using the configured metric.
-"""
 function _trust_min_distance(x::AbstractVector, td::TrainingData, cfg::OTGPDConfig)
-    N = npoints(td)
-    N == 0 && return Inf
-    dist_fn = _fps_distance_fn(cfg.trust_metric, cfg.atom_types)
-    min_d = Inf
-    for i in 1:N
-        d = dist_fn(x, view(td.X, :, i))
-        min_d = min(min_d, d)
-    end
-    return min_d
+    trust_min_distance(x, td.X, cfg.trust_metric; atom_types=cfg.atom_types)
 end
 
 # Convert OTGPD config to DimerConfig for use by rotation/translation functions
