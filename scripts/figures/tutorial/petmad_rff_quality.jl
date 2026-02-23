@@ -26,15 +26,33 @@ mkpath(PETMAD_CACHE_DIR)
 
 # --- System100 reactant: 9-atom fragment (2C, 1O, 2N, 4H) ---
 const SYSTEM100_REACT = Float64[
-    -1.58572291100237, -0.84160847213746, -0.00000339907657,
-    -0.53056971192710, -1.65722303210517,  0.00000434652695,
-     1.82767320854265,  0.45290828278285, -0.00002187280664,
-     0.97442679271533,  1.26997020651757,  0.00006031628749,
-     0.15721755319950,  2.05013813569860, -0.00004056288043,
-    -2.04209833505612, -0.48866007686699,  0.93039929342888,
-    -2.04208985274357, -0.48866569200588, -0.93041253064561,
-    -0.07175706986641, -2.00739679244130,  0.93006512898811,
-    -0.07174967386193, -2.00740255964219, -0.93005072002220,
+    -1.58572291100237,
+    -0.84160847213746,
+    -0.00000339907657,
+    -0.53056971192710,
+    -1.65722303210517,
+    0.00000434652695,
+    1.82767320854265,
+    0.45290828278285,
+    -0.00002187280664,
+    0.97442679271533,
+    1.26997020651757,
+    0.00006031628749,
+    0.15721755319950,
+    2.05013813569860,
+    -0.00004056288043,
+    -2.04209833505612,
+    -0.48866007686699,
+    0.93039929342888,
+    -2.04208985274357,
+    -0.48866569200588,
+    -0.93041253064561,
+    -0.07175706986641,
+    -2.00739679244130,
+    0.93006512898811,
+    -0.07174967386193,
+    -2.00740255964219,
+    -0.93005072002220,
 ]
 const SYSTEM100_ATMNRS = Int32[6, 6, 8, 7, 7, 1, 1, 1, 1]
 const SYSTEM100_BOX = Float64[20, 0, 0, 0, 20, 0, 0, 0, 20]
@@ -119,9 +137,7 @@ function run_rff_comparison()
 
     for D_rff in D_rff_values
         println("Building RFF with D_rff = $D_rff...")
-        rff = build_rff(
-            mol_kernel, td.X, y_gp, D_rff; noise_var=1e-2, grad_noise_var=1e-1
-        )
+        rff = build_rff(mol_kernel, td.X, y_gp, D_rff; noise_var=1e-2, grad_noise_var=1e-1)
 
         rff_preds = predict(rff, X_test)
         rff_E = [rff_preds[(i - 1) * dim_block + 1] * y_std + y_mean for i in 1:N_test]
@@ -179,32 +195,61 @@ function main()
         xticklabelsvisible=false,
         title=L"RFF approximation quality on PET-MAD",
     )
-    lines!(ax1, results_df.D_rff, results_df.energy_mae_vs_true; color=RUHI.teal,
-        linewidth=1.5, label="RFF vs true PES")
-    scatter!(ax1, results_df.D_rff, results_df.energy_mae_vs_true; color=RUHI.teal,
-        markersize=6)
-    lines!(ax1, results_df.D_rff, results_df.energy_mae_vs_gp; color=RUHI.sky,
-        linewidth=1.5, label="RFF vs exact GP")
-    scatter!(ax1, results_df.D_rff, results_df.energy_mae_vs_gp; color=RUHI.sky,
-        markersize=6)
-    hlines!(ax1, [gp_e_mae]; color=RUHI.magenta, linewidth=0.8, linestyle=:dash,
-        label="Exact GP vs true PES")
+    lines!(
+        ax1,
+        results_df.D_rff,
+        results_df.energy_mae_vs_true;
+        color=RUHI.teal,
+        linewidth=1.5,
+        label="RFF vs true PES",
+    )
+    scatter!(
+        ax1, results_df.D_rff, results_df.energy_mae_vs_true; color=RUHI.teal, markersize=6
+    )
+    lines!(
+        ax1,
+        results_df.D_rff,
+        results_df.energy_mae_vs_gp;
+        color=RUHI.sky,
+        linewidth=1.5,
+        label="RFF vs exact GP",
+    )
+    scatter!(
+        ax1, results_df.D_rff, results_df.energy_mae_vs_gp; color=RUHI.sky, markersize=6
+    )
+    hlines!(
+        ax1,
+        [gp_e_mae];
+        color=RUHI.magenta,
+        linewidth=0.8,
+        linestyle=:dash,
+        label="Exact GP vs true PES",
+    )
     axislegend(ax1; position=:rt, framevisible=false, labelsize=9)
 
     ax2 = Axis(
-        fig[2, 1];
-        xlabel=L"$D_\mathrm{rff}$",
-        ylabel=L"Gradient MAE (eV/\AA)",
-        yscale=log10,
+        fig[2, 1]; xlabel=L"$D_\mathrm{rff}$", ylabel=L"Gradient MAE (eV/\AA)", yscale=log10
     )
-    lines!(ax2, results_df.D_rff, results_df.gradient_mae_vs_true; color=RUHI.teal,
-        linewidth=1.5)
-    scatter!(ax2, results_df.D_rff, results_df.gradient_mae_vs_true; color=RUHI.teal,
-        markersize=6)
-    lines!(ax2, results_df.D_rff, results_df.gradient_mae_vs_gp; color=RUHI.sky,
-        linewidth=1.5)
-    scatter!(ax2, results_df.D_rff, results_df.gradient_mae_vs_gp; color=RUHI.sky,
-        markersize=6)
+    lines!(
+        ax2,
+        results_df.D_rff,
+        results_df.gradient_mae_vs_true;
+        color=RUHI.teal,
+        linewidth=1.5,
+    )
+    scatter!(
+        ax2,
+        results_df.D_rff,
+        results_df.gradient_mae_vs_true;
+        color=RUHI.teal,
+        markersize=6,
+    )
+    lines!(
+        ax2, results_df.D_rff, results_df.gradient_mae_vs_gp; color=RUHI.sky, linewidth=1.5
+    )
+    scatter!(
+        ax2, results_df.D_rff, results_df.gradient_mae_vs_gp; color=RUHI.sky, markersize=6
+    )
     hlines!(ax2, [gp_g_mae]; color=RUHI.magenta, linewidth=0.8, linestyle=:dash)
 
     rowgap!(fig.layout, 5)

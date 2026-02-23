@@ -22,14 +22,26 @@ mkpath(HCN_CACHE_DIR)
 # HCN and HNC coordinates (Baker test set 01_hcn)
 # C, N, H in Angstroms (non-periodic, 20x20x20 box)
 const X_HCN = [
-    0.0, -0.0002, 0.4954,   # C
-    0.0, 0.0001, -0.6503,   # N
-    0.0, -0.0005, 1.5653,   # H
+    0.0,
+    -0.0002,
+    0.4954,   # C
+    0.0,
+    0.0001,
+    -0.6503,   # N
+    0.0,
+    -0.0005,
+    1.5653,   # H
 ]
 const X_HNC = [
-    0.0, 0.0, 0.7366,       # C
-    0.0, 0.0, -0.4277,      # N
-    0.0, 0.0, -1.4258,      # H
+    0.0,
+    0.0,
+    0.7366,       # C
+    0.0,
+    0.0,
+    -0.4277,      # N
+    0.0,
+    0.0,
+    -1.4258,      # H
 ]
 
 function run_with_rpc()
@@ -47,18 +59,18 @@ function run_with_rpc()
     # Standard NEB
     println("Running standard NEB...")
     cfg_std = NEBConfig(;
-        images = 8,
-        spring_constant = 1.0,
-        climbing_image = true,
-        energy_weighted = true,
-        ew_k_min = 0.972,
-        ew_k_max = 9.72,
-        max_iter = 200,
-        conv_tol = 0.05,
-        step_size = 0.01,
-        verbose = true,
+        images=8,
+        spring_constant=1.0,
+        climbing_image=true,
+        energy_weighted=true,
+        ew_k_min=0.972,
+        ew_k_max=9.72,
+        max_iter=200,
+        conv_tol=0.05,
+        step_size=0.01,
+        verbose=true,
     )
-    result_std = neb_optimize(oracle, X_HCN, X_HNC; config = cfg_std)
+    result_std = neb_optimize(oracle, X_HCN, X_HNC; config=cfg_std)
 
     # GP-NEB AIE (may fail on ill-conditioned kernel for 3-atom systems)
     result_aie = nothing
@@ -66,21 +78,21 @@ function run_with_rpc()
         println("Running GP-NEB AIE...")
         kernel = MolInvDistSE(1.0, [1.0], Float64[])
         cfg_gp = NEBConfig(;
-            images = 8,
-            spring_constant = 1.0,
-            climbing_image = true,
-            energy_weighted = true,
-            ew_k_min = 0.972,
-            ew_k_max = 9.72,
-            conv_tol = 0.05,
-            gp_train_iter = 300,
-            max_outer_iter = 50,
-            trust_radius = 0.1,
-            atom_types = Int[6, 7, 1],
-            max_gp_points = 40,
-            rff_features = 300,
+            images=8,
+            spring_constant=1.0,
+            climbing_image=true,
+            energy_weighted=true,
+            ew_k_min=0.972,
+            ew_k_max=9.72,
+            conv_tol=0.05,
+            gp_train_iter=300,
+            max_outer_iter=50,
+            trust_radius=0.1,
+            atom_types=Int[6, 7, 1],
+            max_gp_points=40,
+            rff_features=300,
         )
-        result_aie = gp_neb_aie(oracle, X_HCN, X_HNC, kernel; config = cfg_gp)
+        result_aie = gp_neb_aie(oracle, X_HCN, X_HNC, kernel; config=cfg_gp)
     catch e
         @warn "GP-NEB AIE failed" exception = e
     end
@@ -93,9 +105,7 @@ function make_profile_df(result, method_label)
     n = length(result.path.energies)
     e_ref = result.path.energies[1]
     DataFrame(;
-        image = 1:n,
-        energy = result.path.energies .- e_ref,
-        method = fill(method_label, n),
+        image=1:n, energy=(result.path.energies .- e_ref), method=fill(method_label, n)
     )
 end
 
@@ -137,24 +147,23 @@ set_theme!(PUBLICATION_THEME)
 n_methods = length(unique(df.method))
 
 if n_methods > 1
-    plt = data(df) *
-          mapping(:image, :energy; color = :method) *
-          (visual(Lines; linewidth = 1.5) + visual(Scatter; markersize = 6))
+    plt =
+        data(df) *
+        mapping(:image, :energy; color=:method) *
+        (visual(Lines; linewidth=1.5) + visual(Scatter; markersize=6))
 
-    fg = draw(plt, scales(Color = (; palette = RUHI_CYCLE));
-        axis = (xlabel = "Image index",
-                ylabel = L"$\Delta E$ (eV)"),
-        figure = (size = (504, 350),),
-        legend = (position = :top,))
+    fg = draw(
+        plt,
+        scales(; Color=(; palette=RUHI_CYCLE));
+        axis=(xlabel="Image index", ylabel=L"$\Delta E$ (eV)"),
+        figure=(size=(504, 350),),
+        legend=(position=:top,),
+    )
 else
-    fig = Figure(; size = (504, 350))
-    ax = Axis(fig[1, 1];
-        xlabel = "Image index",
-        ylabel = L"$\Delta E$ (eV)")
-    lines!(ax, df.image, df.energy;
-        linewidth = 1.5, color = RUHI.teal, label = df.method[1])
-    scatter!(ax, df.image, df.energy;
-        markersize = 6, color = RUHI.teal)
+    fig = Figure(; size=(504, 350))
+    ax = Axis(fig[1, 1]; xlabel="Image index", ylabel=L"$\Delta E$ (eV)")
+    lines!(ax, df.image, df.energy; linewidth=1.5, color=RUHI.teal, label=df.method[1])
+    scatter!(ax, df.image, df.energy; markersize=6, color=RUHI.teal)
     Legend(fig[0, 1], ax)
     fg = fig
 end

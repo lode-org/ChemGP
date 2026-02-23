@@ -8,24 +8,23 @@ using LinearAlgebra
 include(joinpath(@__DIR__, "common.jl"))
 
 # --- Grid evaluation (2D background) ---
-r_AB_range = range(0.5, 4.0; length = 200)
-r_BC_range = range(0.5, 4.0; length = 200)
+r_AB_range = range(0.5, 4.0; length=200)
+r_BC_range = range(0.5, 4.0; length=200)
 E = eval_grid(leps_energy_gradient_2d, r_AB_range, r_BC_range)
 E_clipped = clamp.(E, -5.0, 5.0)
 
 # --- NEB optimization in 9D ---
 config = NEBConfig(;
-    n_images = 9,
-    spring_constant = 5.0,
-    climbing_image = true,
-    max_iter = 500,
-    conv_tol = 0.05,
-    step_size = 0.005,
+    n_images=9,
+    spring_constant=5.0,
+    climbing_image=true,
+    max_iter=500,
+    conv_tol=0.05,
+    step_size=0.005,
 )
 
 result = neb_optimize(
-    leps_energy_gradient, Float64.(LEPS_REACTANT), Float64.(LEPS_PRODUCT);
-    config = config,
+    leps_energy_gradient, Float64.(LEPS_REACTANT), Float64.(LEPS_PRODUCT); config=config
 )
 
 println("NEB converged: $(result.converged)")
@@ -46,41 +45,75 @@ end
 # --- Plot ---
 set_theme!(PUBLICATION_THEME)
 
-fig = Figure(; size = (504, 440))
-ax = Axis(fig[1, 1];
-    xlabel = L"$r_\mathrm{AB}$ (\AA)",
-    ylabel = L"$r_\mathrm{BC}$ (\AA)",
-    aspect = DataAspect())
+fig = Figure(; size=(504, 440))
+ax = Axis(
+    fig[1, 1];
+    xlabel=L"$r_\mathrm{AB}$ (\AA)",
+    ylabel=L"$r_\mathrm{BC}$ (\AA)",
+    aspect=DataAspect(),
+)
 
 # Background contour
-cf = contourf!(ax, collect(r_AB_range), collect(r_BC_range), E_clipped;
-    levels = range(-5.0, 5.0; length = 30),
-    colormap = ENERGY_COLORMAP)
-contour!(ax, collect(r_AB_range), collect(r_BC_range), E_clipped;
-    levels = range(-5.0, 5.0; step = 0.5),
-    color = :black, linewidth = 0.3)
+cf = contourf!(
+    ax,
+    collect(r_AB_range),
+    collect(r_BC_range),
+    E_clipped;
+    levels=range(-5.0, 5.0; length=30),
+    colormap=ENERGY_COLORMAP,
+)
+contour!(
+    ax,
+    collect(r_AB_range),
+    collect(r_BC_range),
+    E_clipped;
+    levels=range(-5.0, 5.0; step=0.5),
+    color=:black,
+    linewidth=0.3,
+)
 
 # NEB path
-lines!(ax, path_rAB, path_rBC;
-    color = :white, linewidth = 2.0)
-scatter!(ax, path_rAB, path_rBC;
-    marker = :circle, markersize = 8,
-    color = RUHI.coral, strokecolor = :white, strokewidth = 1.0)
+lines!(ax, path_rAB, path_rBC; color=:white, linewidth=2.0)
+scatter!(
+    ax,
+    path_rAB,
+    path_rBC;
+    marker=:circle,
+    markersize=8,
+    color=RUHI.coral,
+    strokecolor=:white,
+    strokewidth=1.0,
+)
 
 # Number images
 for i in eachindex(path_rAB)
-    text!(ax, path_rAB[i] + 0.08, path_rBC[i] + 0.08;
-        text = string(i), fontsize = 8, color = :white)
+    text!(
+        ax, path_rAB[i] + 0.08, path_rBC[i] + 0.08; text=string(i), fontsize=8, color=:white
+    )
 end
 
 # Mark endpoints
-scatter!(ax, [path_rAB[1]], [path_rBC[1]];
-    marker = :star5, markersize = 12,
-    color = RUHI.sunshine, strokecolor = :white, strokewidth = 1.0)
-scatter!(ax, [path_rAB[end]], [path_rBC[end]];
-    marker = :star5, markersize = 12,
-    color = RUHI.sunshine, strokecolor = :white, strokewidth = 1.0)
+scatter!(
+    ax,
+    [path_rAB[1]],
+    [path_rBC[1]];
+    marker=:star5,
+    markersize=12,
+    color=RUHI.sunshine,
+    strokecolor=:white,
+    strokewidth=1.0,
+)
+scatter!(
+    ax,
+    [path_rAB[end]],
+    [path_rBC[end]];
+    marker=:star5,
+    markersize=12,
+    color=RUHI.sunshine,
+    strokecolor=:white,
+    strokewidth=1.0,
+)
 
-Colorbar(fig[1, 2], cf; label = L"$E$ (eV)")
+Colorbar(fig[1, 2], cf; label=L"$E$ (eV)")
 
 save_figure(fig, "leps_neb")

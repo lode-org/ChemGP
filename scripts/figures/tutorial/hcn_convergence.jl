@@ -13,16 +13,8 @@ const HCN_CACHE_DIR = joinpath(OUTPUT_DIR, "hcn_cache")
 mkpath(HCN_CACHE_DIR)
 
 # HCN/HNC coordinates (same as hcn_neb_profile.jl)
-const X_HCN = [
-    0.0, -0.0002, 0.4954,
-    0.0, 0.0001, -0.6503,
-    0.0, -0.0005, 1.5653,
-]
-const X_HNC = [
-    0.0, 0.0, 0.7366,
-    0.0, 0.0, -0.4277,
-    0.0, 0.0, -1.4258,
-]
+const X_HCN = [0.0, -0.0002, 0.4954, 0.0, 0.0001, -0.6503, 0.0, -0.0005, 1.5653]
+const X_HNC = [0.0, 0.0, 0.7366, 0.0, 0.0, -0.4277, 0.0, 0.0, -1.4258]
 
 function run_convergence()
     host = get(ENV, "RGPOT_HOST", "localhost")
@@ -35,21 +27,21 @@ function run_convergence()
     oracle = make_rpc_oracle(pot)
 
     neb_cfg = NEBConfig(;
-        images = 8,
-        spring_constant = 1.0,
-        climbing_image = true,
-        energy_weighted = true,
-        ew_k_min = 0.972,
-        ew_k_max = 9.72,
-        max_iter = 200,
-        conv_tol = 0.05,
-        step_size = 0.01,
-        verbose = true,
+        images=8,
+        spring_constant=1.0,
+        climbing_image=true,
+        energy_weighted=true,
+        ew_k_min=0.972,
+        ew_k_max=9.72,
+        max_iter=200,
+        conv_tol=0.05,
+        step_size=0.01,
+        verbose=true,
     )
 
     # Standard NEB
     println("Running standard NEB...")
-    result_std = neb_optimize(oracle, X_HCN, X_HNC; config = neb_cfg)
+    result_std = neb_optimize(oracle, X_HCN, X_HNC; config=neb_cfg)
 
     # GP-NEB AIE
     result_aie = nothing
@@ -57,21 +49,21 @@ function run_convergence()
         println("Running GP-NEB AIE...")
         kernel = MolInvDistSE(1.0, [1.0], Float64[])
         gp_cfg = NEBConfig(;
-            images = 8,
-            spring_constant = 1.0,
-            climbing_image = true,
-            energy_weighted = true,
-            ew_k_min = 0.972,
-            ew_k_max = 9.72,
-            conv_tol = 0.05,
-            gp_train_iter = 300,
-            max_outer_iter = 50,
-            trust_radius = 0.1,
-            atom_types = Int[6, 7, 1],
-            max_gp_points = 40,
-            rff_features = 300,
+            images=8,
+            spring_constant=1.0,
+            climbing_image=true,
+            energy_weighted=true,
+            ew_k_min=0.972,
+            ew_k_max=9.72,
+            conv_tol=0.05,
+            gp_train_iter=300,
+            max_outer_iter=50,
+            trust_radius=0.1,
+            atom_types=Int[6, 7, 1],
+            max_gp_points=40,
+            rff_features=300,
         )
-        result_aie = gp_neb_aie(oracle, X_HCN, X_HNC, kernel; config = gp_cfg)
+        result_aie = gp_neb_aie(oracle, X_HCN, X_HNC, kernel; config=gp_cfg)
     catch e
         @warn "GP-NEB AIE failed" exception = e
     end
@@ -82,21 +74,21 @@ function run_convergence()
         println("Running GP-NEB OIE...")
         kernel = MolInvDistSE(1.0, [1.0], Float64[])
         oie_cfg = NEBConfig(;
-            images = 8,
-            spring_constant = 1.0,
-            climbing_image = true,
-            energy_weighted = true,
-            ew_k_min = 0.972,
-            ew_k_max = 9.72,
-            conv_tol = 0.05,
-            gp_train_iter = 300,
-            max_outer_iter = 80,
-            trust_radius = 0.1,
-            atom_types = Int[6, 7, 1],
-            max_gp_points = 10,
-            rff_features = 300,
+            images=8,
+            spring_constant=1.0,
+            climbing_image=true,
+            energy_weighted=true,
+            ew_k_min=0.972,
+            ew_k_max=9.72,
+            conv_tol=0.05,
+            gp_train_iter=300,
+            max_outer_iter=80,
+            trust_radius=0.1,
+            atom_types=Int[6, 7, 1],
+            max_gp_points=10,
+            rff_features=300,
         )
-        result_oie = gp_neb_oie(oracle, X_HCN, X_HNC, kernel; config = oie_cfg)
+        result_oie = gp_neb_oie(oracle, X_HCN, X_HNC, kernel; config=oie_cfg)
     catch e
         @warn "GP-NEB OIE failed" exception = e
     end
@@ -109,11 +101,7 @@ function extract_convergence(result, label)
     calls = result.history["oracle_calls"]
     forces = result.history["max_force"]
     n = min(length(calls), length(forces))
-    DataFrame(;
-        oracle_calls = calls[1:n],
-        max_force = forces[1:n],
-        method = fill(label, n),
-    )
+    DataFrame(; oracle_calls=calls[1:n], max_force=forces[1:n], method=fill(label, n))
 end
 
 function cache_or_run()
@@ -146,21 +134,23 @@ df = cache_or_run()
 # --- Plot ---
 set_theme!(PUBLICATION_THEME)
 
-plt = data(df) *
-      mapping(:oracle_calls, :max_force; color = :method) *
-      visual(Lines; linewidth = 1.5)
+plt =
+    data(df) *
+    mapping(:oracle_calls, :max_force; color=:method) *
+    visual(Lines; linewidth=1.5)
 
 n_methods = length(unique(df.method))
 palette_slice = RUHI_CYCLE[1:min(n_methods, length(RUHI_CYCLE))]
 
-fg = draw(plt, scales(Color = (; palette = palette_slice));
-    axis = (xlabel = "Oracle calls",
-            ylabel = L"$|F|_\mathrm{max}$ (eV/\AA)",
-            yscale = log10),
-    figure = (size = (504, 350),))
+fg = draw(
+    plt,
+    scales(; Color=(; palette=palette_slice));
+    axis=(xlabel="Oracle calls", ylabel=L"$|F|_\mathrm{max}$ (eV/\AA)", yscale=log10),
+    figure=(size=(504, 350),),
+)
 
 # Convergence threshold
-hlines!(current_axis(), [0.05]; color = :gray, linewidth = 0.8, linestyle = :dash)
+hlines!(current_axis(), [0.05]; color=:gray, linewidth=0.8, linestyle=:dash)
 
 save_figure(fg, "hcn_convergence")
 
