@@ -94,10 +94,11 @@ function gp_neb_oie_naive(
     baseline_force = 0.0
 
     for outer_iter in 1:(cfg.max_outer_iter)
-        # Train GP
+        # Train GP (per-bead subset when max_gp_points > 0)
         model, E_ref, y_std, prev_kern = _train_neb_gp(
             td, kernel, cfg, prev_kern,
-            hess_X, hess_E, hess_G, n_hess, outer_iter)
+            hess_X, hess_E, hess_G, n_hess, outer_iter;
+            images)
 
         # Predict at all intermediate images
         for i in 2:(N - 1)

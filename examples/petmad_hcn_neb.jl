@@ -104,8 +104,9 @@ function main()
         std_h5(path, iter)
     end
 
-    result_std = neb_optimize(oracles, X_HCN, X_HNC;
+    t_std = @elapsed result_std = neb_optimize(oracles, X_HCN, X_HNC;
         config = neb_cfg, on_step = std_callback)
+    @printf("Standard NEB: %.1f s\n", t_std)
 
     # Final outputs
     write_neb_trajectory(result_std, joinpath(std_dir, "neb_final.xyz"), ATOMIC_NUMBERS, BOX)
@@ -142,12 +143,14 @@ function main()
             max_outer_iter = 50,
             trust_radius = 0.1,
             atom_types = Int[6, 7, 1],
-            max_gp_points = 20,  # Nystrom: FPS subset for GP training, all data for prediction
+            max_gp_points = 40,  # per-bead subset caps GP training at O(M^3); AIE grows fast (8 imgs/iter)
+            rff_features = 300,  # RFF approximation: train hyperparams on 40-point subset, predict on all N
             verbose = true,
         )
 
-        result_aie = gp_neb_aie(oracles, X_HCN, X_HNC, kernel;
+        t_aie = @elapsed result_aie = gp_neb_aie(oracles, X_HCN, X_HNC, kernel;
             config = gp_cfg, on_step = gp_callback)
+        @printf("GP-NEB AIE: %.1f s\n", t_aie)
 
         write_neb_trajectory(result_aie, joinpath(gp_dir, "neb_final.xyz"), ATOMIC_NUMBERS, BOX)
         write_neb_hdf5(result_aie, joinpath(gp_dir, "neb_result.h5");
@@ -186,12 +189,15 @@ function main()
         atom_types = Int[6, 7, 1],
         gp_train_iter = 300,
         max_outer_iter = 80,
-        max_gp_points = 20,  # Nystrom: FPS subset for GP training, all data for prediction
+        rff_features = 300,
+        max_gp_points = 10,  # per-bead subset caps GP training at O(M^3); AIE grows fast (8 imgs/iter)
+        # OIE grows at ~1 point/iter; no FPS needed (max_gp_points=0 = unlimited)
         verbose = true,
     )
 
-    result_oie = gp_neb_oie_naive(oracle, X_HCN, X_HNC, kernel;
+    t_oie = @elapsed result_oie = gp_neb_oie_naive(oracle, X_HCN, X_HNC, kernel;
         config = oie_cfg, on_step = oie_callback)
+    @printf("GP-NEB OIE: %.1f s\n", t_oie)
 
     write_neb_trajectory(result_oie, joinpath(oie_dir, "neb_final.xyz"), ATOMIC_NUMBERS, BOX)
     write_neb_hdf5(result_oie, joinpath(oie_dir, "neb_result.h5");
@@ -212,21 +218,21 @@ function main()
     end
 
     # --- Comparison table ---
-    println("\n" * "="^70)
-    @printf("%-12s %12s %10s %15s\n", "Method", "Oracle Calls", "Converged", "Barrier (E_TS)")
-    println("-"^70)
+    println("\n" * "="^80)
+    @printf("%-12s %12s %10s %15s %10s\n", "Method", "Oracle Calls", "Converged", "Barrier (eV)", "Time (s)")
+    println("-"^80)
 
-    results = [("Standard", result_std), ("GP-NEB OIE", result_oie)]
+    results = [("Standard", result_std, t_std), ("GP-NEB OIE", result_oie, t_oie)]
     if result_aie !== nothing
-        push!(results, ("GP-NEB AIE", result_aie))
+        push!(results, ("GP-NEB AIE", result_aie, t_aie))
     end
-    for (label, res) in results
+    for (label, res, t) in results
         ts_idx = res.max_energy_image
         barrier = res.path.energies[ts_idx] - res.path.energies[1]
-        @printf("%-12s %12d %10s %15.6f\n",
-            label, res.oracle_calls, res.converged, barrier)
+        @printf("%-12s %12d %10s %15.6f %10.1f\n",
+            label, res.oracle_calls, res.converged, barrier, t)
     end
-    println("="^70)
+    println("="^80)
 
     close(pot)
     println("\nResults written to $OUTDIR/")

@@ -351,7 +351,8 @@ function gp_neb_oie(
             # Need a trained GP to compute variance -- train first
             model, E_ref, y_std, prev_kern = _train_neb_gp(
                 td, kernel, cfg, prev_kern,
-                hess_X, hess_E, hess_G, n_hess, outer_iter)
+                hess_X, hess_E, hess_G, n_hess, outer_iter;
+                images)
 
             # Predict at unevaluated images to get variance
             max_var = -Inf
@@ -422,7 +423,8 @@ function gp_neb_oie(
         # =====================================================================
         model, E_ref, y_std, prev_kern = _train_neb_gp(
             td, kernel, cfg, prev_kern,
-            hess_X, hess_E, hess_G, n_hess, outer_iter)
+            hess_X, hess_E, hess_G, n_hess, outer_iter;
+            images)
 
         # Predict at unevaluated images
         for i in 2:(N - 1)

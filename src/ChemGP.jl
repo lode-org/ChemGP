@@ -42,6 +42,9 @@ include("types.jl")
 # GP functions: build_full_covariance, train_model!, predict, predict_with_variance
 include("functions.jl")
 
+# Random Fourier Features for scalable GP-NEB with MolInvDistSE
+include("rff.jl")
+
 # ==============================================================================
 # Distance metrics and sampling
 # ==============================================================================
@@ -91,6 +94,7 @@ export GPModel, TrainingData, add_point!, npoints, normalize
 
 # GP core
 export train_model!, predict, predict_with_variance, build_full_covariance
+export RFFModel, build_rff
 
 # Kernels
 export AbstractMoleculeKernel

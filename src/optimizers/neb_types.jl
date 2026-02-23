@@ -94,7 +94,8 @@ Base.@kwdef struct NEBConfig
     # GP-specific
     gp_train_iter::Int      = 300
     max_outer_iter::Int     = 50
-    max_gp_points::Int      = 0     # max training points for GP (0 = no limit; FPS subset when exceeded)
+    max_gp_points::Int      = 0     # max training points for GP (0 = no limit; per-bead subset when exceeded)
+    rff_features::Int       = 0     # RFF feature dimension (0 = exact GP; >0 = RFF approximation for MolInvDistSE)
     trust_radius::Float64   = 0.1
     # Trust region metric and adaptive threshold (shared with OTGPD; see distances_trust.jl)
     trust_metric::Symbol         = :emd

@@ -102,17 +102,25 @@ end
 
 """
     _train_neb_gp(td, kernel, cfg, prev_kern, hess_X, hess_E, hess_G,
-                  n_hess, outer_iter)
+                  n_hess, outer_iter; images)
 
 Train the GP model for NEB, handling both molecular kernels (energy shift,
 fixed noise) and generic kernels (normalize, optimize noise).
 
 When `cfg.max_gp_points > 0` and the training set exceeds that limit,
-a FPS subset is selected for training. This caps cost at O(M^3) while
-keeping diverse coverage of the configuration space.
+per-bead nearest-neighbor subset selection ensures each NEB image retains
+local training data. This caps cost at O(M^3) while guaranteeing coverage
+around every bead -- unlike global FPS which can starve individual beads.
 
-Returns `(model, E_ref, y_std, kern)` where `kern` is the trained kernel
-for warm-starting the next iteration.
+When `cfg.rff_features > 0` and the kernel is MolInvDistSE, the exact GP
+is replaced by a Random Fourier Features approximation: hyperparameters are
+optimized on the per-bead subset (O(M^3)), then an RFF model is built using
+ALL training data (O(N * D * D_rff + D_rff^3)). This avoids the Nystrom
+Lambda^{-1} amplification issue because RFF is a linear model, not a
+Woodbury inversion.
+
+Returns `(model, E_ref, y_std, kern)` where `model` is either a GPModel
+or RFFModel (both support predict/predict_with_variance).
 """
 function _train_neb_gp(
     td::TrainingData,
@@ -123,22 +131,18 @@ function _train_neb_gp(
     hess_E::Vector{Float64},
     hess_G::Vector{Float64},
     n_hess::Int,
-    outer_iter::Int,
+    outer_iter::Int;
+    images::Vector{Vector{Float64}} = Vector{Float64}[],
 )
-    # FPS subset selection when training set exceeds max_gp_points.
-    # This caps training cost at O(M^3) while keeping diverse coverage.
-    #
-    # NOTE: Nystrom (FITC) wrapping was tested but is numerically unstable
-    # with low-noise molecular kernels (noise_var=1e-6): the low-rank
-    # approximation Q_NN loses covariance directions that Lambda^{-1}
-    # amplifies, causing force divergence. The FPS subset alone provides
-    # the computational savings; predictions use the M-point exact GP.
-    # The standalone NystromGP module (src/nystrom.jl) remains available
-    # for kernels with larger noise or direct experimentation.
-    fps_fn = trust_distance_fn(cfg.trust_metric, cfg.atom_types)
-    td_use = _fps_subset_td(td, cfg.max_gp_points; distance_fn=fps_fn)
+    # Per-bead subset selection when training set exceeds max_gp_points.
+    # Each bead gets its K nearest training points, then the union is kept.
+    # This prevents the CI image (or any bead) from losing local coverage
+    # that global FPS would discard in favor of globally diverse points.
+    dist_fn = trust_distance_fn(cfg.trust_metric, cfg.atom_types)
+    td_use = _bead_local_subset_td(td, cfg.max_gp_points, images;
+                                    distance_fn=dist_fn)
     if npoints(td_use) < npoints(td)
-        cfg.verbose && @printf("  FPS subset: %d/%d training points\n",
+        cfg.verbose && @printf("  Per-bead subset: %d/%d training points\n",
                                npoints(td_use), npoints(td))
     end
 
@@ -164,6 +168,17 @@ function _train_neb_gp(
                         noise_var = 1e-6, grad_noise_var = 1e-4, jitter = 1e-6)
         train_model!(model; iterations = cfg.gp_train_iter,
                      fix_noise = true, verbose = cfg.verbose)
+
+        # RFF approximation: train hyperparameters on subset, predict using all data
+        if cfg.rff_features > 0 && kernel isa MolInvDistSE && npoints(td) > npoints(td_use)
+            y_all = vcat(td.energies .- E_ref, td.gradients)
+            rff_model = build_rff(model.kernel, td.X, y_all, cfg.rff_features;
+                                  noise_var = 1e-6, grad_noise_var = 1e-4)
+            cfg.verbose && @printf("  RFF: %d features, %d training points\n",
+                                   cfg.rff_features, npoints(td))
+            return rff_model, E_ref, 1.0, model.kernel
+        end
+
         return model, E_ref, 1.0, model.kernel
     else
         y_gp, E_ref, y_std = normalize(td_use)
@@ -475,19 +490,98 @@ function neb_optimize(
 end
 
 # ==============================================================================
-# FPS subset selection for GP training
+# Per-bead subset selection for GP training
 # ==============================================================================
 
 """
-    _fps_subset_td(td, max_points; distance_fn=max_1d_log_distance)
+    _bead_local_subset_td(td, max_points, images; distance_fn)
 
 Return a new TrainingData containing at most `max_points` from `td`,
-selected by Farthest Point Sampling for maximum diversity.
+selected by per-bead nearest-neighbor to ensure each NEB image has
+local training data coverage.
 
-The first two points (endpoints) are always kept. When `max_points <= 0`
-or `npoints(td) <= max_points`, returns `td` unchanged (no copy).
+For each image in `images`, the K = ceil(max_points / n_images) nearest
+training points are selected. The union of all per-bead sets is kept.
+If the union exceeds `max_points`, a global FPS trim is applied.
+
+This is critical for NEB: global FPS can starve individual beads
+(especially the CI image) by selecting spatially diverse points that
+happen to cluster away from a specific bead. OTGPD does not have this
+issue because there is only one test point.
+
+When `images` is empty or `max_points <= 0` or data fits, returns `td`
+unchanged.
 """
-function _fps_subset_td(
+function _bead_local_subset_td(
+    td::TrainingData,
+    max_points::Int,
+    images::Vector{Vector{Float64}};
+    distance_fn::Function = max_1d_log_distance,
+)
+    N = npoints(td)
+    if max_points <= 0 || N <= max_points
+        return td
+    end
+
+    D = size(td.X, 1)
+    n_images = length(images)
+    if n_images == 0
+        # Fallback to global FPS if no images provided
+        return _global_fps_subset_td(td, max_points; distance_fn)
+    end
+
+    # Per-bead budget: generous to allow overlap between adjacent beads
+    k_per_bead = max(3, cld(max_points, n_images))
+
+    keep = Set{Int}()
+    # Always keep endpoints (first 2 training points)
+    push!(keep, 1)
+    if N >= 2
+        push!(keep, 2)
+    end
+
+    # For each bead, select K nearest training points (parallel)
+    per_bead_idx = Vector{Vector{Int}}(undef, n_images)
+    Threads.@threads for b in 1:n_images
+        dists = [distance_fn(images[b], view(td.X, :, j)) for j in 1:N]
+        sorted_idx = sortperm(dists)
+        per_bead_idx[b] = sorted_idx[1:min(k_per_bead, N)]
+    end
+    for idxs in per_bead_idx
+        for idx in idxs
+            push!(keep, idx)
+        end
+    end
+
+    # If union exceeds budget, trim with global FPS on the kept set
+    keep_vec = sort(collect(keep))
+    if length(keep_vec) > max_points
+        # Build temporary TD from kept points, then apply global FPS
+        td_tmp = TrainingData(D)
+        for i in keep_vec
+            s = (i - 1) * D + 1
+            e = i * D
+            add_point!(td_tmp, td.X[:, i], td.energies[i], td.gradients[s:e])
+        end
+        return _global_fps_subset_td(td_tmp, max_points; distance_fn)
+    end
+
+    td_sub = TrainingData(D)
+    for i in keep_vec
+        s = (i - 1) * D + 1
+        e = i * D
+        add_point!(td_sub, td.X[:, i], td.energies[i], td.gradients[s:e])
+    end
+    return td_sub
+end
+
+"""
+    _global_fps_subset_td(td, max_points; distance_fn)
+
+Global FPS subset selection (used as fallback or final trim).
+Selects `max_points` diverse points from `td` using Farthest Point Sampling.
+"""
+function _global_fps_subset_td(
     td::TrainingData,
     max_points::Int;
     distance_fn::Function = max_1d_log_distance,
@@ -501,11 +595,8 @@ function _fps_subset_td(
 
     # Seed FPS with the first point (endpoint 1)
     seed = td.X[:, 1:1]
-    # Select max_points - 1 more from all data
     fps_idx = farthest_point_sampling(td.X, seed, max_points - 1; distance_fn)
-    # Combine seed + FPS selections, deduplicate and sort
     keep = sort(unique([1; fps_idx]))
-    # Ensure we don't exceed max_points
     if length(keep) > max_points
         keep = keep[1:max_points]
     end
@@ -631,10 +722,11 @@ function gp_neb_aie(
             break
         end
 
-        # Train GP (FPS subset applied inside _train_neb_gp when max_gp_points > 0)
+        # Train GP (per-bead subset applied inside when max_gp_points > 0)
         model, E_ref, y_std, prev_kern = _train_neb_gp(
             td, kernel, cfg, prev_kern,
-            hess_X, hess_E, hess_G, n_hess, outer_iter)
+            hess_X, hess_E, hess_G, n_hess, outer_iter;
+            images)
 
         # Inner loop: relax on GP surface
         gp_tol = max(min(max_f_true / 10, cfg.conv_tol), cfg.conv_tol / 10)
