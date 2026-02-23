@@ -67,6 +67,7 @@ fig-leps-min = { cmd = "julia --project=scripts/figures/tutorial scripts/figures
 fig-leps-rff = { cmd = "julia --project=scripts/figures/tutorial scripts/figures/tutorial/leps_rff_quality.jl", depends-on = ["fig-install"], description = "LEPS-6: RFF approximation quality" }
 fig-petmad-min = { cmd = "julia --project=scripts/figures/tutorial scripts/figures/tutorial/petmad_minimize_convergence.jl", depends-on = ["fig-install"], description = "REAL-3: PET-MAD GP-minimize convergence" }
 fig-petmad-rff = { cmd = "julia --project=scripts/figures/tutorial scripts/figures/tutorial/petmad_rff_quality.jl", depends-on = ["fig-install"], description = "REAL-4: PET-MAD RFF approximation quality" }
+fig-rff-combined = { cmd = "julia --project=scripts/figures/tutorial scripts/figures/tutorial/rff_quality_combined.jl", depends-on = ["fig-install", "fig-leps-rff", "fig-petmad-rff"], description = "RFF-5: Combined RFF quality (LEPS + PET-MAD)" }
 fig-tier1 = { depends-on = ["fig-mb-pes", "fig-mb-neb", "fig-mb-gp", "fig-mb-var", "fig-mb-hyp", "fig-leps-pes", "fig-leps-neb"], description = "Run all P1 figures (MB + LEPS, no RPC)" }
 fig-tier2 = { depends-on = ["fig-mb-dimer", "fig-mb-trust", "fig-leps-aie", "fig-leps-fps", "fig-leps-min", "fig-leps-rff"], description = "Run all P2 figures (no RPC)" }
 
