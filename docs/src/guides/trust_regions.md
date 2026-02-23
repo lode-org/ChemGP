@@ -173,6 +173,6 @@ larger values (0.2--0.3) may be appropriate.
 
 - Goswami & Jonsson, *ChemPhysChem* (2025) [doi:10.1002/cphc.202500730](https://doi.org/10.1002/cphc.202500730) -- adaptive pruning and trust region management
 - Goswami, *Efficient exploration of chemical kinetics* (2025) [arXiv:2510.21368](https://arxiv.org/abs/2510.21368) -- thesis
-- [OTGPD tutorial](@ref) for EMD trust and adaptive threshold in context
-- [NEB Method](@ref) for trust region configuration in GP-NEB
+- [OTGPD -- Optimal Transport GP Dimer](@ref) for EMD trust and adaptive threshold in context
+- [Nudged Elastic Band (NEB)](@ref) for trust region configuration in GP-NEB
 - [References](@ref references)
