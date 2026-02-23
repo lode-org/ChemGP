@@ -167,7 +167,10 @@ Output: NEBResult
 2. Initialize prev_kern = nothing (for warm-start)
 3. for outer_iter = 1:max_outer_iter
    a. Train GP on accumulated data (warm-start from prev_kern)
-   b. Predict E, G at all images from GP
+      - If max_gp_points > 0: FPS subset for hyperparameter training
+      - If rff_features > 0 and MolInvDistSE and N > M_subset:
+        Build RFF model on ALL data using trained hyperparameters
+   b. Predict E, G at all images (from GP or RFF model)
    c. Compute predictive variance at all images
    d. Select image i* = argmax(variance_E)
    e. Evaluate oracle at image i* (single call, no parallelism)
