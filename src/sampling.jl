@@ -38,7 +38,7 @@ function farthest_point_sampling(
     candidates::Matrix{Float64},
     X_selected::Matrix{Float64},
     n_select::Int;
-    distance_fn::Function = max_1d_log_distance,
+    distance_fn::Function=max_1d_log_distance,
 )
     D, N_cand = size(candidates)
     N_sel = size(X_selected, 2)
@@ -98,7 +98,7 @@ function prune_training_data!(
     td::TrainingData,
     x_current::Vector{Float64},
     max_points::Int;
-    distance_fn::Function = max_1d_log_distance,
+    distance_fn::Function=max_1d_log_distance,
 )
     N = npoints(td)
     if max_points <= 0 || N <= max_points

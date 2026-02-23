@@ -58,24 +58,24 @@ Configuration parameters for the GP-dimer method.
 - `step_convex`: Fixed step size in convex (positive curvature) regions (default 0.1)
 """
 Base.@kwdef struct DimerConfig
-    T_force_true::Float64   = 1e-3     # True convergence threshold (on oracle gradient)
-    T_force_gp::Float64     = 1e-2     # GP convergence threshold (on GP gradient)
-    T_angle_rot::Float64    = 1e-3     # Rotation angle convergence threshold
-    trust_radius::Float64   = 0.1      # Max distance from training data
+    T_force_true::Float64 = 1e-3     # True convergence threshold (on oracle gradient)
+    T_force_gp::Float64 = 1e-2     # GP convergence threshold (on GP gradient)
+    T_angle_rot::Float64 = 1e-3     # Rotation angle convergence threshold
+    trust_radius::Float64 = 0.1      # Max distance from training data
     ratio_at_limit::Float64 = 2 / 3    # Inter-atomic distance ratio limit
-    max_outer_iter::Int     = 50       # Max outer iterations (oracle call cycles)
-    max_inner_iter::Int     = 100      # Max GP steps per outer iteration
-    max_rot_iter::Int       = 10       # Max rotations per translation step
-    alpha_trans::Float64    = 0.01     # Translation step size factor (simple mode)
-    gp_train_iter::Int      = 300      # Nelder-Mead iterations for GP training
-    n_initial_perturb::Int  = 4        # Number of initial perturbation points
-    perturb_scale::Float64  = 0.15     # Scale of initial perturbations
+    max_outer_iter::Int = 50       # Max outer iterations (oracle call cycles)
+    max_inner_iter::Int = 100      # Max GP steps per outer iteration
+    max_rot_iter::Int = 10       # Max rotations per translation step
+    alpha_trans::Float64 = 0.01     # Translation step size factor (simple mode)
+    gp_train_iter::Int = 300      # Nelder-Mead iterations for GP training
+    n_initial_perturb::Int = 4        # Number of initial perturbation points
+    perturb_scale::Float64 = 0.15     # Scale of initial perturbations
     rotation_method::Symbol = :lbfgs   # :simple, :lbfgs, or :cg
     translation_method::Symbol = :lbfgs # :simple or :lbfgs
-    lbfgs_memory::Int       = 5        # L-BFGS memory depth
-    max_step::Float64       = 0.5      # Max translation step length
-    step_convex::Float64    = 0.1      # Step size in convex regions
-    verbose::Bool           = true
+    lbfgs_memory::Int = 5        # L-BFGS memory depth
+    max_step::Float64 = 0.5      # Max translation step length
+    step_convex::Float64 = 0.1      # Step size in convex regions
+    verbose::Bool = true
 end
 
 """
@@ -102,7 +102,7 @@ mutable struct CGRotationState
     max_iter::Int
 end
 
-function CGRotationState(D::Int; max_iter::Int = 20)
+function CGRotationState(D::Int; max_iter::Int=20)
     return CGRotationState(Float64[], Float64[], Float64[], 0, max_iter)
 end
 
@@ -162,17 +162,19 @@ end
 """
     translational_force(G0, orient)
 
-Modified force for translation toward a saddle point. The component
-along the dimer direction is inverted, so the algorithm climbs along
-the lowest curvature mode while descending in all other directions.
+Effective force for translation toward a saddle point. The gradient
+component along the dimer direction is inverted, so the algorithm
+climbs along the lowest curvature mode while descending in all other
+directions (Henkelman & Jonsson 1999, Eq. 14).
 
-    F_trans = G0 - 2*(G0 . orient)*orient
+    F_eff = -G0 + 2*(G0 . orient)*orient
+
+Equivalently: F_eff = -G_perp + G_parallel, where G_perp is the
+perpendicular gradient and G_parallel = (G0 . orient) * orient.
 """
 function translational_force(G0, orient)
     F_parallel = dot(G0, orient) * orient
-    F_perp = G0 - F_parallel
-    F_trans = F_perp - F_parallel  # Invert along dimer direction
-    return F_trans
+    return -G0 + 2 * F_parallel
 end
 
 # ==============================================================================
@@ -214,8 +216,12 @@ and finds the optimal rotation angle via a parabolic fit on the rotation plane.
 Returns the curvature estimate after rotation, or `nothing` if no rotation was needed.
 """
 function rotate_dimer_newton!(
-    state::DimerState, model::GPModel, F_rot_direction::Vector{Float64},
-    config::DimerConfig; y_std::Float64 = 1.0, verbose::Bool = false,
+    state::DimerState,
+    model::GPModel,
+    F_rot_direction::Vector{Float64},
+    config::DimerConfig;
+    y_std::Float64=1.0,
+    verbose::Bool=false,
 )
     orient = state.orient
     F_rot_norm = norm(F_rot_direction)
@@ -233,8 +239,9 @@ function rotate_dimer_newton!(
     dtheta = 0.5 * atan(0.5 * F_rot_norm / (abs(C0) + 1e-10))
 
     if dtheta < config.T_angle_rot
-        verbose && @printf("    Newton: converged (dθ = %.5f < %.5f)\n",
-                           dtheta, config.T_angle_rot)
+        verbose && @printf(
+            "    Newton: converged (dθ = %.5f < %.5f)\n", dtheta, config.T_angle_rot
+        )
         return C0
     end
 
@@ -290,8 +297,9 @@ function rotate_dimer_newton!(
     # Estimate curvature after rotation
     C_est = C0 + a1 * (cos(2 * angle_rot) - 1) + b1 * sin(2 * angle_rot)
 
-    verbose && @printf("    Newton: dθ_test=%.4f → θ_opt=%.4f, C≈%+.3e\n",
-                       dtheta, angle_rot, C_est)
+    verbose && @printf(
+        "    Newton: dθ_test=%.4f → θ_opt=%.4f, C≈%+.3e\n", dtheta, angle_rot, C_est
+    )
 
     return C_est
 end
@@ -312,10 +320,13 @@ Methods:
 - `:cg` — Conjugate gradient (PRP) direction with modified Newton angle optimization
 """
 function rotate_dimer!(
-    state::DimerState, model::GPModel, config::DimerConfig;
-    y_std::Float64 = 1.0, verbose::Bool = false,
-    rot_hist::Union{Nothing,LBFGSHistory} = nothing,
-    cg_state::Union{Nothing,CGRotationState} = nothing,
+    state::DimerState,
+    model::GPModel,
+    config::DimerConfig;
+    y_std::Float64=1.0,
+    verbose::Bool=false,
+    rot_hist::Union{Nothing,LBFGSHistory}=nothing,
+    cg_state::Union{Nothing,CGRotationState}=nothing,
 )
     if config.rotation_method == :simple
         rotate_dimer_simple!(state, model, config; y_std, verbose)
@@ -333,8 +344,13 @@ end
 
 Original simple rotation: estimate angle from |F_rot|/|C| ratio, rotate directly.
 """
-function rotate_dimer_simple!(state::DimerState, model::GPModel, config::DimerConfig;
-                              y_std::Float64 = 1.0, verbose::Bool = false)
+function rotate_dimer_simple!(
+    state::DimerState,
+    model::GPModel,
+    config::DimerConfig;
+    y_std::Float64=1.0,
+    verbose::Bool=false,
+)
     for rot_iter in 1:(config.max_rot_iter)
         G0, G1, _ = predict_dimer_gradients(state, model, y_std)
 
@@ -350,8 +366,11 @@ function rotate_dimer_simple!(state::DimerState, model::GPModel, config::DimerCo
         dtheta = 0.5 * atan(F_rot_norm / (abs(C) + 1e-10))
 
         if dtheta < config.T_angle_rot
-            verbose && @printf("  Rotation converged (theta = %.5f < %.5f)\n",
-                               dtheta, config.T_angle_rot)
+            verbose && @printf(
+                "  Rotation converged (theta = %.5f < %.5f)\n",
+                dtheta,
+                config.T_angle_rot
+            )
             break
         end
 
@@ -359,8 +378,12 @@ function rotate_dimer_simple!(state::DimerState, model::GPModel, config::DimerCo
         orient_new = cos(dtheta) * state.orient + sin(dtheta) * b1
         state.orient = orient_new / norm(orient_new)
 
-        verbose && @printf("  Rotation %d: theta = %.5f, |F_rot| = %.5f\n",
-                           rot_iter, dtheta, F_rot_norm)
+        verbose && @printf(
+            "  Rotation %d: theta = %.5f, |F_rot| = %.5f\n",
+            rot_iter,
+            dtheta,
+            F_rot_norm
+        )
     end
 end
 
@@ -378,9 +401,12 @@ the optimization is constrained to the unit sphere.
 Reference: MATLAB rot_iter_lbfgs.m
 """
 function rotate_dimer_lbfgs!(
-    state::DimerState, model::GPModel, config::DimerConfig,
+    state::DimerState,
+    model::GPModel,
+    config::DimerConfig,
     rot_hist::Union{Nothing,LBFGSHistory};
-    y_std::Float64 = 1.0, verbose::Bool = false,
+    y_std::Float64=1.0,
+    verbose::Bool=false,
 )
     hist = rot_hist === nothing ? LBFGSHistory(config.lbfgs_memory) : rot_hist
     F_rot_prev = Float64[]
@@ -425,13 +451,17 @@ function rotate_dimer_lbfgs!(
         orient_prev = copy(state.orient)
 
         # Apply modified Newton angle optimization in this direction
-        C_est = rotate_dimer_newton!(state, model, F_rot_oriented, config;
-                                     y_std, verbose)
+        C_est = rotate_dimer_newton!(state, model, F_rot_oriented, config; y_std, verbose)
 
         if C_est !== nothing
             dtheta = acos(clamp(dot(orient_prev, state.orient), -1.0, 1.0))
-            verbose && @printf("  L-BFGS rot %d: |F_rot| = %.5f, Δθ = %.5f, C ≈ %+.3e\n",
-                               rot_iter, F_rot_norm, dtheta, C_est)
+            verbose && @printf(
+                "  L-BFGS rot %d: |F_rot| = %.5f, Δθ = %.5f, C ≈ %+.3e\n",
+                rot_iter,
+                F_rot_norm,
+                dtheta,
+                C_est
+            )
             if dtheta < config.T_angle_rot
                 break
             end
@@ -453,9 +483,12 @@ than the raw force.
 Reference: MATLAB rot_iter_cg.m
 """
 function rotate_dimer_cg!(
-    state::DimerState, model::GPModel, config::DimerConfig,
+    state::DimerState,
+    model::GPModel,
+    config::DimerConfig,
     cg_state::Union{Nothing,CGRotationState};
-    y_std::Float64 = 1.0, verbose::Bool = false,
+    y_std::Float64=1.0,
+    verbose::Bool=false,
 )
     D = length(state.R)
     cg = cg_state === nothing ? CGRotationState(D) : cg_state
@@ -483,7 +516,8 @@ function rotate_dimer_cg!(
             F_modrot = copy(F_rot)
         else
             # Polak-Ribiere-Polyak gamma
-            gamma = dot(F_rot - cg.F_rot_old, F_rot) / (dot(cg.F_rot_old, cg.F_rot_old) + 1e-18)
+            gamma =
+                dot(F_rot - cg.F_rot_old, F_rot) / (dot(cg.F_rot_old, cg.F_rot_old) + 1e-18)
 
             if gamma < 0 || norm(gamma * cg.F_modrot_old) > F_rot_norm
                 # Restart: steepest descent
@@ -514,8 +548,7 @@ function rotate_dimer_cg!(
         orient_prev = copy(state.orient)
 
         # Apply modified Newton angle optimization
-        C_est = rotate_dimer_newton!(state, model, F_rot_oriented, config;
-                                     y_std, verbose)
+        C_est = rotate_dimer_newton!(state, model, F_rot_oriented, config; y_std, verbose)
 
         if C_est !== nothing
             # Update perpendicular direction for next CG step
@@ -526,8 +559,13 @@ function rotate_dimer_cg!(
             cg.orient_rot_old = rn > 1e-12 ? residual / rn : orient_rot
 
             dtheta = acos(clamp(dot(orient_prev, state.orient), -1.0, 1.0))
-            verbose && @printf("  CG rot %d: |F_rot| = %.5f, Δθ = %.5f, C ≈ %+.3e\n",
-                               rot_iter, F_rot_norm, dtheta, C_est)
+            verbose && @printf(
+                "  CG rot %d: |F_rot| = %.5f, Δθ = %.5f, C ≈ %+.3e\n",
+                rot_iter,
+                F_rot_norm,
+                dtheta,
+                C_est
+            )
             if dtheta < config.T_angle_rot
                 break
             end
@@ -558,27 +596,26 @@ Returns `(R_new, step_taken)` or `(nothing, false)` if trust region exceeded.
 Reference: MATLAB trans_iter_lbfgs.m
 """
 function translate_dimer_lbfgs!(
-    state::DimerState, G0::Vector{Float64}, G1::Vector{Float64},
-    config::DimerConfig, trans_hist::LBFGSHistory,
+    state::DimerState,
+    G0::Vector{Float64},
+    G1::Vector{Float64},
+    config::DimerConfig,
+    trans_hist::LBFGSHistory,
     td::TrainingData;
-    F_trans_prev::Vector{Float64} = Float64[],
-    y_std::Float64 = 1.0, verbose::Bool = false,
+    F_trans_prev::Vector{Float64}=Float64[],
+    y_std::Float64=1.0,
+    verbose::Bool=false,
 )
     orient = state.orient
     C = curvature(G0, G1, orient, state.dimer_sep)
 
     if C < 0
-        # --- Negative curvature: L-BFGS on modified translational force ---
+        # --- Negative curvature: L-BFGS on effective translational force ---
         F_trans = translational_force(G0, orient)
         F_norm = norm(F_trans)
 
-        # Update L-BFGS history
-        if !isempty(F_trans_prev) && !isempty(trans_hist.s)
-            # The s was already pushed by the caller after the previous step
-            # We need to push the force difference y
-        end
-
-        # Compute L-BFGS search direction (negate force for gradient convention)
+        # L-BFGS expects the gradient (uphill); F_trans is the force (downhill
+        # toward saddle), so the gradient is -F_trans.
         search_dir = compute_direction(trans_hist, -F_trans)
 
         step_len = norm(search_dir)
@@ -587,11 +624,15 @@ function translate_dimer_lbfgs!(
             search_dir .*= config.max_step / step_len
             # Reset memory on clipped step
             reset!(trans_hist)
-            verbose && @printf("  Trans L-BFGS: step clipped (%.4f → %.4f), memory reset\n",
-                               step_len, config.max_step)
+            verbose && @printf(
+                "  Trans L-BFGS: step clipped (%.4f -> %.4f), memory reset\n",
+                step_len,
+                config.max_step
+            )
         end
 
-        R_new = state.R - search_dir
+        # search_dir = -H*(-F_trans) = H*F_trans points toward saddle
+        R_new = state.R + search_dir
 
         return R_new, F_trans, C
     else
@@ -607,8 +648,9 @@ function translate_dimer_lbfgs!(
         # Reset L-BFGS memory when entering convex region
         reset!(trans_hist)
 
-        verbose && @printf("  Trans simple (convex): C = %+.3e, step = %.4f\n",
-                           C, config.step_convex)
+        verbose && @printf(
+            "  Trans simple (convex): C = %+.3e, step = %.4f\n", C, config.step_convex
+        )
 
         return R_new, F_along, C
     end
@@ -651,9 +693,9 @@ function gp_dimer(
     x_init::Vector{Float64},
     orient_init::Vector{Float64},
     kernel;
-    config::DimerConfig = DimerConfig(),
-    training_data::Union{Nothing,TrainingData} = nothing,
-    dimer_sep::Float64 = 0.01,
+    config::DimerConfig=DimerConfig(),
+    training_data::Union{Nothing,TrainingData}=nothing,
+    dimer_sep::Float64=0.01,
 )
     D = length(x_init)
     cfg = config
@@ -693,11 +735,18 @@ function gp_dimer(
 
     cfg.verbose && println("="^70)
     cfg.verbose && println("GP-Dimer Saddle Point Search")
-    cfg.verbose && @printf("  Rotation: %s | Translation: %s\n",
-                           cfg.rotation_method, cfg.translation_method)
+    cfg.verbose && @printf(
+        "  Rotation: %s | Translation: %s\n",
+        cfg.rotation_method,
+        cfg.translation_method
+    )
     cfg.verbose && println("="^70)
-    cfg.verbose && @printf("Training points: %d | Dimer sep: %.4f | Trust radius: %.3f\n\n",
-                           oracle_calls, dimer_sep, cfg.trust_radius)
+    cfg.verbose && @printf(
+        "Training points: %d | Dimer sep: %.4f | Trust radius: %.3f\n\n",
+        oracle_calls,
+        dimer_sep,
+        cfg.trust_radius
+    )
 
     history = Dict(
         "E_true" => Float64[],
@@ -716,18 +765,18 @@ function gp_dimer(
 
     for outer_iter in 1:(cfg.max_outer_iter)
         cfg.verbose && println("-"^70)
-        cfg.verbose && @printf("OUTER ITERATION %d (Oracle calls: %d)\n", outer_iter, oracle_calls)
+        cfg.verbose &&
+            @printf("OUTER ITERATION %d (Oracle calls: %d)\n", outer_iter, oracle_calls)
 
         # Train GP on current data
         y_gp, y_mean, y_std = normalize(td)
 
-        model = GPModel(kernel, td.X, y_gp;
-                        noise_var = 1e-2,
-                        grad_noise_var = 1e-1,
-                        jitter = 1e-3)
+        model = GPModel(
+            kernel, td.X, y_gp; noise_var=1e-2, grad_noise_var=1e-1, jitter=1e-3
+        )
 
         cfg.verbose && @printf("Training GP on %d points...\n", npoints(td))
-        train_model!(model, iterations = cfg.gp_train_iter)
+        train_model!(model; iterations=cfg.gp_train_iter)
 
         # Reset L-BFGS/CG state for new outer iteration (new GP model)
         rot_hist !== nothing && reset!(rot_hist)
@@ -740,8 +789,7 @@ function gp_dimer(
 
         for inner_iter in 1:(cfg.max_inner_iter)
             # Rotate dimer to find lowest curvature mode
-            rotate_dimer!(state, model, cfg; y_std, verbose = false,
-                          rot_hist, cg_state)
+            rotate_dimer!(state, model, cfg; y_std, verbose=false, rot_hist, cg_state)
 
             # Predict at current position
             G0, G1, E0 = predict_dimer_gradients(state, model, y_std)
@@ -750,8 +798,7 @@ function gp_dimer(
             if cfg.translation_method == :lbfgs && trans_hist !== nothing
                 # L-BFGS translation
                 R_new, F_trans_cur, C = translate_dimer_lbfgs!(
-                    state, G0, G1, cfg, trans_hist, td;
-                    F_trans_prev, y_std, verbose = false,
+                    state, G0, G1, cfg, trans_hist, td; F_trans_prev, y_std, verbose=false
                 )
                 F_norm = norm(F_trans_cur)
 
@@ -780,8 +827,14 @@ function gp_dimer(
             min_dist = min_distance_to_data(state.R, td.X)
 
             if inner_iter % 10 == 0 || inner_iter == 1
-                cfg.verbose && @printf("  GP step %3d: E = %8.4f | |F| = %.5f | C = %+.3e | d_min = %.4f\n",
-                                       inner_iter, E0_pred, F_norm, C, min_dist)
+                cfg.verbose && @printf(
+                    "  GP step %3d: E = %8.4f | |F| = %.5f | C = %+.3e | d_min = %.4f\n",
+                    inner_iter,
+                    E0_pred,
+                    F_norm,
+                    C,
+                    min_dist
+                )
             end
 
             # Check GP convergence
@@ -793,8 +846,11 @@ function gp_dimer(
             # Check trust radius
             min_dist_new = min_distance_to_data(R_new, td.X)
             if min_dist_new > cfg.trust_radius
-                cfg.verbose && @printf("  Trust radius exceeded (%.4f > %.4f)\n",
-                                       min_dist_new, cfg.trust_radius)
+                cfg.verbose && @printf(
+                    "  Trust radius exceeded (%.4f > %.4f)\n",
+                    min_dist_new,
+                    cfg.trust_radius
+                )
                 # Scale step to stay within trust radius
                 step_vec = R_new - state.R
                 scale = cfg.trust_radius / min_dist_new * 0.95
@@ -828,8 +884,9 @@ function gp_dimer(
         F_trans_true = translational_force(G_true, state.orient)
         F_norm_true = norm(F_trans_true)
 
-        cfg.verbose && @printf("  True: E = %8.4f | |F| = %.5f | C = %+.3e\n",
-                               E_true, F_norm_true, C_true)
+        cfg.verbose && @printf(
+            "  True: E = %8.4f | |F| = %.5f | C = %+.3e\n", E_true, F_norm_true, C_true
+        )
 
         # Store history
         push!(history["E_true"], E_true)

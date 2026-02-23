@@ -22,8 +22,8 @@
     y_full = [(y_vals .- y_mean) ./ y_std; y_grads ./ y_std]
 
     k = MolInvDistSE(1.0, [1.0], Float64[])
-    model = GPModel(k, X_train, y_full; noise_var = 1e-4, grad_noise_var = 1e-4)
-    train_model!(model; iterations = 100)
+    model = GPModel(k, X_train, y_full; noise_var=1e-4, grad_noise_var=1e-4)
+    train_model!(model; iterations=100)
 
     # Predict at a training point: variance should be small
     X_at_train = zeros(6, 1)
@@ -45,5 +45,5 @@
 
     # Mean should match predict()
     mu_check = predict(model, X_at_train)
-    @test isapprox(mu_train, mu_check, atol = 1e-10)
+    @test isapprox(mu_train, mu_check, atol=1e-10)
 end

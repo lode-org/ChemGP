@@ -123,22 +123,17 @@ const INV_LENGTHSCALE = 1.0 / 888.953211438594e-006
         # Note: In C++ test, they set magnSigma2 to 2.098e-6 for this specific test
 
         k_cov_test = MolInvDistSE(
-            2.09859544785255e-006,
-            inv_ls,
-            FROZEN_DATA,
-            mov_types,
-            fro_types,
-            pair_map,
+            2.09859544785255e-006, inv_ls, FROZEN_DATA, mov_types, fro_types, pair_map
         )
 
         # Calculate full K (energy only)
-        K = [k_cov_test(X1_ref[:, i], X2_ref[:, i]) for i = 1:2]
+        K = [k_cov_test(X1_ref[:, i], X2_ref[:, i]) for i in 1:2]
 
         # In the C++ test, x1 and x2 are identical. So diagonal should be exactly sigma^2.
         # But wait, C++ test sets x1=x2.
         # So K[i,i] should be sigma^2.
-        @test isapprox(K[1], 2.09859544785255e-006, atol = 1e-12)
-        @test isapprox(K[2], 2.09859544785255e-006, atol = 1e-12)
+        @test isapprox(K[1], 2.09859544785255e-006, atol=1e-12)
+        @test isapprox(K[2], 2.09859544785255e-006, atol=1e-12)
         println("Covariance check passed.")
     end
 
@@ -164,7 +159,7 @@ const INV_LENGTHSCALE = 1.0 / 888.953211438594e-006
         # For a Gaussian kernel e^-(x-y)^2:
         # dK/dx = -2(x-y)K.
         # If x=y (diagonal), grad is 0.
-        # Here x1 approx x2 but not exactly? 
+        # Here x1 approx x2 but not exactly?
         # Actually in the C++ test `setUp`, x1 and x2 ARE identical.
         # Wait, if x1 == x2, then gradients MUST be zero for Isotropic kernels.
         # BUT this is a Molecular Kernel. The features (1/r) depend on distances to FROZEN atoms too.
@@ -178,5 +173,4 @@ const INV_LENGTHSCALE = 1.0 / 888.953211438594e-006
         @test k_fe[2] < 0
         @test abs(k_fe[2]) > 1e-11
     end
-
 end

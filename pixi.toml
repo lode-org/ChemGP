@@ -13,6 +13,13 @@ gen-readme = { cmd = "emacs --batch readme_src.org --eval '(require (quote ox-md
 lint = { cmd = "julia --project=. -e 'using JuliaFormatter; exit(format(\".\", overwrite=false) ? 0 : 1)' && uvx pre-commit run --all-files", description = "Check formatting and run all pre-commit hooks" }
 pre-commit = { cmd = "uvx pre-commit run --all-files", description = "Run all pre-commit hooks" }
 
+# rgpot build tasks (for RPC integration with external potentials)
+rgpot-clone = { cmd = "test -d rgpot || git clone https://github.com/OmniPotentRPC/rgpot.git rgpot", description = "Clone rgpot if not already present" }
+rgpot-setup = { cmd = "meson setup rgpot/builddir rgpot --wipe -Dwith_rpc=true -Dwith_tests=true -Dwith_examples=false", depends-on = ["rgpot-clone"], description = "Configure rgpot meson build with RPC support" }
+rgpot-build = { cmd = "meson compile -C rgpot/builddir", depends-on = ["rgpot-setup"], description = "Build rgpot (produces potserv and libpot_client_bridge)" }
+rgpot-test = { cmd = "meson test -C rgpot/builddir", depends-on = ["rgpot-build"], description = "Run rgpot test suite" }
+integration-test = { cmd = "RGPOT_BUILD_DIR=rgpot/builddir julia --project=. test/test_rpc.jl", depends-on = ["rgpot-build"], description = "Run RPC integration tests against rgpot potserv" }
+
 [dependencies]
 julia = ">=1.12.2,<1.13"
 pycapnp = ">=2.0"
@@ -21,6 +28,16 @@ capnproto = ">=1.0.2,<2"
 compilers = ">=1.11.0,<2"
 pkgconf = ">=2.5.1,<3"
 uv = ">=0.6.0"
+meson = ">=1.6.0"
+ninja = ">=1.12.0"
+cmake = ">=3.30.0"
+eigen = ">=3.4.0"
+fmt = ">=11.0.0"
+spdlog = ">=1.15.0"
+catch2 = ">=3.7.0"
+openblas = ">=0.3.28"
+xtensor = ">=0.25.0"
+fortran-compiler = ">=1.9.0"
 
 [environments]
 docs = { features = ["docs"] }

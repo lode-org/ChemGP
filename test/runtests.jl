@@ -3,6 +3,7 @@ using Test
 using Statistics
 using LinearAlgebra
 using KernelFunctions
+using Random
 
 @testset "ChemGP" begin
     include("test_lbfgs.jl")
@@ -17,8 +18,14 @@ using KernelFunctions
     include("test_otgpd.jl")
     include("test_leps.jl")
     include("test_emd.jl")
+    include("test_distances_trust.jl")
 
     if isfile(joinpath(@__DIR__, "cpp_consistency.jl"))
         include("cpp_consistency.jl")
+    end
+
+    # RPC integration tests run only when rgpot is available
+    if ChemGP.rgpot_available() && ChemGP.potserv_available()
+        include("test_rpc.jl")
     end
 end

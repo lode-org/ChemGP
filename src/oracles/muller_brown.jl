@@ -84,7 +84,7 @@ function muller_brown_energy_gradient(xy::AbstractVector)
     dEdy = 0.0
 
     @inbounds for k in 1:4
-        A  = MULLER_BROWN_A[k]
+        A = MULLER_BROWN_A[k]
         ak = MULLER_BROWN_a[k]
         bk = MULLER_BROWN_b[k]
         ck = MULLER_BROWN_c[k]

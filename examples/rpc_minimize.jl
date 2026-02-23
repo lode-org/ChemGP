@@ -23,8 +23,11 @@ using ChemGP
 # ---------------------------------------------------------------------------
 const SERVER_HOST = get(ENV, "RGPOT_HOST", "localhost")
 const SERVER_PORT = parse(Int, get(ENV, "RGPOT_PORT", "12345"))
-const LIB_PATH = get(ENV, "RGPOT_LIB", joinpath(homedir(),
-    "Git/Github/OmniPotentRPC/rgpot/bbdir/CppCore/librgpot.so"))
+const LIB_PATH = get(
+    ENV,
+    "RGPOT_LIB",
+    joinpath(homedir(), "Git/Github/OmniPotentRPC/rgpot/bbdir/CppCore/librgpot.so"),
+)
 
 # System definition: 4-atom copper cluster
 const ATOMIC_NUMBERS = Int32[29, 29, 29, 29]
@@ -32,10 +35,18 @@ const BOX = Float64[20, 0, 0, 0, 20, 0, 0, 0, 20]  # large box (cluster in vacuu
 
 # Initial positions (flat: [x1,y1,z1, x2,y2,z2, ...])
 const X_INIT = Float64[
-    0.0, 0.0, 0.0,     # atom 1
-    2.5, 0.0, 0.0,     # atom 2
-    1.25, 2.2, 0.0,    # atom 3
-    1.25, 0.7, 2.0,    # atom 4
+    0.0,
+    0.0,
+    0.0,     # atom 1
+    2.5,
+    0.0,
+    0.0,     # atom 2
+    1.25,
+    2.2,
+    0.0,    # atom 3
+    1.25,
+    0.7,
+    2.0,    # atom 4
 ]
 
 # ---------------------------------------------------------------------------
@@ -58,13 +69,9 @@ function main()
 
     # GP-guided minimization
     kernel = MolInvDistSE(1.0, [1.0], Float64[])
-    config = MinimizationConfig(
-        max_iter = 50,
-        conv_tol = 1e-3,
-        trust_radius = 0.5,
-    )
+    config = MinimizationConfig(; max_iter=50, conv_tol=1e-3, trust_radius=0.5)
 
-    result = gp_minimize(oracle, X_INIT, kernel; config = config)
+    result = gp_minimize(oracle, X_INIT, kernel; config=config)
 
     println("\n--- Result ---")
     println("Converged: $(result.converged)")
@@ -73,7 +80,7 @@ function main()
     println("Max |gradient|: $(maximum(abs.(result.G_final)))")
 
     # Clean up the RPC connection
-    close!(pot)
+    close(pot)
 end
 
 main()
