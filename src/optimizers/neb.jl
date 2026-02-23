@@ -108,12 +108,13 @@ Train the GP model for NEB, handling both molecular kernels (energy shift,
 fixed noise) and generic kernels (normalize, optimize noise).
 
 When `cfg.max_gp_points > 0` and the training set exceeds that limit,
-a FPS subset is selected (using `cfg.trust_metric` as the distance)
-before training. This caps GP cost at O(M^3) while keeping all data
-available for trust checks and deduplication at the caller.
+a FPS subset is selected for hyperparameter optimization, then a
+[`NystromGP`](@ref) is built using all data for prediction. This caps
+training cost at O(M^3) while prediction uses all N points.
 
-Returns `(model, E_ref, y_std, kern)` where `kern` is the trained kernel
-suitable for warm-starting the next iteration.
+Returns `(model, E_ref, y_std, kern)` where `model` is either a
+`GPModel` (exact) or `NystromGP` (approximate), and `kern` is the
+trained kernel for warm-starting.
 """
 function _train_neb_gp(
     td::TrainingData,
@@ -129,8 +130,9 @@ function _train_neb_gp(
     # FPS subset selection when training set exceeds max_gp_points
     fps_fn = trust_distance_fn(cfg.trust_metric, cfg.atom_types)
     td_use = _fps_subset_td(td, cfg.max_gp_points; distance_fn=fps_fn)
-    if npoints(td_use) < npoints(td)
-        cfg.verbose && @printf("  FPS subset: %d/%d training points\n",
+    use_nystrom = npoints(td_use) < npoints(td)
+    if use_nystrom
+        cfg.verbose && @printf("  Nystrom: %d inducing / %d total training points\n",
                                npoints(td_use), npoints(td))
     end
 
@@ -152,11 +154,19 @@ function _train_neb_gp(
 
         # Warm-start: reuse previous kernel, only init on first iteration
         kern = prev_kern === nothing ? init_mol_invdist_se(td_use, kernel) : prev_kern
-        model = GPModel(kern, X_train, y_target;
-                        noise_var = 1e-6, grad_noise_var = 1e-4, jitter = 1e-6)
-        train_model!(model; iterations = cfg.gp_train_iter,
+        base = GPModel(kern, X_train, y_target;
+                       noise_var = 1e-6, grad_noise_var = 1e-4, jitter = 1e-6)
+        train_model!(base; iterations = cfg.gp_train_iter,
                      fix_noise = true, verbose = cfg.verbose)
-        return model, E_ref, 1.0, model.kernel
+
+        if use_nystrom
+            # Build Nystrom using all data (same normalization)
+            y_all = vcat(td.energies .- E_ref, td.gradients)
+            model = build_nystrom(base, td.X, y_all)
+        else
+            model = base
+        end
+        return model, E_ref, 1.0, base.kernel
     else
         y_gp, E_ref, y_std = normalize(td_use)
         kern = if prev_kern !== nothing
@@ -166,10 +176,18 @@ function _train_neb_gp(
         else
             kernel
         end
-        model = GPModel(kern, td_use.X, y_gp;
-                        noise_var = 1e-6, grad_noise_var = 1e-6, jitter = 1e-4)
-        train_model!(model; iterations = cfg.gp_train_iter, verbose = cfg.verbose)
-        return model, E_ref, y_std, model.kernel
+        base = GPModel(kern, td_use.X, y_gp;
+                       noise_var = 1e-6, grad_noise_var = 1e-6, jitter = 1e-4)
+        train_model!(base; iterations = cfg.gp_train_iter, verbose = cfg.verbose)
+
+        if use_nystrom
+            # Build Nystrom using all data (same normalization)
+            y_all = vcat((td.energies .- E_ref) ./ y_std, td.gradients ./ y_std)
+            model = build_nystrom(base, td.X, y_all)
+        else
+            model = base
+        end
+        return model, E_ref, y_std, base.kernel
     end
 end
 
