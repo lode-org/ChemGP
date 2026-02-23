@@ -192,9 +192,11 @@ function gp_minimize(
         cfg.verbose && println("Calling oracle...")
         E_true, G_true = oracle(x_curr)
         oracle_calls += 1
-        G_norm = norm(G_true)
+        # Per-atom max force (matching eOn convention)
+        n_atoms = div(length(G_true), 3)
+        G_norm = maximum(norm(@view G_true[(3 * (a - 1) + 1):(3 * a)]) for a in 1:n_atoms)
 
-        cfg.verbose && @printf("  True: E = %.4f | |grad| = %.5f\n", E_true, G_norm)
+        cfg.verbose && @printf("  True: E = %.4f | max|F_atom| = %.5f\n", E_true, G_norm)
 
         # Sanity check
         if !isfinite(E_true) || E_true > 1e6
