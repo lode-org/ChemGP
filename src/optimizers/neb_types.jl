@@ -48,6 +48,7 @@ Configuration parameters for NEB path optimization.
 # GP-specific fields
 - `gp_train_iter`: Nelder-Mead iterations for GP hyperparameter optimization (default 300)
 - `max_outer_iter`: Maximum outer iterations for GP-NEB (default 50)
+- `max_gp_points`: Cap GP training set size via FPS subset selection; 0 = use all data (default 0)
 - `trust_radius`: Maximum displacement from training data (default 0.1)
 - `trust_metric`: Distance metric for trust region (:emd, :max_1d_log, :euclidean; default :emd)
 - `atom_types`: Integer element labels per atom for EMD (default Int[] = all same type)
@@ -93,6 +94,7 @@ Base.@kwdef struct NEBConfig
     # GP-specific
     gp_train_iter::Int      = 300
     max_outer_iter::Int     = 50
+    max_gp_points::Int      = 0     # max training points for GP (0 = no limit; FPS subset when exceeded)
     trust_radius::Float64   = 0.1
     # Trust region metric and adaptive threshold (shared with OTGPD; see distances_trust.jl)
     trust_metric::Symbol         = :emd

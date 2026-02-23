@@ -178,6 +178,33 @@
         @test length(result.path.images) == 5
     end
 
+    @testset "GP-NEB-AIE with FPS subset (max_gp_points)" begin
+        x_B = [0.623, 0.028]
+        x_C = [-0.050, 0.467]
+
+        k = KernelFunctions.SqExponentialKernel()
+
+        cfg = NEBConfig(
+            images = 3,
+            spring_constant = 10.0,
+            climbing_image = false,
+            max_iter = 200,
+            conv_tol = 2.0,
+            step_size = 1e-4,
+            gp_train_iter = 50,
+            max_outer_iter = 5,
+            max_gp_points = 6,   # force FPS subset after a few iterations
+            verbose = false,
+        )
+
+        result = gp_neb_aie(muller_brown_energy_gradient, x_B, x_C, k; config = cfg)
+
+        @test result.oracle_calls > 0
+        @test length(result.path.images) == 5
+        @test result.path.images[1] ≈ x_B
+        @test result.path.images[end] ≈ x_C
+    end
+
     @testset "CI-NEB convergence with L-BFGS (LEPS 9D)" begin
         # Regression test: L-BFGS must not explode after climbing image activation.
         # Without distance_reset, clipped L-BFGS steps corrupt curvature estimates
