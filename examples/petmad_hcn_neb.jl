@@ -205,7 +205,7 @@ function main()
     @printf("%-12s %12s %10s %15s\n", "Method", "Oracle Calls", "Converged", "Barrier (E_TS)")
     println("-"^70)
 
-    for (label, res) in [("Standard", result_std), ("GP-NEB OIE", result_oie)]
+    for (label, res) in [("Standard", result_std), ("GP-NEB AIE", result_aie), ("GP-NEB OIE", result_oie)]
         ts_idx = res.max_energy_image
         barrier = res.path.energies[ts_idx] - res.path.energies[1]
         @printf("%-12s %12d %10s %15.6f\n",
