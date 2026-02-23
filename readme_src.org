@@ -2,9 +2,9 @@
 #+options: toc:nil num:nil
 
 #+begin_export markdown
-[![CI](https://github.com/HaoZeke/ChemGP.jl/actions/workflows/CI.yml/badge.svg?branch=main)](https://github.com/HaoZeke/ChemGP.jl/actions/workflows/CI.yml?query=branch%3Amain)
-[![Documentation](https://github.com/HaoZeke/ChemGP.jl/actions/workflows/Documentation.yml/badge.svg)](https://lode-org.github.io/ChemGP.jl/dev/)
-[![Pre-commit](https://github.com/HaoZeke/ChemGP.jl/actions/workflows/pre_commit.yml/badge.svg)](https://github.com/HaoZeke/ChemGP.jl/actions/workflows/pre_commit.yml)
+[![CI](https://github.com/lode-org/ChemGP.jl/actions/workflows/CI.yml/badge.svg?branch=main)](https://github.com/lode-org/ChemGP.jl/actions/workflows/CI.yml?query=branch%3Amain)
+[![Documentation](https://github.com/lode-org/ChemGP.jl/actions/workflows/Documentation.yml/badge.svg)](https://lode-org.github.io/ChemGP.jl/dev/)
+[![Pre-commit](https://github.com/lode-org/ChemGP.jl/actions/workflows/pre_commit.yml/badge.svg)](https://github.com/lode-org/ChemGP.jl/actions/workflows/pre_commit.yml)
 #+end_export
 
 A Julia package for Gaussian Process (GP) guided molecular geometry
@@ -25,7 +25,7 @@ dimer (OTGPD).
   outer-image-only evaluation (OIE)
 - *OTGPD*: Optimal Transport GP Dimer for transition state search
 - *Oracles*: Built-in Lennard-Jones, Muller-Brown, and LEPS potentials; RPC
-  oracle for remote potential evaluation via [[https://github.com/HaoZeke/rgpot][rgpot]]
+  oracle for remote potential evaluation via [[https://github.com/OmniPotentRPC/rgpot][rgpot]]
 - *AtomsBase integration*: Optional package extension for loading structures
   from standard file formats (extxyz, POSCAR, etc.) via AtomsBase/AtomsIO
 
@@ -35,7 +35,7 @@ ChemGP.jl is not yet registered. Install directly from GitHub:
 
 #+begin_src julia
 using Pkg
-Pkg.add(url="https://github.com/HaoZeke/ChemGP.jl")
+Pkg.add(url="https://github.com/lode-org/ChemGP.jl")
 #+end_src
 
 * Quick Start
@@ -121,7 +121,7 @@ pixi r pre-commit
 
 1. Clone and set up the environment:
    #+begin_src sh
-   git clone https://github.com/HaoZeke/ChemGP.jl.git
+   git clone https://github.com/lode-org/ChemGP.jl.git
    cd ChemGP.jl
    pixi install
    pixi r instantiate
