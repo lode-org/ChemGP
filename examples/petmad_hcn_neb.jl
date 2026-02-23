@@ -142,6 +142,7 @@ function main()
             max_outer_iter = 50,
             trust_radius = 0.1,
             atom_types = Int[6, 7, 1],
+            max_gp_points = 20,  # Nystrom: FPS subset for GP training, all data for prediction
             verbose = true,
         )
 
@@ -185,10 +186,11 @@ function main()
         atom_types = Int[6, 7, 1],
         gp_train_iter = 300,
         max_outer_iter = 80,
+        max_gp_points = 20,  # Nystrom: FPS subset for GP training, all data for prediction
         verbose = true,
     )
 
-    result_oie = gp_neb_oie(oracle, X_HCN, X_HNC, kernel;
+    result_oie = gp_neb_oie_naive(oracle, X_HCN, X_HNC, kernel;
         config = oie_cfg, on_step = oie_callback)
 
     write_neb_trajectory(result_oie, joinpath(oie_dir, "neb_final.xyz"), ATOMIC_NUMBERS, BOX)

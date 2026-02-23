@@ -130,9 +130,15 @@ function _train_neb_gp(
     # FPS subset selection when training set exceeds max_gp_points
     fps_fn = trust_distance_fn(cfg.trust_metric, cfg.atom_types)
     td_use = _fps_subset_td(td, cfg.max_gp_points; distance_fn=fps_fn)
-    use_nystrom = npoints(td_use) < npoints(td)
+    # Only use Nystrom when compression is meaningful (at least 20% reduction).
+    # With M ~ N the Woodbury inner matrix is ill-conditioned and there is
+    # no computational benefit. FPS subset is still used for training either way.
+    use_nystrom = npoints(td_use) < npoints(td) * 0.8
     if use_nystrom
         cfg.verbose && @printf("  Nystrom: %d inducing / %d total training points\n",
+                               npoints(td_use), npoints(td))
+    elseif npoints(td_use) < npoints(td)
+        cfg.verbose && @printf("  FPS subset: %d/%d training points (Nystrom skipped, low compression)\n",
                                npoints(td_use), npoints(td))
     end
 
