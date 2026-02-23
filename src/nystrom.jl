@@ -110,10 +110,15 @@ function build_nystrom(
     dim_block = D + 1
     n_block = N * dim_block
 
-    # K_MM (inducing covariance, with noise)
+    # K_MM (inducing covariance, noise-FREE).
+    # The Woodbury identity separates the prior covariance (K_MM) from the
+    # observation noise (Lambda). Including noise in K_MM double-counts it,
+    # corrupting alpha toward Lambda^{-1} y and producing explosive predictions.
+    # A small jitter is kept for numerical stability (Cholesky of rank-deficient
+    # kernels like MolInvDistSE).
     K_MM = build_full_covariance(
         base_model.kernel, base_model.X,
-        base_model.noise_var, base_model.grad_noise_var, base_model.jitter)
+        0.0, 0.0, base_model.jitter)
     L_MM = _robust_cholesky(K_MM)
 
     # K_NM (cross-covariance: all x inducing, blocked layout)
