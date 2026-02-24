@@ -10,8 +10,8 @@ using CSV
 include(joinpath(@__DIR__, "common.jl"))
 
 # --- Kernel: MolInvDistSE for 3-atom system ---
-# 3 atoms -> 3 inverse distances (AB, BC, AC), no frozen atoms
-kernel = MolInvDistSE(1.0, [1.0, 1.0, 1.0], Float64[], Int[])
+# 3 atoms -> 1 type of atom, eventhough inverse distances (AB, BC, AC), no frozen atoms
+kernel = MolInvDistSE(1.0, [1.0], Float64[], Int[])
 
 # --- Standard NEB (oracle every step) ---
 println("Running standard NEB on LEPS...")
@@ -43,6 +43,8 @@ aie_config = NEBConfig(;
     gp_train_iter=50,
     max_outer_iter=20,
     trust_radius=0.1,
+    atom_types=Int[1, 1, 1],
+    max_gp_points=20,
     rff_features=200,
     verbose=true,
 )
@@ -66,25 +68,21 @@ oie_config = NEBConfig(;
     gp_train_iter=50,
     max_outer_iter=60,
     trust_radius=0.1,
-    num_hess_iter=5,
     eps_hess=0.01,
+    atom_types=Int[1, 1, 1],
+    max_gp_points=20,
     rff_features=200,
     verbose=true,
 )
 
-result_oie = nothing
-try
-    result_oie = gp_neb_oie(
-        leps_energy_gradient,
-        Float64.(LEPS_REACTANT),
-        Float64.(LEPS_PRODUCT),
-        kernel;
-        config=oie_config,
-    )
-    println("OIE converged: $(result_oie.converged), oracle calls: $(result_oie.oracle_calls)")
-catch e
-    @warn "GP-NEB OIE failed" exception = e
-end
+result_oie = gp_neb_oie(
+    leps_energy_gradient,
+    Float64.(LEPS_REACTANT),
+    Float64.(LEPS_PRODUCT),
+    kernel;
+    config=oie_config,
+)
+println("OIE converged: $(result_oie.converged), oracle calls: $(result_oie.oracle_calls)")
 
 # --- Extract convergence history ---
 function extract_history(result, label)
@@ -96,9 +94,7 @@ end
 
 df = extract_history(result_std, "Standard NEB")
 df = vcat(df, extract_history(result_aie, "GP-NEB AIE"))
-if result_oie !== nothing
-    df = vcat(df, extract_history(result_oie, "GP-NEB OIE"))
-end
+df = vcat(df, extract_history(result_oie, "GP-NEB OIE"))
 
 n_methods = length(unique(df.method))
 palette_slice = RUHI_CYCLE[1:min(n_methods, length(RUHI_CYCLE))]
