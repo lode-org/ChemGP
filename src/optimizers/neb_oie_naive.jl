@@ -91,6 +91,7 @@ function gp_neb_oie_naive(
 
     ci_on = false
     converged = false
+    stop_reason = MAX_ITERATIONS
     prev_kern = nothing
     baseline_force = 0.0
 
@@ -180,6 +181,7 @@ function gp_neb_oie_naive(
         if conv_check && ci_verified && conv_metric < cfg.conv_tol
             cfg.verbose && println("GP-NEB-OIE-naive converged!")
             converged = true
+            stop_reason = CONVERGED
             break
         end
 
@@ -193,7 +195,14 @@ function gp_neb_oie_naive(
         _emd_trust_clip!(images, td, cfg)
         path.images = images
 
-        on_step !== nothing && on_step(path, outer_iter)
+        if on_step !== nothing
+            cb_result = on_step(path, outer_iter)
+            if cb_result === :stop
+                cfg.verbose && println("  Stopped by on_step callback.")
+                stop_reason = USER_CALLBACK
+                break
+            end
+        end
 
         # Reset evaluation flags for moved images
         for i in 2:(N - 1)
@@ -202,5 +211,5 @@ function gp_neb_oie_naive(
     end
 
     i_max = argmax(energies[2:(end - 1)]) + 1
-    return NEBResult(path, converged, oracle_calls, i_max, history)
+    return NEBResult(path, converged, stop_reason, oracle_calls, i_max, history)
 end

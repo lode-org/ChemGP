@@ -135,6 +135,7 @@ Result of a NEB path optimization.
 struct NEBResult
     path::NEBPath
     converged::Bool
+    stop_reason::StopReason
     oracle_calls::Int
     max_energy_image::Int
     history::Dict{String,Vector}

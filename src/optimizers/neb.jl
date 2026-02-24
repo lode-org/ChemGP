@@ -437,25 +437,26 @@ function neb_optimize(
 
     ci_on = false
     converged = false
+    stop_reason = MAX_ITERATIONS
     baseline_force = 0.0
 
     stagnation_count = 0
-    prev_max_e = -Inf
+    prev_max_f = -Inf
 
     for iter in 1:(cfg.max_iter)
         forces, max_f, ci_f, i_max = compute_all_neb_forces(path, cfg; ci_on)
-        max_e = maximum(energies)
 
-        # Stagnation check
-        if abs(max_e - prev_max_e) < 1e-10
+        # Stagnation check (force-based)
+        if abs(max_f - prev_max_f) < 1e-10
             stagnation_count += 1
         else
             stagnation_count = 0
         end
-        prev_max_e = max_e
+        prev_max_f = max_f
 
         if stagnation_count >= 3
-            cfg.verbose && @printf("  Iter %d: Stagnation detected (max energy unchanged for 3 steps). Exiting.\n", iter)
+            cfg.verbose && @printf("  Iter %d: Force stagnation (max|F| unchanged for 3 steps). Exiting.\n", iter)
+            stop_reason = FORCE_STAGNATION
             break
         end
 
@@ -486,6 +487,7 @@ function neb_optimize(
             cfg.verbose &&
                 @printf("NEB converged at iter %d: max|F| = %.5f\n", iter, conv_metric)
             converged = true
+            stop_reason = CONVERGED
             break
         end
 
@@ -527,11 +529,18 @@ function neb_optimize(
         path.energies = energies
         path.gradients = gradients
 
-        on_step !== nothing && on_step(path, iter)
+        if on_step !== nothing
+            cb_result = on_step(path, iter)
+            if cb_result === :stop
+                cfg.verbose && println("  Stopped by on_step callback.")
+                stop_reason = USER_CALLBACK
+                break
+            end
+        end
     end
 
     i_max = argmax(energies[2:(end - 1)]) + 1
-    return NEBResult(path, converged, oracle_calls, i_max, history)
+    return NEBResult(path, converged, stop_reason, oracle_calls, i_max, history)
 end
 
 # ==============================================================================
@@ -732,28 +741,39 @@ function gp_neb_aie(
 
     ci_on = false
     converged = false
+    stop_reason = MAX_ITERATIONS
     prev_kern = nothing
     baseline_force = 0.0
 
     stagnation_count = 0
-    prev_max_e = -Inf
+    prev_max_f = -Inf
 
     for outer_iter in 1:(cfg.max_outer_iter)
         # Compute true forces
         forces_true, max_f_true, ci_f_true, i_max = compute_all_neb_forces(path, cfg; ci_on)
-        max_e = maximum(energies)
 
-        # Stagnation check
-        if abs(max_e - prev_max_e) < 1e-10
+        # Stagnation check (force-based)
+        if abs(max_f_true - prev_max_f) < 1e-10
             stagnation_count += 1
         else
             stagnation_count = 0
         end
-        prev_max_e = max_e
+        prev_max_f = max_f_true
+        cfg.verbose && stagnation_count > 0 &&
+            @printf("  Stagnation counter: %d/3\n", stagnation_count)
 
         if stagnation_count >= 3
-            cfg.verbose && @printf("  Outer %d: Stagnation detected (max energy unchanged for 3 steps). Exiting.\n", outer_iter)
+            cfg.verbose && @printf("  Outer %d: Force stagnation (max|F| unchanged for 3 steps). Exiting.\n", outer_iter)
+            stop_reason = FORCE_STAGNATION
             break
+        end
+
+        # Per-image force reporting
+        if cfg.verbose
+            for i in 2:(N - 1)
+                fi = norm(forces_true[i])
+                @printf("    Image %d: |F|=%.5f  E=%.4f\n", i, fi, energies[i])
+            end
         end
 
         push!(history["max_force"], max_f_true)
@@ -787,6 +807,7 @@ function gp_neb_aie(
         if conv_check && conv_metric < cfg.conv_tol
             cfg.verbose && println("GP-NEB-AIE converged!")
             converged = true
+            stop_reason = CONVERGED
             break
         end
 
@@ -818,11 +839,18 @@ function gp_neb_aie(
         path.energies = energies
         path.gradients = gradients
 
-        on_step !== nothing && on_step(path, outer_iter)
+        if on_step !== nothing
+            cb_result = on_step(path, outer_iter)
+            if cb_result === :stop
+                cfg.verbose && println("  Stopped by on_step callback.")
+                stop_reason = USER_CALLBACK
+                break
+            end
+        end
     end
 
     i_max = argmax(energies[2:(end - 1)]) + 1
-    return NEBResult(path, converged, oracle_calls, i_max, history)
+    return NEBResult(path, converged, stop_reason, oracle_calls, i_max, history)
 end
 
 # GP-NEB OIE variants are in neb_oie.jl (Koistinen) and neb_oie_naive.jl (pedagogical)

@@ -314,6 +314,16 @@ function gp_neb_oie(
         uneval[i] = true
     end
 
+    # Initial GP estimates for unevaluated images to avoid zero-energy stagnation
+    model_init, E_ref_init, y_std_init, _ = _train_neb_gp(
+        td, kernel, cfg, nothing, hess_X, hess_E, hess_G, n_hess, 0; images
+    )
+    for i in 2:(N - 1)
+        pred = predict(model_init, reshape(images[i], :, 1))
+        energies[i] = pred[1] * y_std_init + E_ref_init
+        gradients[i] = pred[2:end] .* y_std_init
+    end
+
     # Priority cascade state
     eval_next_early = 0   # image index from early stopping (priority 1)
     eval_next_ci = false   # should we evaluate CI next? (priority 2)
@@ -329,31 +339,18 @@ function gp_neb_oie(
     )
 
     converged = false
+    stop_reason = MAX_ITERATIONS
     prev_kern = nothing
     smallest_acc_force = Inf  # smallest accurate max|G_perp| at any image
     dedup_tol = cfg.conv_tol * 0.1
 
     stagnation_count = 0
-    prev_max_e = -Inf
+    prev_max_f = -Inf
 
     for outer_iter in 1:(cfg.max_outer_iter)
         # =====================================================================
         # STEP 1: Select which image to evaluate (priority cascade)
         # =====================================================================
-        
-        # Stagnation check
-        max_e = maximum(energies)
-        if abs(max_e - prev_max_e) < 1e-10
-            stagnation_count += 1
-        else
-            stagnation_count = 0
-        end
-        prev_max_e = max_e
-
-        if stagnation_count >= 3
-            cfg.verbose && @printf("  Outer %d: Stagnation detected (max energy unchanged for 3 steps). Exiting.\n", outer_iter)
-            break
-        end
 
         if eval_next_early > 0
             # Priority 1: image that caused early stopping
@@ -452,6 +449,7 @@ function gp_neb_oie(
                     oracle_calls
                 )
                 converged = true
+                stop_reason = CONVERGED
                 break
             end
         end
@@ -506,6 +504,22 @@ function gp_neb_oie(
             n_uneval
         )
 
+        # Stagnation check (force-based: detect when max force stops changing)
+        if abs(max_f - prev_max_f) < 1e-10
+            stagnation_count += 1
+        else
+            stagnation_count = 0
+        end
+        prev_max_f = max_f
+        cfg.verbose && stagnation_count > 0 &&
+            @printf("  Stagnation counter: %d/3\n", stagnation_count)
+
+        if stagnation_count >= 3
+            cfg.verbose && @printf("  Outer %d: Force stagnation (max|F| unchanged for 3 steps). Exiting.\n", outer_iter)
+            stop_reason = FORCE_STAGNATION
+            break
+        end
+
         # =====================================================================
         # STEP 4: Decide whether to relax or continue convergence check
         # =====================================================================
@@ -515,19 +529,23 @@ function gp_neb_oie(
         if max_f >= cfg.conv_tol
             # Forces above threshold -- need to relax
             start_relax = true
+            cfg.verbose && @printf("  Decision: relax (max|F|=%.5f >= tol=%.5f)\n", max_f, cfg.conv_tol)
         else
             # Forces below threshold -- convergence check phase
             if cfg.climbing_image && uneval[i_max]
                 # CI not yet evaluated -- evaluate it next (no relaxation)
                 eval_next_ci = true
                 start_relax = false
+                cfg.verbose && @printf("  Decision: eval CI image %d (unevaluated)\n", i_max)
             elseif cfg.climbing_image && ci_f >= ci_tol
                 # CI evaluated but its force is too high -- relax and re-check
                 start_relax = true
                 eval_next_ci = true
+                cfg.verbose && @printf("  Decision: relax + re-check CI (CI|F|=%.5f >= tol=%.5f)\n", ci_f, ci_tol)
             else
                 # All looks good so far -- keep evaluating without moving
                 start_relax = false
+                cfg.verbose && println("  Decision: continue convergence check (no relaxation)")
             end
         end
 
@@ -560,24 +578,27 @@ function gp_neb_oie(
             # Record which image caused early stopping (for priority 1 next iteration)
             if early_stop > 0
                 eval_next_early = early_stop
+                cfg.verbose && @printf("  Early stop: image %d will be evaluated next\n", early_stop)
             end
 
             # Reset: all intermediate images become unevaluated after relaxation
             for i in 2:(N - 1)
                 uneval[i] = true
             end
-            # Zero out energies/gradients for unevaluated images
-            for i in 2:(N - 1)
-                energies[i] = 0.0
-                gradients[i] = zeros(D)
-            end
             path.energies = energies
             path.gradients = gradients
         end
 
-        on_step !== nothing && on_step(path, outer_iter)
+        if on_step !== nothing
+            cb_result = on_step(path, outer_iter)
+            if cb_result === :stop
+                cfg.verbose && println("  Stopped by on_step callback.")
+                stop_reason = USER_CALLBACK
+                break
+            end
+        end
     end
 
     i_max = argmax(energies[2:(end - 1)]) + 1
-    return NEBResult(path, converged, oracle_calls, i_max, history)
+    return NEBResult(path, converged, stop_reason, oracle_calls, i_max, history)
 end

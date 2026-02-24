@@ -12,9 +12,6 @@
 # 6. Check convergence on true gradient norm
 # 7. If not converged, add new data and go to step 2
 
-using Distributions
-using SpecialFunctions
-
 """
     MinimizationConfig
 
@@ -25,6 +22,7 @@ All fields have sensible defaults via `@kwdef`.
 - `trust_radius::Float64`: Max distance from training data
 - `conv_tol::Float64`: Gradient norm convergence threshold
 - `max_iter::Int`: Max outer iterations (GP-guided steps)
+- `max_oracle_calls::Int`: Max oracle evaluations (0 = no cap)
 - `gp_opt_tol::Float64`: Convergence tolerance for GP inner optimization
 - `gp_train_iter::Int`: Nelder-Mead iterations for GP hyperparameter training
 - `n_initial_perturb::Int`: Number of perturbed initial points
@@ -48,7 +46,8 @@ All fields have sensible defaults via `@kwdef`.
 Base.@kwdef struct MinimizationConfig
     trust_radius::Float64 = 0.1     # Max distance from training data
     conv_tol::Float64 = 5e-3    # Gradient norm convergence threshold
-    max_iter::Int = 500     # Max outer iterations (oracle calls)
+    max_iter::Int = 500     # Max outer iterations (GP-guided steps)
+    max_oracle_calls::Int = 0   # 0 = no cap; >0 = hard limit on oracle evaluations
     gp_opt_tol::Float64 = 1e-2    # Convergence tolerance for GP inner optimization
     gp_train_iter::Int = 300     # Nelder-Mead iterations for GP hyperparameter training
     n_initial_perturb::Int = 4       # Number of perturbed initial points
@@ -81,6 +80,7 @@ struct MinimizationResult
     E_final::Float64                   # Final energy
     G_final::Vector{Float64}           # Final gradient
     converged::Bool                    # Whether convergence criterion was met
+    stop_reason::StopReason            # Why the optimizer terminated
     oracle_calls::Int                  # Total oracle evaluations
     trajectory::Vector{Vector{Float64}} # All evaluated configurations
     energies::Vector{Float64}          # All evaluated energies
@@ -99,6 +99,8 @@ Arguments:
 Keyword arguments:
 - `config`: `MinimizationConfig` with algorithm parameters
 - `training_data`: Optional pre-existing `TrainingData` to warm-start from
+- `on_step`: Optional callback `f(info::Dict) -> Any` called after each oracle evaluation.
+  Return `:stop` to trigger early termination.
 
 Returns a `MinimizationResult`.
 """
@@ -108,6 +110,7 @@ function gp_minimize(
     kernel;
     config::MinimizationConfig=MinimizationConfig(),
     training_data::Union{Nothing,TrainingData}=nothing,
+    on_step::Union{Function,Nothing}=nothing,
 )
     D = length(x_init)
     cfg = config
@@ -161,15 +164,17 @@ function gp_minimize(
     )
 
     converged = false
+    stop_reason = MAX_ITERATIONS
     eff_dedup = cfg.dedup_tol > 0 ? cfg.dedup_tol : cfg.conv_tol * 0.1
     prev_kern = nothing  # warm-start kernel across outer iterations
 
     stagnation_count = 0
-    prev_e_true = -Inf
+    prev_force = -Inf
 
     for outer_step in 1:(cfg.max_iter)
-        if oracle_calls >= 33
-            cfg.verbose && println("Reached oracle call cap (33). Stopping.")
+        if cfg.max_oracle_calls > 0 && oracle_calls >= cfg.max_oracle_calls
+            cfg.verbose && @printf("Reached oracle call cap (%d). Stopping.\n", cfg.max_oracle_calls)
+            stop_reason = ORACLE_CAP
             break
         end
 
@@ -182,6 +187,7 @@ function gp_minimize(
         #   Molecular kernels: fix_noise=true, low noise, data-dependent init
         #   Generic kernels:   normalize, optimize all hyperparameters
         cfg.verbose && @printf("Training GP on %d points...\n", npoints(td))
+        _t_train = time()
 
         if is_mol
             E_ref = td.energies[1]
@@ -218,6 +224,19 @@ function gp_minimize(
                 kernel, td.X, y_gp; noise_var=1e-2, grad_noise_var=1e-1, jitter=1e-3
             )
             train_model!(gp_model; iterations=cfg.gp_train_iter, verbose=cfg.verbose)
+        end
+
+        _dt_train = time() - _t_train
+        if cfg.verbose
+            @printf("  GP trained in %.2f s", _dt_train)
+            if gp_model.kernel isa AbstractMoleculeKernel
+                k = gp_model.kernel
+                @printf(" | sig_var=%.3e | inv_ls=[%s]",
+                    k.signal_variance,
+                    join([@sprintf("%.2e", l) for l in k.inv_lengthscales[1:min(3, length(k.inv_lengthscales))]], ", ") *
+                    (length(k.inv_lengthscales) > 3 ? ", ..." : ""))
+            end
+            println()
         end
 
         # Use RFF approximation if configured (faster for high-D systems)
@@ -322,6 +341,8 @@ function gp_minimize(
                 Optim.Options(; iterations=100, show_trace=false),
             )
             x_curr = Optim.minimizer(res_lcb)
+            cfg.verbose && @printf("  LCB candidate: obj=%.4f, dist_from_prev=%.4f\n",
+                Optim.minimum(res_lcb), norm(x_curr - x_prev))
         end
 
         # Per-atom max-move clip for 3D molecular systems
@@ -345,6 +366,8 @@ function gp_minimize(
             floor=cfg.adaptive_floor,
         )
         d_trust = trust_min_distance(x_curr, td.X, cfg.trust_metric; atom_types=cfg.atom_types)
+        cfg.verbose && @printf("  Trust: d=%.4f, thresh=%.4f (%s)\n",
+            d_trust, thresh, d_trust > thresh ? "CLIPPED" : "ok")
         if d_trust > thresh
             dist_fn = trust_distance_fn(cfg.trust_metric, cfg.atom_types)
             nearest_idx = argmin(
@@ -371,16 +394,19 @@ function gp_minimize(
 
         cfg.verbose && @printf("  True: E = %.4f | max|F_atom| = %.5f\n", E_true, G_norm)
 
-        # Stagnation check
-        if abs(E_true - prev_e_true) < 1e-10
+        # Stagnation check (force-based: detect when max force stops changing)
+        if abs(G_norm - prev_force) < 1e-10
             stagnation_count += 1
         else
             stagnation_count = 0
         end
-        prev_e_true = E_true
+        prev_force = G_norm
+        cfg.verbose && stagnation_count > 0 &&
+            @printf("  Stagnation counter: %d/3\n", stagnation_count)
 
         if stagnation_count >= 3
-            cfg.verbose && @printf("  Outer %d: Stagnation detected (energy unchanged for 3 steps). Exiting.\n", outer_step)
+            cfg.verbose && @printf("  Outer %d: Force stagnation (max|F| unchanged for 3 steps). Exiting.\n", outer_step)
+            stop_reason = FORCE_STAGNATION
             break
         end
 
@@ -412,6 +438,24 @@ function gp_minimize(
             )
         end
 
+        # on_step callback
+        if on_step !== nothing
+            step_info = Dict{String,Any}(
+                "step" => outer_step,
+                "energy" => E_true,
+                "max_force" => G_norm,
+                "oracle_calls" => oracle_calls,
+                "x" => copy(x_curr),
+                "training_points" => npoints(td),
+            )
+            cb_result = on_step(step_info)
+            if cb_result === :stop
+                cfg.verbose && println("  Stopped by on_step callback.")
+                stop_reason = USER_CALLBACK
+                break
+            end
+        end
+
         # Step 5: Check TRUE convergence
         if G_norm < cfg.conv_tol
             cfg.verbose && println("\n" * "="^60)
@@ -421,15 +465,18 @@ function gp_minimize(
             cfg.verbose && @printf("Oracle calls: %d\n", oracle_calls)
             cfg.verbose && println("="^60)
             converged = true
+            stop_reason = CONVERGED
             break
         end
 
         cfg.verbose && println()
     end
 
+    cfg.verbose && @printf("Stop reason: %s\n", stop_reason)
+
     E_final, G_final = oracle(x_curr)
 
     return MinimizationResult(
-        x_curr, E_final, G_final, converged, oracle_calls, trajectory, all_energies
+        x_curr, E_final, G_final, converged, stop_reason, oracle_calls, trajectory, all_energies
     )
 end

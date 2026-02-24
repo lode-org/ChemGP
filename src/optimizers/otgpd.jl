@@ -152,6 +152,7 @@ Result of an OTGPD saddle point search.
 struct OTGPDResult
     state::DimerState
     converged::Bool
+    stop_reason::StopReason
     oracle_calls::Int
     history::Dict{String,Vector}
 end
@@ -609,6 +610,7 @@ function otgpd(
     F_trans_prev = Float64[]
 
     converged = false
+    stop_reason = MAX_ITERATIONS
     hod_state = cfg.use_hod ? HODState(cfg.fps_history) : nothing
     n_atoms = div(D, 3)
 
@@ -857,6 +859,7 @@ function otgpd(
             cfg.verbose && @printf("Final Curvature: %+.6f\n", C_true)
             cfg.verbose && @printf("Oracle calls:    %d\n", oracle_calls)
             converged = true
+            stop_reason = CONVERGED
             break
         end
 
@@ -865,5 +868,5 @@ function otgpd(
         end
     end
 
-    return OTGPDResult(state, converged, oracle_calls, history)
+    return OTGPDResult(state, converged, stop_reason, oracle_calls, history)
 end

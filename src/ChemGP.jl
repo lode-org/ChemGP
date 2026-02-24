@@ -9,6 +9,44 @@ using KernelFunctions
 using ParameterHandling
 
 # ==============================================================================
+# Stop reason signaling
+# ==============================================================================
+
+"""
+    StopReason
+
+Enum indicating why an optimizer terminated.
+
+- `CONVERGED`: convergence criterion met
+- `MAX_ITERATIONS`: iteration limit reached
+- `ORACLE_CAP`: oracle call budget exhausted
+- `FORCE_STAGNATION`: force metric unchanged for consecutive steps
+- `USER_CALLBACK`: `on_step` callback returned `:stop`
+"""
+@enum StopReason begin
+    CONVERGED
+    MAX_ITERATIONS
+    ORACLE_CAP
+    FORCE_STAGNATION
+    USER_CALLBACK
+end
+
+"""
+    AbstractTracker
+
+Abstract type for optimization tracking backends (e.g., MLflow).
+Concrete types are provided by package extensions.
+"""
+abstract type AbstractTracker end
+
+# Stub functions that extensions override
+function log_metric! end
+function log_params! end
+function log_batch! end
+function finish_run! end
+function mlflow_callback end
+
+# ==============================================================================
 # Kernel infrastructure
 # ==============================================================================
 include("kernels/abstract.jl")
@@ -128,6 +166,12 @@ function atomsbase_neb_trajectory end
 # ==============================================================================
 # Exports
 # ==============================================================================
+
+# Stop reason
+export StopReason, CONVERGED, MAX_ITERATIONS, ORACLE_CAP, FORCE_STAGNATION, USER_CALLBACK
+
+# Tracking interface (concrete types in extensions)
+export AbstractTracker, log_metric!, log_params!, log_batch!, finish_run!, mlflow_callback
 
 # Types
 export GPModel, TrainingData, add_point!, npoints, normalize

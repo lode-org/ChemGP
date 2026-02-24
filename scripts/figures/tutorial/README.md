@@ -113,6 +113,7 @@ CSV convergence data is exported alongside PDFs for optional R/BRMS analysis.
 | `mb_gp_progression.pdf` | MB-3 | GPR |
 | `mb_variance.pdf` | MB-4 | GPR |
 | `mb_hyperparams.pdf` | MB-5 | GPR |
+| `mb_dimer_convergence.pdf` | MB-6 | GP-Dimer |
 | `mb_trust_region.pdf` | MB-7 | GP-Dimer |
 | `leps_contour.pdf` | LEPS-1 | GP-NEB |
 | `leps_neb.pdf` | LEPS-2 | GP-NEB |
@@ -126,6 +127,71 @@ CSV convergence data is exported alongside PDFs for optional R/BRMS analysis.
 | `hcn_neb_profile.pdf` | REAL-1 | Examples |
 | `hcn_landscape.pdf` | REAL-1B | Examples |
 | `hcn_convergence.pdf` | REAL-2 | Examples |
+
+## MLflow live tracking
+
+All GP optimizers support an `on_step` callback for live monitoring. The
+`ChemGPMLflowExt` package extension provides an MLflow REST client that logs
+metrics automatically when `HTTP` and `JSON3` are loaded.
+
+### Quick start
+
+1. Start the MLflow tracking server:
+
+```bash
+pixi run mlflow-ui
+```
+
+2. Open <http://localhost:5000> in a browser.
+
+3. Use the MLflow callback in your script:
+
+```julia
+using ChemGP, HTTP, JSON3
+
+# Creates experiment "ChemGP" and starts a new run
+tracker = MLflowTracker(; uri="http://localhost:5000", experiment="ChemGP")
+
+# Log optimizer config as parameters
+log_params!(tracker, Dict(
+    "trust_radius" => "0.15",
+    "conv_tol" => "0.01",
+    "kernel" => "MolInvDistSE",
+))
+
+# Get a callback for the minimize optimizer
+cb = mlflow_callback(tracker, :minimize)
+
+# Run with live tracking
+result = gp_minimize(oracle, x_init, kernel; config=cfg, on_step=cb)
+
+# Finalize
+finish_run!(tracker; status=result.converged ? "FINISHED" : "FAILED")
+```
+
+For NEB, use `:neb` (or `:neb_aie`, `:neb_oie`) as the optimizer type.
+For the dimer method, use `:dimer`.
+
+### on_step callback protocol
+
+All optimizers accept `on_step::Union{Function,Nothing}=nothing`. Return
+`:stop` from the callback to trigger early termination (`USER_CALLBACK`
+stop reason).
+
+- **minimize/dimer**: `on_step(info::Dict{String,Any})` with keys
+  `"step"`, `"energy"`, `"max_force"` (or `"force_trans"`, `"curvature"`),
+  `"oracle_calls"`, `"training_points"`.
+- **NEB variants**: `on_step(path::NEBPath, iter::Int)`.
+
+### StopReason
+
+All result structs include a `stop_reason::StopReason` field:
+
+- `CONVERGED` -- convergence criterion met
+- `MAX_ITERATIONS` -- iteration limit reached
+- `ORACLE_CAP` -- oracle call budget exhausted (minimize only, via `max_oracle_calls`)
+- `FORCE_STAGNATION` -- force metric unchanged for 3 consecutive steps
+- `USER_CALLBACK` -- `on_step` returned `:stop`
 
 ## Styling
 
