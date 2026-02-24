@@ -38,9 +38,14 @@ const DATA_DIR = joinpath(@__DIR__, "data")
 const SYS_HCN = load_system(joinpath(DATA_DIR, "hcn.extxyz"))
 const SYS_HNC = load_system(joinpath(DATA_DIR, "hnc.extxyz"))
 
-const (; positions = X_HCN, atomic_numbers = ATOMIC_NUMBERS, box = BOX) =
-    chemgp_coords(SYS_HCN)
-const (; positions = X_HNC) = chemgp_coords(SYS_HNC)
+let _c = chemgp_coords(SYS_HCN)
+    global const X_HCN = _c.positions
+    global const ATOMIC_NUMBERS = _c.atomic_numbers
+    global const BOX = _c.box
+end
+let _c = chemgp_coords(SYS_HNC)
+    global const X_HNC = _c.positions
+end
 
 const OUTDIR = get(ENV, "CHEMGP_OUTDIR", "results_hcn_neb")
 
@@ -141,7 +146,7 @@ function main()
             max_outer_iter=50,
             trust_radius=0.1,
             atom_types=Int[6, 7, 1],
-            max_gp_points=40,  # per-bead subset caps GP training at O(M^3); AIE grows fast (8 imgs/iter)
+            max_gp_points=10,  # per-bead subset caps GP training at O(M^3); AIE grows fast (8 imgs/iter)
             rff_features=300,  # RFF approximation: train hyperparams on 40-point subset, predict on all N
             verbose=true,
         )
