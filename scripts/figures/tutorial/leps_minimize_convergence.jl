@@ -59,32 +59,21 @@ function main()
     classical_fatom = Float64[]
     x_curr = copy(x_init)
     max_classical_iter = 200
-    lbfgs_hist = LBFGSHistory(10)
 
     E_curr, G_curr = oracle(x_curr)
     push!(classical_fatom, max_fatom(G_curr))
 
-    for iter in 1:max_classical_iter
-        d = compute_direction(lbfgs_hist, G_curr)
+    opt_state = OptimState(10)
 
-        # Backtracking line search
-        alpha = 0.1
-        x_new = x_curr - alpha .* d
+    for iter in 1:max_classical_iter
+        step = optim_step!(opt_state, x_curr, -G_curr, 0.1)
+        x_new = x_curr + step
         E_new, G_new = oracle(x_new)
 
-        for _ in 1:10
-            if E_new < E_curr
-                break
-            end
-            alpha *= 0.5
-            x_new = x_curr - alpha .* d
+        # Accept if energy decreased, otherwise halve step
+        if E_new > E_curr
+            x_new = x_curr + 0.5 .* step
             E_new, G_new = oracle(x_new)
-        end
-
-        s = x_new - x_curr
-        y = G_new - G_curr
-        if dot(s, y) > 1e-10
-            push_pair!(lbfgs_hist, s, y)
         end
 
         x_curr = x_new

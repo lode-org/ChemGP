@@ -233,7 +233,7 @@ weakdeps = ["SparseArrays"]
 
 [[deps.ChemGP]]
 deps = ["ForwardDiff", "HDF5", "KernelFunctions", "LinearAlgebra", "Optim", "ParameterHandling", "Printf", "Statistics"]
-path = "../../.."
+path = "/home/rgoswami/Git/Github/Julia/ChemGP"
 uuid = "eed806ec-7d39-480c-b706-b5b92225bb88"
 version = "1.0.0-DEV"
 
