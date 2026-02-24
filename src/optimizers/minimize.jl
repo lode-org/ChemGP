@@ -164,6 +164,9 @@ function gp_minimize(
     eff_dedup = cfg.dedup_tol > 0 ? cfg.dedup_tol : cfg.conv_tol * 0.1
     prev_kern = nothing  # warm-start kernel across outer iterations
 
+    stagnation_count = 0
+    prev_e_true = -Inf
+
     for outer_step in 1:(cfg.max_iter)
         if oracle_calls >= 33
             cfg.verbose && println("Reached oracle call cap (33). Stopping.")
@@ -367,6 +370,19 @@ function gp_minimize(
         end
 
         cfg.verbose && @printf("  True: E = %.4f | max|F_atom| = %.5f\n", E_true, G_norm)
+
+        # Stagnation check
+        if abs(E_true - prev_e_true) < 1e-10
+            stagnation_count += 1
+        else
+            stagnation_count = 0
+        end
+        prev_e_true = E_true
+
+        if stagnation_count >= 3
+            cfg.verbose && @printf("  Outer %d: Stagnation detected (energy unchanged for 3 steps). Exiting.\n", outer_step)
+            break
+        end
 
         # Explosion recovery
         if !isfinite(E_true) || E_true > 1e6

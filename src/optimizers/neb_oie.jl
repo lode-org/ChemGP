@@ -333,10 +333,28 @@ function gp_neb_oie(
     smallest_acc_force = Inf  # smallest accurate max|G_perp| at any image
     dedup_tol = cfg.conv_tol * 0.1
 
+    stagnation_count = 0
+    prev_max_e = -Inf
+
     for outer_iter in 1:(cfg.max_outer_iter)
         # =====================================================================
         # STEP 1: Select which image to evaluate (priority cascade)
         # =====================================================================
+        
+        # Stagnation check
+        max_e = maximum(energies)
+        if abs(max_e - prev_max_e) < 1e-10
+            stagnation_count += 1
+        else
+            stagnation_count = 0
+        end
+        prev_max_e = max_e
+
+        if stagnation_count >= 3
+            cfg.verbose && @printf("  Outer %d: Stagnation detected (max energy unchanged for 3 steps). Exiting.\n", outer_iter)
+            break
+        end
+
         if eval_next_early > 0
             # Priority 1: image that caused early stopping
             i_eval = eval_next_early
