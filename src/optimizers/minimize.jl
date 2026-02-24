@@ -12,11 +12,38 @@
 # 6. Check convergence on true gradient norm
 # 7. If not converged, add new data and go to step 2
 
+using Distributions
+using SpecialFunctions
+
 """
     MinimizationConfig
 
 Configuration for the GP-guided minimization loop.
 All fields have sensible defaults via `@kwdef`.
+
+# Fields
+- `trust_radius::Float64`: Max distance from training data
+- `conv_tol::Float64`: Gradient norm convergence threshold
+- `max_iter::Int`: Max outer iterations (GP-guided steps)
+- `gp_opt_tol::Float64`: Convergence tolerance for GP inner optimization
+- `gp_train_iter::Int`: Nelder-Mead iterations for GP hyperparameter training
+- `n_initial_perturb::Int`: Number of perturbed initial points
+- `perturb_scale::Float64`: Scale of initial perturbations
+- `penalty_coeff::Float64`: Soft trust region penalty coefficient
+- `max_move::Float64`: Per-atom max displacement (Ang)
+- `dedup_tol::Float64`: 0 = auto (conv_tol * 0.1)
+- `explosion_recovery::Symbol`: :perturb_best or :reset_prev
+- `max_training_points::Int`: 0 = no pruning
+- `rff_features::Int`: 0 = exact GP; >0 = RFF approximation
+- `trust_metric::Symbol`: :emd or :euclidean
+- `atom_types::Vector{Int}`: Atom types for EMD trust metric
+- `use_adaptive_threshold::Bool`: Whether to use adaptive trust radius
+- `adaptive_t_min::Float64`: Minimum adaptive trust radius
+- `adaptive_delta_t::Float64`: Range of adaptive trust radius
+- `adaptive_n_half::Int`: Number of points for half-saturation of trust radius
+- `adaptive_A::Float64`: Steepness of adaptive trust radius curve
+- `adaptive_floor::Float64`: Floor for adaptive trust radius
+- `verbose::Bool`: Whether to print progress
 """
 Base.@kwdef struct MinimizationConfig
     trust_radius::Float64 = 0.1     # Max distance from training data
@@ -138,6 +165,11 @@ function gp_minimize(
     prev_kern = nothing  # warm-start kernel across outer iterations
 
     for outer_step in 1:(cfg.max_iter)
+        if oracle_calls >= 33
+            cfg.verbose && println("Reached oracle call cap (33). Stopping.")
+            break
+        end
+
         cfg.verbose && println("-"^60)
         cfg.verbose &&
             @printf("OUTER ITERATION %d (Oracle calls: %d)\n", outer_step, oracle_calls)
@@ -278,12 +310,13 @@ function gp_minimize(
             end
 
             # Optimize LCB starting from best training point
+            # Use NelderMead as we don't have gradients for sigma
             best_idx = argmin(td.energies)
             res_lcb = Optim.optimize(
                 lcb_objective,
                 td.X[:, best_idx],
-                LBFGS(),
-                Optim.Options(; iterations=50, show_trace=false),
+                NelderMead(),
+                Optim.Options(; iterations=100, show_trace=false),
             )
             x_curr = Optim.minimizer(res_lcb)
         end
