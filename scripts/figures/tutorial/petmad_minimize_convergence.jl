@@ -79,16 +79,19 @@ function run_convergence()
     kernel = MolInvDistSE(1.0, [1.0], Float64[])
 
     gp_config = MinimizationConfig(;
-        trust_radius=0.15,
-        conv_tol=0.015,
+        trust_radius=0.08,
+        conv_tol=0.05,
         max_iter=80,
         gp_opt_tol=1e-2,
-        gp_train_iter=200,
+        gp_train_iter=100,
         n_initial_perturb=4,
-        perturb_scale=0.08,
+        perturb_scale=0.05,
         penalty_coeff=1e3,
-        max_move=0.1,
+        max_move=0.05,
+        dedup_tol=1e-4,
         explosion_recovery=:perturb_best,
+        rff_features=200,
+        max_training_points=50,
         verbose=true,
     )
 
@@ -102,32 +105,20 @@ function run_convergence()
     classical_fatom = Float64[]
     x_curr = copy(x_init)
     max_classical_iter = 200
-    lbfgs_hist = LBFGSHistory(10)
+    opt_state = OptimState(10)
 
     E_curr, G_curr = oracle(x_curr)
     push!(classical_fatom, max_fatom(G_curr))
 
     for iter in 1:max_classical_iter
-        d = compute_direction(lbfgs_hist, G_curr)
-
-        # Backtracking line search
-        alpha = 0.1
-        x_new = x_curr - alpha .* d
+        step = optim_step!(opt_state, x_curr, -G_curr, 0.1)
+        x_new = x_curr + step
         E_new, G_new = oracle(x_new)
 
-        for _ in 1:10
-            if E_new < E_curr
-                break
-            end
-            alpha *= 0.5
-            x_new = x_curr - alpha .* d
+        # Accept if energy decreased, otherwise halve step
+        if E_new > E_curr
+            x_new = x_curr + 0.5 .* step
             E_new, G_new = oracle(x_new)
-        end
-
-        s = x_new - x_curr
-        y = G_new - G_curr
-        if dot(s, y) > 1e-10
-            push_pair!(lbfgs_hist, s, y)
         end
 
         x_curr = x_new
@@ -136,7 +127,7 @@ function run_convergence()
 
         push!(classical_fatom, max_fatom(G_curr))
 
-        if max_fatom(G_curr) < 0.015
+        if max_fatom(G_curr) < 0.05
             println("Classical converged at iter $iter")
             break
         end
@@ -220,7 +211,7 @@ function main()
         linewidth=1.5,
         label="Classical L-BFGS",
     )
-    hlines!(ax, [0.015]; color=:gray, linewidth=0.8, linestyle=:dash)
+    hlines!(ax, [0.05]; color=:gray, linewidth=0.8, linestyle=:dash)
 
     axislegend(ax; position=:rt, framevisible=false, labelsize=10)
 

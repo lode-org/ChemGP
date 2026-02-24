@@ -74,12 +74,16 @@ function run_rff_comparison()
     println("Collecting training data from GP-minimization...")
     kernel_init = MolInvDistSE(1.0, [1.0], Float64[])
     config = MinimizationConfig(;
-        trust_radius=0.15,
+        trust_radius=0.08,
         conv_tol=0.05,
         max_iter=30,
-        gp_train_iter=200,
+        gp_train_iter=100,
         n_initial_perturb=6,
-        perturb_scale=0.08,
+        perturb_scale=0.05,
+        max_move=0.05,
+        dedup_tol=1e-4,
+        rff_features=200,
+        max_training_points=40,
         verbose=false,
     )
     result = gp_minimize(oracle, copy(x_init), kernel_init; config=config)
