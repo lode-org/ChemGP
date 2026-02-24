@@ -86,6 +86,7 @@ Result of a GP-dimer saddle point search.
 struct DimerResult
     state::DimerState               # Final dimer state (position + orientation)
     converged::Bool                 # Whether convergence criterion was met
+    stop_reason::StopReason         # Why the optimizer terminated
     oracle_calls::Int               # Total oracle evaluations
     history::Dict{String,Vector}    # Convergence history
 end
@@ -675,6 +676,8 @@ Keyword arguments:
 - `config`: `DimerConfig` with algorithm parameters
 - `training_data`: Optional pre-existing `TrainingData`
 - `dimer_sep`: Dimer half-separation (default 0.01)
+- `on_step`: Optional callback `f(info::Dict) -> Any` called after each oracle evaluation.
+  Return `:stop` to trigger early termination.
 
 The algorithm alternates between:
 1. Training the GP on accumulated oracle data
@@ -696,6 +699,7 @@ function gp_dimer(
     config::DimerConfig=DimerConfig(),
     training_data::Union{Nothing,TrainingData}=nothing,
     dimer_sep::Float64=0.01,
+    on_step::Union{Function,Nothing}=nothing,
 )
     D = length(x_init)
     cfg = config
@@ -762,8 +766,9 @@ function gp_dimer(
     F_trans_prev = Float64[]
 
     converged = false
+    stop_reason = MAX_ITERATIONS
     stagnation_count = 0
-    prev_e_true = -Inf
+    prev_f_true = -Inf
 
     for outer_iter in 1:(cfg.max_outer_iter)
         cfg.verbose && println("-"^70)
@@ -890,16 +895,26 @@ function gp_dimer(
             "  True: E = %8.4f | |F| = %.5f | C = %+.3e\n", E_true, F_norm_true, C_true
         )
 
-        # Stagnation check
-        if abs(E_true - prev_e_true) < 1e-10
+        # Force decomposition for verbose output
+        if cfg.verbose
+            F_par = dot(G_true, state.orient)
+            F_perp_norm = norm(G_true - F_par * state.orient)
+            @printf("  Force decomp: F_par=%+.5f | F_perp=%.5f\n", F_par, F_perp_norm)
+        end
+
+        # Stagnation check (force-based: detect when translational force stops changing)
+        if abs(F_norm_true - prev_f_true) < 1e-10
             stagnation_count += 1
         else
             stagnation_count = 0
         end
-        prev_e_true = E_true
+        prev_f_true = F_norm_true
+        cfg.verbose && stagnation_count > 0 &&
+            @printf("  Stagnation counter: %d/3\n", stagnation_count)
 
         if stagnation_count >= 3
-            cfg.verbose && @printf("  Outer %d: Stagnation detected (energy unchanged for 3 steps). Exiting.\n", outer_iter)
+            cfg.verbose && @printf("  Outer %d: Force stagnation (|F_trans| unchanged for 3 steps). Exiting.\n", outer_iter)
+            stop_reason = FORCE_STAGNATION
             break
         end
 
@@ -913,6 +928,26 @@ function gp_dimer(
         add_point!(td, state.R, E_true, G_true)
         add_point!(td, R1, E1_true, G1_true)
 
+        # on_step callback
+        if on_step !== nothing
+            step_info = Dict{String,Any}(
+                "step" => outer_iter,
+                "energy" => E_true,
+                "force_trans" => F_norm_true,
+                "curvature" => C_true,
+                "oracle_calls" => oracle_calls,
+                "R" => copy(state.R),
+                "orient" => copy(state.orient),
+                "training_points" => npoints(td),
+            )
+            cb_result = on_step(step_info)
+            if cb_result === :stop
+                cfg.verbose && println("  Stopped by on_step callback.")
+                stop_reason = USER_CALLBACK
+                break
+            end
+        end
+
         # Check true convergence (small force + negative curvature)
         if F_norm_true < cfg.T_force_true && C_true < 0.0
             cfg.verbose && println("\n" * "="^70)
@@ -923,6 +958,7 @@ function gp_dimer(
             cfg.verbose && @printf("Final Curvature: %+.6f\n", C_true)
             cfg.verbose && @printf("Oracle calls:    %d\n", oracle_calls)
             converged = true
+            stop_reason = CONVERGED
             break
         end
 
@@ -933,5 +969,7 @@ function gp_dimer(
         cfg.verbose && println()
     end
 
-    return DimerResult(state, converged, oracle_calls, history)
+    cfg.verbose && @printf("Stop reason: %s\n", stop_reason)
+
+    return DimerResult(state, converged, stop_reason, oracle_calls, history)
 end

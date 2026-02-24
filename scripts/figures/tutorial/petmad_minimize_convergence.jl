@@ -79,16 +79,15 @@ function run_convergence()
     kernel = MolInvDistSE(1.0, [1.0], Float64[])
 
     gp_config = MinimizationConfig(;
-        trust_radius=0.08,
+        trust_radius=0.15,
         conv_tol=0.05,
         max_iter=80,
         gp_opt_tol=1e-2,
-        gp_train_iter=100,
+        gp_train_iter=200,
         n_initial_perturb=4,
-        perturb_scale=0.05,
+        perturb_scale=0.08,
         penalty_coeff=1e3,
-        max_move=0.05,
-        dedup_tol=1e-4,
+        max_move=0.1,
         explosion_recovery=:perturb_best,
         rff_features=200,
         max_training_points=50,

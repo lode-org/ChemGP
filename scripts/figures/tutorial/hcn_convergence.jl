@@ -58,10 +58,11 @@ function run_convergence()
             conv_tol=0.05,
             gp_train_iter=300,
             max_outer_iter=50,
-            trust_radius=0.1,
+            trust_radius=0.15,
             atom_types=Int[6, 7, 1],
             max_gp_points=40,
             rff_features=300,
+            verbose=true,
         )
         result_aie = gp_neb_aie(oracle, X_HCN, X_HNC, kernel; config=gp_cfg)
     catch e
@@ -82,11 +83,12 @@ function run_convergence()
             ew_k_max=9.72,
             conv_tol=0.05,
             gp_train_iter=300,
-            max_outer_iter=80,
-            trust_radius=0.1,
+            max_outer_iter=120,
+            trust_radius=0.15,
             atom_types=Int[6, 7, 1],
-            max_gp_points=10,
+            max_gp_points=40,
             rff_features=300,
+            verbose=true,
         )
         result_oie = gp_neb_oie(oracle, X_HCN, X_HNC, kernel; config=oie_cfg)
     catch e

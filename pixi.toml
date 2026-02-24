@@ -12,6 +12,7 @@ fmt = { cmd = "julia --project=. -e 'using JuliaFormatter; format(\".\")'", desc
 gen-readme = { cmd = "emacs --batch readme_src.org --eval '(require (quote ox-md))' --eval '(org-md-export-to-markdown)' && mv readme_src.md README.md", description = "Export readme_src.org to README.md" }
 lint = { cmd = "julia --project=. -e 'using JuliaFormatter; exit(format(\".\", overwrite=false) ? 0 : 1)' && uvx pre-commit run --all-files", description = "Check formatting and run all pre-commit hooks" }
 pre-commit = { cmd = "uvx pre-commit run --all-files", description = "Run all pre-commit hooks" }
+mlflow-ui = { cmd = "mlflow ui --host 0.0.0.0 --port 5000", description = "Start MLflow tracking UI" }
 
 # rgpot build tasks (for RPC integration with external potentials)
 rgpot-clone = { cmd = "test -d rgpot || git clone https://github.com/OmniPotentRPC/rgpot.git rgpot", description = "Clone rgpot if not already present" }
@@ -22,6 +23,7 @@ integration-test = { cmd = "RGPOT_BUILD_DIR=rgpot/builddir julia --project=. tes
 
 [dependencies]
 julia = ">=1.12.2,<1.13"
+mlflow = ">=2.0"
 pycapnp = ">=2.0"
 ase = ">=3.27.0,<4"
 capnproto = ">=1.0.2,<2"
