@@ -58,24 +58,26 @@ function save_figure(fig, name)
     return path
 end
 
-# Helper: evaluate oracle on a 2D grid
+# Helper: evaluate oracle on a 2D grid.
+# Returns matrix E of shape (nx, ny) in Makie convention: E[i, j] = f(x[i], y[j]).
 function eval_grid(oracle, x_range, y_range)
     nx, ny = length(x_range), length(y_range)
-    E = zeros(ny, nx)
-    for (j, x) in enumerate(x_range), (i, y) in enumerate(y_range)
+    E = zeros(nx, ny)
+    for (i, x) in enumerate(x_range), (j, y) in enumerate(y_range)
         e, _ = oracle([x, y])
         E[i, j] = e
     end
     return E
 end
 
-# Helper: GP predict on a 2D grid, returns (E_mean, E_var) matrices
+# Helper: GP predict on a 2D grid, returns (E_mean, E_var) matrices.
+# Matrices have shape (nx, ny) in Makie convention.
 function gp_predict_grid(model, x_range, y_range, y_mean, y_std)
     nx, ny = length(x_range), length(y_range)
-    E_mean = zeros(ny, nx)
-    E_var = zeros(ny, nx)
-    for (j, x) in enumerate(x_range)
-        for (i, y) in enumerate(y_range)
+    E_mean = zeros(nx, ny)
+    E_var = zeros(nx, ny)
+    for (i, x) in enumerate(x_range)
+        for (j, y) in enumerate(y_range)
             X_test = reshape([x, y], 2, 1)
             mu, var = predict_with_variance(model, X_test)
             E_mean[i, j] = mu[1] * y_std + y_mean

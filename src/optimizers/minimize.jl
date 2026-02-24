@@ -35,6 +35,7 @@ Base.@kwdef struct MinimizationConfig
     dedup_tol::Float64 = 0.0         # 0 = auto (conv_tol * 0.1)
     explosion_recovery::Symbol = :perturb_best  # or :reset_prev
     max_training_points::Int = 0     # 0 = no pruning
+    rff_features::Int = 0            # 0 = exact GP; >0 = RFF approximation
     verbose::Bool = true
 end
 
@@ -137,12 +138,32 @@ function gp_minimize(
         # Step 2: Train GP on current data
         y_gp, y_mean, y_std = normalize(td)
 
-        model = GPModel(
+        gp_model = GPModel(
             kernel, td.X, y_gp; noise_var=1e-2, grad_noise_var=1e-1, jitter=1e-3
         )
 
         cfg.verbose && @printf("Training GP on %d points...\n", npoints(td))
-        train_model!(model; iterations=cfg.gp_train_iter)
+        train_model!(gp_model; iterations=cfg.gp_train_iter)
+
+        # Use RFF approximation if configured (faster for high-D systems)
+        model = if cfg.rff_features > 0 && kernel isa MolInvDistSE
+            rff = build_rff(
+                gp_model.kernel,
+                td.X,
+                y_gp,
+                cfg.rff_features;
+                noise_var=1e-2,
+                grad_noise_var=1e-1,
+            )
+            cfg.verbose && @printf(
+                "  RFF: %d features, %d training points\n",
+                cfg.rff_features,
+                npoints(td)
+            )
+            rff
+        else
+            gp_model
+        end
 
         # Step 3: Optimize on GP surface using L-BFGS
         # Objective: GP-predicted energy + soft trust region penalty

@@ -38,9 +38,9 @@ Approximate locations of the three local minima of the Muller-Brown surface.
 - Minimum C ≈ (-0.050, 0.467), E ≈ -80.8
 """
 const MULLER_BROWN_MINIMA = [
-    [-0.558, 1.442],   # Deepest minimum (A)
-    [0.623, 0.028],    # Second minimum (B)
-    [-0.050, 0.467],   # Shallowest minimum (C)
+    [-0.558224, 1.441726],   # Deepest minimum (A)
+    [0.623499, 0.028038],    # Second minimum (B)
+    [-0.050011, 0.466694],   # Shallowest minimum (C)
 ]
 
 """
@@ -52,8 +52,8 @@ Approximate locations of the two saddle points of the Muller-Brown surface.
 - Saddle 2 ≈ (0.212, 0.293), E ≈ -72.2 (between B and C)
 """
 const MULLER_BROWN_SADDLES = [
-    [-0.822, 0.624],   # Higher saddle (between A and C)
-    [0.212, 0.293],    # Lower saddle (between B and C)
+    [-0.822002, 0.624313],   # Higher saddle (between A and C)
+    [0.212487, 0.292988],    # Lower saddle (between B and C)
 ]
 
 """
