@@ -439,8 +439,25 @@ function neb_optimize(
     converged = false
     baseline_force = 0.0
 
+    stagnation_count = 0
+    prev_max_e = -Inf
+
     for iter in 1:(cfg.max_iter)
         forces, max_f, ci_f, i_max = compute_all_neb_forces(path, cfg; ci_on)
+        max_e = maximum(energies)
+
+        # Stagnation check
+        if abs(max_e - prev_max_e) < 1e-10
+            stagnation_count += 1
+        else
+            stagnation_count = 0
+        end
+        prev_max_e = max_e
+
+        if stagnation_count >= 3
+            cfg.verbose && @printf("  Iter %d: Stagnation detected (max energy unchanged for 3 steps). Exiting.\n", iter)
+            break
+        end
 
         push!(history["max_force"], max_f)
         push!(history["ci_force"], ci_f)
@@ -718,9 +735,26 @@ function gp_neb_aie(
     prev_kern = nothing
     baseline_force = 0.0
 
+    stagnation_count = 0
+    prev_max_e = -Inf
+
     for outer_iter in 1:(cfg.max_outer_iter)
         # Compute true forces
         forces_true, max_f_true, ci_f_true, i_max = compute_all_neb_forces(path, cfg; ci_on)
+        max_e = maximum(energies)
+
+        # Stagnation check
+        if abs(max_e - prev_max_e) < 1e-10
+            stagnation_count += 1
+        else
+            stagnation_count = 0
+        end
+        prev_max_e = max_e
+
+        if stagnation_count >= 3
+            cfg.verbose && @printf("  Outer %d: Stagnation detected (max energy unchanged for 3 steps). Exiting.\n", outer_iter)
+            break
+        end
 
         push!(history["max_force"], max_f_true)
         push!(history["ci_force"], ci_f_true)

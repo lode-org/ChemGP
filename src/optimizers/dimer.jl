@@ -762,6 +762,8 @@ function gp_dimer(
     F_trans_prev = Float64[]
 
     converged = false
+    stagnation_count = 0
+    prev_e_true = -Inf
 
     for outer_iter in 1:(cfg.max_outer_iter)
         cfg.verbose && println("-"^70)
@@ -887,6 +889,19 @@ function gp_dimer(
         cfg.verbose && @printf(
             "  True: E = %8.4f | |F| = %.5f | C = %+.3e\n", E_true, F_norm_true, C_true
         )
+
+        # Stagnation check
+        if abs(E_true - prev_e_true) < 1e-10
+            stagnation_count += 1
+        else
+            stagnation_count = 0
+        end
+        prev_e_true = E_true
+
+        if stagnation_count >= 3
+            cfg.verbose && @printf("  Outer %d: Stagnation detected (energy unchanged for 3 steps). Exiting.\n", outer_iter)
+            break
+        end
 
         # Store history
         push!(history["E_true"], E_true)
