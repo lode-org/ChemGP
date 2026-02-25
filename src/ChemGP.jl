@@ -7,6 +7,7 @@ using Printf
 using ForwardDiff
 using KernelFunctions
 using ParameterHandling
+using Sockets
 
 # ==============================================================================
 # Stop reason signaling
@@ -104,6 +105,7 @@ include("oracles/rpc.jl")
 # ==============================================================================
 # Optimization methods
 # ==============================================================================
+include("optimizers/scg.jl")
 include("optimizers/lbfgs.jl")
 include("optimizers/trust_region.jl")
 include("optimizers/minimize.jl")
@@ -163,6 +165,16 @@ Requires `using AtomsBase` to activate the package extension.
 """
 function atomsbase_neb_trajectory end
 
+"""
+    make_mol_kernel(sys; frozen_indices=Int[], kernel_type=MolInvDistSE, kwargs...)
+
+Build a type-aware molecular kernel from an AtomsBase system, automatically
+generating the pair-type scheme from atomic species.
+
+Requires `using AtomsBase` to activate the package extension.
+"""
+function make_mol_kernel end
+
 # ==============================================================================
 # Exports
 # ==============================================================================
@@ -177,7 +189,8 @@ export AbstractTracker, log_metric!, log_params!, log_batch!, finish_run!, mlflo
 export GPModel, TrainingData, add_point!, npoints, normalize
 
 # GP core
-export train_model!, predict, predict_with_variance, build_full_covariance
+export train_model!, predict, predict_with_variance, build_full_covariance, nll_and_grad
+export scg_optimize
 export RFFModel, build_rff
 
 # Kernels
@@ -185,7 +198,7 @@ export AbstractMoleculeKernel
 export MolInvDistSE, MolInvDistMatern52, MolInvDistMatern32
 export CartesianSE, init_cartesian_se, init_mol_invdist_se
 export OffsetKernel, MolSumKernel, MolProductKernel
-export kernel_blocks, compute_inverse_distances
+export kernel_blocks, kernel_blocks_and_hypergrads, compute_inverse_distances, build_pair_scheme
 
 # Distance metrics
 export interatomic_distances, max_1d_log_distance, rmsd_distance
@@ -234,8 +247,9 @@ export min_distance_to_data, check_interatomic_ratio, remove_rigid_body_modes!
 # I/O
 export write_neb_trajectory, write_neb_dat, write_convergence_csv
 export write_neb_hdf5, make_neb_writer, make_neb_hdf5_writer, ELEMENT_SYMBOLS
+export read_extxyz, SYMBOL_TO_ATOMIC_NUMBER
 
 # AtomsBase integration (available when AtomsBase is loaded)
-export chemgp_coords, atomsbase_system, atomsbase_neb_trajectory
+export chemgp_coords, atomsbase_system, atomsbase_neb_trajectory, make_mol_kernel
 
 end
