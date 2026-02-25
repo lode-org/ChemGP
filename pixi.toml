@@ -40,6 +40,8 @@ catch2 = ">=3.7.0"
 openblas = ">=0.3.28"
 xtensor = ">=0.25.0"
 fortran-compiler = ">=1.9.0"
+eon = ">=2.9.0,<3"
+libtorch = { version = ">=2.9", build = "cpu*" }
 
 [environments]
 docs = { features = ["docs"] }
@@ -51,27 +53,50 @@ uv = ">=0.6.0"
 [feature.figures.tasks]
 fig-install = { cmd = "julia --project=scripts/figures/tutorial -e 'using Pkg; Pkg.develop(PackageSpec(path=pwd())); Pkg.instantiate()'", description = "Install figure script Julia dependencies" }
 fig-pyinstall = { cmd = "uv pip install -e ${RGPYCRUMBS_PATH:?Set RGPYCRUMBS_PATH}[surfaces,analysis] -e ${CHEMPARSEPLOT_PATH:?Set CHEMPARSEPLOT_PATH}[plot,neb]", description = "Install Python plotting deps (set RGPYCRUMBS_PATH, CHEMPARSEPLOT_PATH)" }
+
+# Pure analytic PES plots (no gen/plot split needed)
 fig-mb-pes = { cmd = "julia --project=scripts/figures/tutorial scripts/figures/tutorial/mb_pes.jl", depends-on = ["fig-install"], description = "MB-1: PES contour with stationary points" }
-fig-mb-neb = { cmd = "julia --project=scripts/figures/tutorial scripts/figures/tutorial/mb_neb.jl", depends-on = ["fig-install"], description = "MB-2: NEB path on Muller-Brown" }
-fig-mb-gp = { cmd = "julia --project=scripts/figures/tutorial scripts/figures/tutorial/mb_gp_progression.jl", depends-on = ["fig-install"], description = "MB-3: GP surrogate progression" }
-fig-mb-var = { cmd = "julia --project=scripts/figures/tutorial scripts/figures/tutorial/mb_variance.jl", depends-on = ["fig-install"], description = "MB-4: GP variance heatmap" }
-fig-mb-hyp = { cmd = "julia --project=scripts/figures/tutorial scripts/figures/tutorial/mb_hyperparams.jl", depends-on = ["fig-install"], description = "MB-5: Hyperparameter sensitivity" }
-fig-mb-dimer = { cmd = "julia --project=scripts/figures/tutorial scripts/figures/tutorial/mb_dimer_convergence.jl", depends-on = ["fig-install"], description = "MB-6: GP-dimer convergence" }
-fig-mb-trust = { cmd = "julia --project=scripts/figures/tutorial scripts/figures/tutorial/mb_trust_region.jl", depends-on = ["fig-install"], description = "MB-7: Trust region illustration" }
 fig-leps-pes = { cmd = "julia --project=scripts/figures/tutorial scripts/figures/tutorial/leps_contour.jl", depends-on = ["fig-install"], description = "LEPS-1: 2D PES contour" }
-fig-leps-neb = { cmd = "julia --project=scripts/figures/tutorial scripts/figures/tutorial/leps_neb.jl", depends-on = ["fig-install"], description = "LEPS-2: NEB path on LEPS" }
-fig-leps-aie = { cmd = "julia --project=scripts/figures/tutorial scripts/figures/tutorial/leps_aie_oie.jl", depends-on = ["fig-install"], description = "LEPS-3: AIE vs OIE comparison" }
-fig-leps-fps = { cmd = "julia --project=scripts/figures/tutorial scripts/figures/tutorial/leps_fps.jl", depends-on = ["fig-install"], description = "LEPS-4: FPS subset selection" }
-fig-hcn = { cmd = "julia --project=scripts/figures/tutorial scripts/figures/tutorial/hcn_neb_profile.jl", depends-on = ["fig-install"], description = "REAL-1: HCN energy profile" }
+
+# Muller-Brown figures (gen -> HDF5 -> plot via figure_runner.py)
+fig-mb-neb = { cmd = "python3 scripts/figures/tutorial/figure_runner.py --gen generators/gen_mb_neb.jl --plot plotters/plot_mb_neb.jl", depends-on = ["fig-install"], description = "MB-2: NEB path on Muller-Brown" }
+fig-mb-gp = { cmd = "python3 scripts/figures/tutorial/figure_runner.py --gen generators/gen_mb_gp.jl --plot plotters/plot_mb_gp.jl", depends-on = ["fig-install"], description = "MB-3: GP surrogate progression" }
+fig-mb-var = { cmd = "python3 scripts/figures/tutorial/figure_runner.py --gen generators/gen_mb_variance.jl --plot plotters/plot_mb_variance.jl", depends-on = ["fig-install"], description = "MB-4: GP variance heatmap" }
+fig-mb-hyp = { cmd = "python3 scripts/figures/tutorial/figure_runner.py --gen generators/gen_mb_hyperparams.jl --plot plotters/plot_mb_hyperparams.jl", depends-on = ["fig-install"], description = "MB-5: Hyperparameter sensitivity" }
+fig-mb-dimer = { cmd = "python3 scripts/figures/tutorial/figure_runner.py --gen generators/gen_mb_dimer.jl --plot plotters/plot_mb_dimer.jl", depends-on = ["fig-install"], description = "MB-6: GP-dimer convergence" }
+fig-mb-trust = { cmd = "python3 scripts/figures/tutorial/figure_runner.py --gen generators/gen_mb_trust.jl --plot plotters/plot_mb_trust.jl", depends-on = ["fig-install"], description = "MB-7: Trust region illustration" }
+
+# LEPS figures
+fig-leps-neb = { cmd = "python3 scripts/figures/tutorial/figure_runner.py --gen generators/gen_leps_neb.jl --plot plotters/plot_leps_neb.jl", depends-on = ["fig-install"], description = "LEPS-2: NEB path on LEPS" }
+fig-leps-aie = { cmd = "python3 scripts/figures/tutorial/figure_runner.py --gen generators/gen_leps_aie_oie.jl --plot plotters/plot_leps_aie_oie.jl", depends-on = ["fig-install"], description = "LEPS-3: AIE vs OIE comparison" }
+fig-leps-fps = { cmd = "python3 scripts/figures/tutorial/figure_runner.py --gen generators/gen_leps_fps.jl --plot plotters/plot_leps_fps.jl", depends-on = ["fig-install"], description = "LEPS-4: FPS subset selection" }
+fig-leps-min = { cmd = "python3 scripts/figures/tutorial/figure_runner.py --gen generators/gen_leps_minimize.jl --plot plotters/plot_leps_minimize.jl", depends-on = ["fig-install"], description = "LEPS-5: GP-minimize convergence" }
+fig-leps-rff = { cmd = "python3 scripts/figures/tutorial/figure_runner.py --gen generators/gen_leps_rff.jl --plot plotters/plot_leps_rff.jl", depends-on = ["fig-install"], description = "LEPS-6: RFF approximation quality" }
+
+# HCN figures (require RPC server)
+fig-hcn = { cmd = "python3 scripts/figures/tutorial/figure_runner.py --gen generators/gen_hcn_neb.jl --plot plotters/plot_hcn_neb.jl", depends-on = ["fig-install"], description = "REAL-1: HCN energy profile" }
 fig-hcn-land = { cmd = "bash scripts/figures/tutorial/hcn_landscape.sh", depends-on = ["fig-pyinstall", "fig-hcn"], description = "REAL-1B: HCN 2D landscape" }
-fig-hcn-conv = { cmd = "julia --project=scripts/figures/tutorial scripts/figures/tutorial/hcn_convergence.jl", depends-on = ["fig-install"], description = "REAL-2: HCN convergence comparison" }
-fig-leps-min = { cmd = "julia --project=scripts/figures/tutorial scripts/figures/tutorial/leps_minimize_convergence.jl", depends-on = ["fig-install"], description = "LEPS-5: GP-minimize convergence" }
-fig-leps-rff = { cmd = "julia --project=scripts/figures/tutorial scripts/figures/tutorial/leps_rff_quality.jl", depends-on = ["fig-install"], description = "LEPS-6: RFF approximation quality" }
-fig-petmad-min = { cmd = "julia --project=scripts/figures/tutorial scripts/figures/tutorial/petmad_minimize_convergence.jl", depends-on = ["fig-install"], description = "REAL-3: PET-MAD GP-minimize convergence" }
-fig-petmad-rff = { cmd = "julia --project=scripts/figures/tutorial scripts/figures/tutorial/petmad_rff_quality.jl", depends-on = ["fig-install"], description = "REAL-4: PET-MAD RFF approximation quality" }
-fig-rff-combined = { cmd = "julia --project=scripts/figures/tutorial scripts/figures/tutorial/rff_quality_combined.jl", depends-on = ["fig-install", "fig-leps-rff", "fig-petmad-rff"], description = "RFF-5: Combined RFF quality (LEPS + PET-MAD)" }
-fig-tier1 = { depends-on = ["fig-mb-pes", "fig-mb-neb", "fig-mb-gp", "fig-mb-var", "fig-mb-hyp", "fig-leps-pes", "fig-leps-neb"], description = "Run all P1 figures (MB + LEPS, no RPC)" }
-fig-tier2 = { depends-on = ["fig-mb-dimer", "fig-mb-trust", "fig-leps-aie", "fig-leps-fps", "fig-leps-min", "fig-leps-rff"], description = "Run all P2 figures (no RPC)" }
+fig-hcn-conv = { cmd = "python3 scripts/figures/tutorial/figure_runner.py --gen generators/gen_hcn_convergence.jl --plot plotters/plot_hcn_convergence.jl", depends-on = ["fig-install"], description = "REAL-2: HCN convergence comparison" }
+
+# PET-MAD figures (require RPC server)
+fig-petmad-min = { cmd = "python3 scripts/figures/tutorial/figure_runner.py --gen generators/gen_petmad_minimize.jl --plot plotters/plot_petmad_minimize.jl", depends-on = ["fig-install"], description = "REAL-3: PET-MAD GP-minimize convergence" }
+fig-petmad-rff = { cmd = "python3 scripts/figures/tutorial/figure_runner.py --gen generators/gen_petmad_rff.jl --plot plotters/plot_petmad_rff.jl", depends-on = ["fig-install"], description = "REAL-4: PET-MAD RFF approximation quality" }
+fig-rff-combined = { cmd = "julia --project=scripts/figures/tutorial scripts/figures/tutorial/plotters/plot_rff_combined.jl", depends-on = ["fig-install", "fig-leps-rff", "fig-petmad-rff"], description = "RFF-5: Combined RFF quality (LEPS + PET-MAD)" }
+
+# Gen-only and plot-only variants
+fig-gen-mb-neb = { cmd = "python3 scripts/figures/tutorial/figure_runner.py --gen generators/gen_mb_neb.jl --skip-plot", depends-on = ["fig-install"], description = "MB-2 data generation only" }
+fig-gen-mb-gp = { cmd = "python3 scripts/figures/tutorial/figure_runner.py --gen generators/gen_mb_gp.jl --skip-plot", depends-on = ["fig-install"], description = "MB-3 data generation only" }
+fig-gen-mb-var = { cmd = "python3 scripts/figures/tutorial/figure_runner.py --gen generators/gen_mb_variance.jl --skip-plot", depends-on = ["fig-install"], description = "MB-4 data generation only" }
+fig-gen-leps-min = { cmd = "python3 scripts/figures/tutorial/figure_runner.py --gen generators/gen_leps_minimize.jl --skip-plot", depends-on = ["fig-install"], description = "LEPS-5 data generation only" }
+fig-plot-mb-neb = { cmd = "python3 scripts/figures/tutorial/figure_runner.py --gen generators/gen_mb_neb.jl --plot plotters/plot_mb_neb.jl --skip-gen", depends-on = ["fig-install"], description = "MB-2 plot only (reuse HDF5)" }
+fig-plot-mb-gp = { cmd = "python3 scripts/figures/tutorial/figure_runner.py --gen generators/gen_mb_gp.jl --plot plotters/plot_mb_gp.jl --skip-gen", depends-on = ["fig-install"], description = "MB-3 plot only (reuse HDF5)" }
+fig-plot-mb-var = { cmd = "python3 scripts/figures/tutorial/figure_runner.py --gen generators/gen_mb_variance.jl --plot plotters/plot_mb_variance.jl --skip-gen", depends-on = ["fig-install"], description = "MB-4 plot only (reuse HDF5)" }
+fig-plot-leps-min = { cmd = "python3 scripts/figures/tutorial/figure_runner.py --gen generators/gen_leps_minimize.jl --plot plotters/plot_leps_minimize.jl --skip-gen", depends-on = ["fig-install"], description = "LEPS-5 plot only (reuse HDF5)" }
+
+# Batch tasks
+fig-tier1 = { depends-on = ["fig-mb-pes", "fig-mb-neb", "fig-mb-gp", "fig-mb-var", "fig-mb-hyp", "fig-leps-pes", "fig-leps-neb"], description = "All tier-1 figures (MB + LEPS basics, no RPC)" }
+fig-tier2 = { depends-on = ["fig-mb-dimer", "fig-mb-trust", "fig-leps-aie", "fig-leps-fps", "fig-leps-min", "fig-leps-rff"], description = "All tier-2 figures (advanced, no RPC)" }
+fig-tier3 = { depends-on = ["fig-petmad-min", "fig-petmad-rff", "fig-rff-combined", "fig-hcn", "fig-hcn-conv"], description = "All tier-3 figures (PET-MAD + HCN, RPC required)" }
 
 [feature.docs.dependencies]
 emacs = ">=30.2,<31"

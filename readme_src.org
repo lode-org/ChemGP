@@ -117,6 +117,48 @@ Run all hooks manually:
 pixi r pre-commit
 #+end_src
 
+** Generating Figures
+
+Tutorial figures live in =scripts/figures/tutorial/= with a two-stage
+pipeline: *generators* produce HDF5 data files, *plotters* read HDF5 and
+render PDFs. A Python orchestrator (=figure_runner.py=) manages the
+lifecycle and provides real-time metrics via a TCP JSONL socket.
+
+#+begin_src text
+Julia gen script
+  |-- TCP socket (metrics) --> figure_runner.py --> stdout + JSONL
+  |-- HDF5 file (all data) --> Julia plot script --> PDF
+#+end_src
+
+Setup:
+
+#+begin_src sh
+pixi run -e figures fig-install     # Julia deps (HDF5, CairoMakie, etc.)
+pixi run -e figures fig-pyinstall   # Python deps (HCN landscape only)
+#+end_src
+
+Run by tier (no RPC server needed for tiers 1-2):
+
+#+begin_src sh
+pixi run -e figures fig-tier1   # MB + LEPS basics
+pixi run -e figures fig-tier2   # MB + LEPS advanced
+pixi run -e figures fig-tier3   # PET-MAD + HCN (RPC required)
+#+end_src
+
+Individual figures, generation-only, and plot-only variants are also
+available. See =scripts/figures/tutorial/README.md= for the full task
+list, HDF5 file structure, and how to add new figures.
+
+#+begin_export markdown
+| Task | Command | Description |
+|------|---------|-------------|
+| Install Julia deps | `pixi r -e figures fig-install` | Figure script Julia dependencies |
+| Install Python deps | `pixi r -e figures fig-pyinstall` | Python deps for HCN landscape |
+| Tier 1 | `pixi r -e figures fig-tier1` | MB + LEPS basics (no RPC) |
+| Tier 2 | `pixi r -e figures fig-tier2` | MB + LEPS advanced (no RPC) |
+| Tier 3 | `pixi r -e figures fig-tier3` | PET-MAD + HCN (RPC required) |
+#+end_export
+
 * Contributing
 
 1. Clone and set up the environment:

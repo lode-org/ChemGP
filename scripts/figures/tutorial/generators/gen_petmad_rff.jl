@@ -1,28 +1,20 @@
-# PETMAD-RFF: RFF approximation quality vs exact GP on PET-MAD
+# PETMAD-RFF generator: RFF approximation quality vs exact GP on PET-MAD
 #
 # Trains an exact GP on PET-MAD data accumulated during a short minimization
 # of the system100 reactant, then builds RFF models at varying D_rff and
 # compares prediction accuracy (energy MAE, gradient MAE) against the exact
 # GP on held-out test points.
 #
-# Requires: PET-MAD server running via eonclient or rgpot potserv.
-#   export RGPOT_HOST=localhost RGPOT_PORT=12345
+# Uses cache pattern: checks for existing HDF5 before running.
+# Requires: PET-MAD server running at localhost:12345
 #
-# Output: petmad_rff_quality.pdf, petmad_rff_quality.csv
-#
-# Intended for sec:rff of the GPR tutorial review.
+# Output: {stem}.h5 with /table group and metadata (gp_e_mae, gp_g_mae)
 
+include(joinpath(@__DIR__, "common_data.jl"))
 using ChemGP
-using DataFrames
-using CSV
 using LinearAlgebra
 using Random
 using Statistics
-using LaTeXStrings
-include(joinpath(@__DIR__, "common.jl"))
-
-const PETMAD_CACHE_DIR = joinpath(OUTPUT_DIR, "petmad_cache")
-mkpath(PETMAD_CACHE_DIR)
 
 # --- System100 reactant: 9-atom fragment (2C, 1O, 2N, 4H) ---
 const SYSTEM100_REACT = Float64[
@@ -68,7 +60,6 @@ function run_rff_comparison()
     Random.seed!(123)
     x_init = copy(SYSTEM100_REACT)
     D = length(x_init)
-    N_atoms = div(D, 3)
 
     # --- Collect training data from a short GP-minimization ---
     println("Collecting training data from GP-minimization...")
@@ -131,13 +122,12 @@ function run_rff_comparison()
 
     # --- RFF at varying D_rff ---
     D_rff_values = [25, 50, 100, 200, 300, 500]
-    results_df = DataFrame(;
-        D_rff=Int[],
-        energy_mae_vs_true=Float64[],
-        gradient_mae_vs_true=Float64[],
-        energy_mae_vs_gp=Float64[],
-        gradient_mae_vs_gp=Float64[],
-    )
+
+    all_drff = Int[]
+    all_e_mae_true = Float64[]
+    all_g_mae_true = Float64[]
+    all_e_mae_gp = Float64[]
+    all_g_mae_gp = Float64[]
 
     for D_rff in D_rff_values
         println("Building RFF with D_rff = $D_rff...")
@@ -156,7 +146,12 @@ function run_rff_comparison()
         e_mae_gp = mean(abs.(rff_E .- exact_E))
         g_mae_gp = mean(abs.(rff_G .- exact_G))
 
-        push!(results_df, (D_rff, e_mae_true, g_mae_true, e_mae_gp, g_mae_gp))
+        push!(all_drff, D_rff)
+        push!(all_e_mae_true, e_mae_true)
+        push!(all_g_mae_true, g_mae_true)
+        push!(all_e_mae_gp, e_mae_gp)
+        push!(all_g_mae_gp, g_mae_gp)
+
         println("  Energy MAE vs true: $(round(e_mae_true; sigdigits=3))")
         println("  Energy MAE vs GP:   $(round(e_mae_gp; sigdigits=3))")
     end
@@ -167,102 +162,29 @@ function run_rff_comparison()
     println("Exact GP gradient MAE vs true: $(round(gp_g_mae; sigdigits=3))")
 
     close(pot)
-    return results_df, gp_e_mae, gp_g_mae
+    return all_drff, all_e_mae_true, all_g_mae_true, all_e_mae_gp, all_g_mae_gp, gp_e_mae, gp_g_mae
 end
 
 function main()
-    csv_path = joinpath(PETMAD_CACHE_DIR, "rff_quality.csv")
-    meta_path = joinpath(PETMAD_CACHE_DIR, "rff_quality_meta.csv")
+    hp = h5_path()
 
-    results_df, gp_e_mae, gp_g_mae = if isfile(csv_path) && isfile(meta_path)
-        println("Using cached RFF data from $csv_path")
-        df = CSV.read(csv_path, DataFrame)
-        meta = CSV.read(meta_path, DataFrame)
-        df, meta.gp_e_mae[1], meta.gp_g_mae[1]
-    else
-        df, e_mae, g_mae = run_rff_comparison()
-        CSV.write(csv_path, df)
-        CSV.write(meta_path, DataFrame(; gp_e_mae=[e_mae], gp_g_mae=[g_mae]))
-        println("Cached RFF data to $csv_path")
-        df, e_mae, g_mae
+    if isfile(hp)
+        println("Using cached data from $hp")
+        return
     end
 
-    # --- Plot ---
-    set_theme!(PUBLICATION_THEME)
+    all_drff, all_e_mae_true, all_g_mae_true, all_e_mae_gp, all_g_mae_gp, gp_e_mae, gp_g_mae = run_rff_comparison()
 
-    fig = Figure(; size=(504, 400))
+    h5_write_table(hp, "table", Dict(
+        "D_rff" => all_drff,
+        "energy_mae_vs_true" => all_e_mae_true,
+        "gradient_mae_vs_true" => all_g_mae_true,
+        "energy_mae_vs_gp" => all_e_mae_gp,
+        "gradient_mae_vs_gp" => all_g_mae_gp,
+    ))
 
-    ax1 = Axis(
-        fig[1, 1];
-        ylabel=L"\text{Energy MAE (eV)}",
-        yscale=log10,
-        xticklabelsvisible=false,
-        title=L"\text{RFF approximation quality on PET-MAD}",
-    )
-    lines!(
-        ax1,
-        results_df.D_rff,
-        results_df.energy_mae_vs_true;
-        color=RUHI.teal,
-        linewidth=1.5,
-        label="RFF vs true PES",
-    )
-    scatter!(
-        ax1, results_df.D_rff, results_df.energy_mae_vs_true; color=RUHI.teal, markersize=6
-    )
-    lines!(
-        ax1,
-        results_df.D_rff,
-        results_df.energy_mae_vs_gp;
-        color=RUHI.sky,
-        linewidth=1.5,
-        label="RFF vs exact GP",
-    )
-    scatter!(
-        ax1, results_df.D_rff, results_df.energy_mae_vs_gp; color=RUHI.sky, markersize=6
-    )
-    hlines!(
-        ax1,
-        [gp_e_mae];
-        color=RUHI.magenta,
-        linewidth=0.8,
-        linestyle=:dash,
-        label="Exact GP vs true PES",
-    )
-    axislegend(ax1; position=:rt, framevisible=false, labelsize=9)
-
-    ax2 = Axis(
-        fig[2, 1];
-        xlabel=L"D_\mathrm{rff}",
-        ylabel=L"\text{Gradient MAE (eV/\AA)}",
-        yscale=log10,
-    )
-    lines!(
-        ax2,
-        results_df.D_rff,
-        results_df.gradient_mae_vs_true;
-        color=RUHI.teal,
-        linewidth=1.5,
-    )
-    scatter!(
-        ax2,
-        results_df.D_rff,
-        results_df.gradient_mae_vs_true;
-        color=RUHI.teal,
-        markersize=6,
-    )
-    lines!(
-        ax2, results_df.D_rff, results_df.gradient_mae_vs_gp; color=RUHI.sky, linewidth=1.5
-    )
-    scatter!(
-        ax2, results_df.D_rff, results_df.gradient_mae_vs_gp; color=RUHI.sky, markersize=6
-    )
-    hlines!(ax2, [gp_g_mae]; color=RUHI.magenta, linewidth=0.8, linestyle=:dash)
-
-    rowgap!(fig.layout, 5)
-
-    save_figure(fig, "petmad_rff_quality")
-    CSV.write(joinpath(OUTPUT_DIR, "petmad_rff_quality.csv"), results_df)
+    h5_write_metadata(hp; gp_e_mae=gp_e_mae, gp_g_mae=gp_g_mae)
+    println("Wrote HDF5: $hp")
 end
 
 main()
