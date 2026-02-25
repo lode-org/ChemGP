@@ -104,3 +104,79 @@ function build_feature_map(
 
     return map_indices
 end
+
+# ==============================================================================
+# Helper: Atom-Type Pair Scheme from Atomic Numbers
+# ==============================================================================
+
+"""
+    build_pair_scheme(atomic_numbers_mov; atomic_numbers_fro=Int[])
+
+Build the pair-type mapping from atomic numbers, matching the C++ gpr_optim
+convention where each unique (species_i, species_j) pair gets its own
+inverse lengthscale parameter.
+
+Only pair types that actually appear in the moving-moving or moving-frozen
+feature set are assigned parameter indices. For example, HCN (one H, one C,
+one N, no frozen) produces 3 pairs: H-C, H-N, C-N (no H-H, C-C, or N-N
+since each species appears only once among moving atoms).
+
+Returns a NamedTuple with fields:
+- `mov_types::Vector{Int}`: 1-based type index for each moving atom
+- `fro_types::Vector{Int}`: 1-based type index for each frozen atom
+- `pair_map::Matrix{Int}`: symmetric matrix mapping (type_i, type_j) -> param index
+- `n_params::Int`: number of unique pair-type parameters (= length of inv_lengthscales)
+- `species::Vector{Int}`: sorted unique atomic numbers
+"""
+function build_pair_scheme(
+    atomic_numbers_mov::AbstractVector{<:Integer};
+    atomic_numbers_fro::AbstractVector{<:Integer}=Int[],
+)
+    all_species = sort(unique(vcat(atomic_numbers_mov, atomic_numbers_fro)))
+    species_to_type = Dict(z => i for (i, z) in enumerate(all_species))
+
+    mov_types = [species_to_type[z] for z in atomic_numbers_mov]
+    fro_types = [species_to_type[z] for z in atomic_numbers_fro]
+
+    n_types = length(all_species)
+    N_mov = length(mov_types)
+    N_fro = length(fro_types)
+
+    # Scan which pair types actually appear in the feature set
+    used_pairs = Set{Tuple{Int,Int}}()
+
+    # Moving-Moving (upper triangle: j < i, matching compute_inverse_distances)
+    for j in 1:(N_mov - 1)
+        for i in (j + 1):N_mov
+            t1, t2 = minmax(mov_types[j], mov_types[i])
+            push!(used_pairs, (t1, t2))
+        end
+    end
+
+    # Moving-Frozen
+    for j in 1:N_mov
+        for k in 1:N_fro
+            t1, t2 = minmax(mov_types[j], fro_types[k])
+            push!(used_pairs, (t1, t2))
+        end
+    end
+
+    # Assign contiguous indices to used pairs (sorted for determinism)
+    sorted_pairs = sort(collect(used_pairs))
+    n_params = length(sorted_pairs)
+    pair_to_idx = Dict(p => i for (i, p) in enumerate(sorted_pairs))
+
+    pair_map = zeros(Int, n_types, n_types)
+    for ((t1, t2), idx) in pair_to_idx
+        pair_map[t1, t2] = idx
+        pair_map[t2, t1] = idx  # symmetric
+    end
+
+    return (
+        mov_types=mov_types,
+        fro_types=fro_types,
+        pair_map=pair_map,
+        n_params=n_params,
+        species=all_species,
+    )
+end

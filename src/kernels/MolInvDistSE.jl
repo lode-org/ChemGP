@@ -70,6 +70,23 @@ function MolInvDistSE(signal::Real, inv_ls::AbstractVector, frozen::AbstractVect
     return MolInvDistSE(signal, inv_ls, frozen, Int[])
 end
 
+# Atomic-number constructor: automatically builds pair-type scheme from
+# species lists, matching the C++ gpr_optim convention.
+function MolInvDistSE(
+    atomic_numbers_mov::AbstractVector{<:Integer},
+    frozen_coords::AbstractVector;
+    atomic_numbers_fro::AbstractVector{<:Integer}=Int[],
+    signal_variance::Real=1.0,
+    inv_lengthscale::Real=1.0,
+)
+    scheme = build_pair_scheme(atomic_numbers_mov; atomic_numbers_fro)
+    inv_ls = fill(Float64(inv_lengthscale), scheme.n_params)
+    return MolInvDistSE(
+        signal_variance, inv_ls, frozen_coords,
+        scheme.mov_types, scheme.fro_types, scheme.pair_map,
+    )
+end
+
 # --- Functor ---
 
 function (k::MolInvDistSE)(x::AbstractVector, y::AbstractVector)

@@ -47,6 +47,22 @@ function MolInvDistMatern52(signal::Real, inv_ls::AbstractVector, frozen::Abstra
     return MolInvDistMatern52(signal, inv_ls, frozen, Int[])
 end
 
+# Atomic-number constructor
+function MolInvDistMatern52(
+    atomic_numbers_mov::AbstractVector{<:Integer},
+    frozen_coords::AbstractVector;
+    atomic_numbers_fro::AbstractVector{<:Integer}=Int[],
+    signal_variance::Real=1.0,
+    inv_lengthscale::Real=1.0,
+)
+    scheme = build_pair_scheme(atomic_numbers_mov; atomic_numbers_fro)
+    inv_ls = fill(Float64(inv_lengthscale), scheme.n_params)
+    return MolInvDistMatern52(
+        signal_variance, inv_ls, frozen_coords,
+        scheme.mov_types, scheme.fro_types, scheme.pair_map,
+    )
+end
+
 # --- Functor ---
 
 function (k::MolInvDistMatern52)(x::AbstractVector, y::AbstractVector)
