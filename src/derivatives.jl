@@ -203,3 +203,162 @@ function kernel_blocks(k::MolInvDistSE, x1::AbstractVector, x2::AbstractVector)
 
     return k_ee, k_ef, k_fe, k_ff
 end
+
+# ==============================================================================
+# Analytical kernel blocks AND hyperparameter gradients for MolInvDistSE
+# ==============================================================================
+#
+# Returns both the kernel blocks and dK/d(log w) for all hyperparameters.
+# The log-space parametrization w = [log(sigma2); log.(inv_lengthscales)]
+# matches C++ gp_pak / MATLAB gp_pak conventions.
+#
+# For k = sigma2 * exp(-d2), d2 = sum theta2[map[i]] * delta_f[i]^2:
+#
+#   dk/d(log sigma2) = k  (all blocks scale linearly)
+#   dk/d(log theta_p): chain rule through S_p = 2*theta2_p * sum_{map[i]=p} r[i]^2
+
+"""
+    kernel_blocks_and_hypergrads(k::MolInvDistSE, x1, x2)
+
+Compute kernel blocks AND their gradients w.r.t. log-space hyperparameters.
+
+Returns `(blocks, grad_blocks)` where:
+- `blocks = (k_ee, k_ef, k_fe, k_ff)` -- same as `kernel_blocks`
+- `grad_blocks::Vector{NTuple{4,...}}` -- one tuple per log-parameter
+  `[log(sigma2), log(theta_1), ..., log(theta_P)]`
+"""
+function kernel_blocks_and_hypergrads(k::MolInvDistSE, x1::AbstractVector, x2::AbstractVector)
+    frozen = k.frozen_coords
+
+    f1, J1 = _invdist_jacobian(collect(Float64, x1), collect(Float64, frozen))
+    f2, J2 = _invdist_jacobian(collect(Float64, x2), collect(Float64, frozen))
+
+    nf = length(f1)
+    D = length(x1)
+    n_ls = length(k.inv_lengthscales)
+    n_params = 1 + n_ls  # [log(sigma2), log(theta_1), ..., log(theta_P)]
+
+    has_map = !isempty(k.feature_params_map)
+
+    # Per-feature theta^2
+    theta2 = Vector{Float64}(undef, nf)
+    # feature -> param index (1-based into inv_lengthscales)
+    fmap = Vector{Int}(undef, nf)
+    if has_map
+        @inbounds for i in 1:nf
+            fmap[i] = k.feature_params_map[i]
+            theta2[i] = k.inv_lengthscales[fmap[i]]^2
+        end
+    else
+        t2 = k.inv_lengthscales[1]^2
+        fill!(theta2, t2)
+        fill!(fmap, 1)
+    end
+
+    # Feature-space residuals
+    r = f1 .- f2
+    d2 = zero(Float64)
+    @inbounds for i in 1:nf
+        d2 += theta2[i] * r[i]^2
+    end
+    sigma2 = Float64(k.signal_variance)
+    kval = sigma2 * exp(-d2)
+
+    # --- Forward blocks (same as kernel_blocks) ---
+    k_ee = kval
+    u = theta2 .* r  # u[i] = theta2[i] * r[i]
+
+    dk_df2 = Vector{Float64}(undef, nf)
+    dk_df1 = Vector{Float64}(undef, nf)
+    @inbounds for i in 1:nf
+        v = 2.0 * kval * theta2[i] * r[i]
+        dk_df2[i] = v
+        dk_df1[i] = -v
+    end
+
+    H_feat = Matrix{Float64}(undef, nf, nf)
+    @inbounds for i in 1:nf
+        H_feat[i, i] = 2.0 * kval * (theta2[i] - 2.0 * u[i]^2)
+        for j in (i + 1):nf
+            val = -4.0 * kval * u[i] * u[j]
+            H_feat[i, j] = val
+            H_feat[j, i] = val
+        end
+    end
+
+    k_ef = dk_df2' * J2       # 1 x D
+    k_fe = J1' * dk_df1        # D vector
+    k_ff = J1' * H_feat * J2   # D x D
+
+    blocks = (k_ee, k_ef, k_fe, k_ff)
+
+    # --- Hyperparameter gradients in log-space ---
+
+    # S_p = 2*theta2_p * sum_{i:fmap[i]=p} r[i]^2  (partial d2 / d(log theta_p))
+    S = zeros(n_ls)
+    @inbounds for i in 1:nf
+        p = fmap[i]
+        S[p] += r[i]^2
+    end
+    @inbounds for p in 1:n_ls
+        S[p] *= 2.0 * k.inv_lengthscales[p]^2
+    end
+
+    grad_blocks = Vector{NTuple{4,Any}}(undef, n_params)
+
+    # --- d/d(log sigma2): all blocks scale by 1 (dk/d(log s2) = k) ---
+    grad_blocks[1] = (k_ee, k_ef, k_fe, k_ff)
+
+    # --- d/d(log theta_p) for each lengthscale parameter ---
+    for p in 1:n_ls
+        Sp = S[p]
+        theta2_p = k.inv_lengthscales[p]^2
+
+        # EE: dk_ee/d(log theta_p) = -k_ee * S_p
+        dk_ee_p = -kval * Sp
+
+        # Feature-space derivatives for EF/FE
+        # d(dk/df2[l])/d(log theta_p) =
+        #   2*kval*r[l] * (delta_{fmap[l],p}*2*theta2_p - theta2[fmap[l]]*Sp)
+        ddk_df2_p = Vector{Float64}(undef, nf)
+        ddk_df1_p = Vector{Float64}(undef, nf)
+        @inbounds for l in 1:nf
+            coeff = (fmap[l] == p ? 2.0 * theta2_p : 0.0) - theta2[l] * Sp
+            v = 2.0 * kval * r[l] * coeff
+            ddk_df2_p[l] = v
+            ddk_df1_p[l] = -v
+        end
+
+        dk_ef_p = ddk_df2_p' * J2    # 1 x D
+        dk_fe_p = J1' * ddk_df1_p     # D vector
+
+        # FF: d(H_feat[l,m])/d(log theta_p)
+        # H_feat[l,m] = 2*kval*(theta2[l]*delta_lm - 2*u[l]*u[m])
+        # d/d(log theta_p) = -Sp * H_feat[l,m]       [from d(kval)/d(log tp)]
+        #   + 2*kval*(delta_lm * delta_{fmap[l],p} * 2*theta2_p
+        #             - 2*(du_l*u[m] + u[l]*du_m))   [from d(theta2,u)/d(log tp)]
+        # du_l = d(u[l])/d(log theta_p) = delta_{fmap[l],p} * 2*theta2_p * r[l]
+        # (Pure theta2 derivative only; kval change is in -Sp*H_feat term.)
+        du = Vector{Float64}(undef, nf)
+        @inbounds for l in 1:nf
+            du[l] = (fmap[l] == p ? 2.0 * theta2_p : 0.0) * r[l]
+        end
+
+        dH_feat = Matrix{Float64}(undef, nf, nf)
+        @inbounds for l in 1:nf
+            diag_term = (fmap[l] == p ? 2.0 * theta2_p : 0.0)
+            dH_feat[l, l] = -Sp * H_feat[l, l] + 2.0 * kval * (diag_term - 2.0 * 2.0 * du[l] * u[l])
+            for m in (l + 1):nf
+                val = -Sp * H_feat[l, m] + 2.0 * kval * (-2.0 * (du[l] * u[m] + u[l] * du[m]))
+                dH_feat[l, m] = val
+                dH_feat[m, l] = val
+            end
+        end
+
+        dk_ff_p = J1' * dH_feat * J2  # D x D
+
+        grad_blocks[1 + p] = (dk_ee_p, dk_ef_p, dk_fe_p, dk_ff_p)
+    end
+
+    return blocks, grad_blocks
+end

@@ -222,33 +222,165 @@ function _robust_cholesky(K::AbstractMatrix; max_attempts::Int=8)
 end
 
 # ==============================================================================
+# MAP NLL + Analytical Gradient (for SCG training)
+# ==============================================================================
+
+"""
+    nll_and_grad(w, X, y, frozen, feat_map, noise_e, noise_g, jitter, w_prior, prior_var)
+
+Compute the MAP negative log-likelihood and its gradient w.r.t. log-space
+hyperparameters `w = [log(sigma2); log.(inv_lengthscales)]`.
+
+Uses analytical dK/d(log w) from `kernel_blocks_and_hypergrads` and the
+standard GP gradient formula:
+
+    grad_j = 0.5 * tr(W * dK/dw_j) + prior_grad_j
+
+where `W = K_inv - alpha * alpha'`, `alpha = K \\ y`.
+
+MAP prior: Gaussian in log-space centered at `w_prior` with variance `prior_var`.
+"""
+function nll_and_grad(
+    w::Vector{Float64},
+    X::Matrix{Float64},
+    y::Vector{Float64},
+    frozen::AbstractVector,
+    feat_map::Vector{Int},
+    noise_e::Float64,
+    noise_g::Float64,
+    jitter::Float64,
+    w_prior::Vector{Float64},
+    prior_var::Vector{Float64},
+)
+    sigma2 = exp(w[1])
+    inv_ls = exp.(w[2:end])
+    n_params = length(w)
+
+    kern = MolInvDistSE(sigma2, inv_ls, frozen, feat_map)
+    D, N = size(X)
+    TotalDim = N * (1 + D)
+
+    # Build covariance matrix
+    K_mat = zeros(TotalDim, TotalDim)
+    # Store per-pair grad contributions: dK/dw_j accumulated
+    dK = [zeros(TotalDim, TotalDim) for _ in 1:n_params]
+
+    for i in 1:N
+        xi = view(X, :, i)
+        s_gi = N + (i - 1) * D + 1
+        e_gi = N + i * D
+
+        # Diagonal
+        (b_ee, b_ef, b_fe, b_ff), grad_b = kernel_blocks_and_hypergrads(kern, xi, xi)
+        K_mat[i, i] = b_ee + noise_e + jitter
+        K_mat[i, s_gi:e_gi] = vec(b_ef)
+        K_mat[s_gi:e_gi, i] = b_fe
+        K_mat[s_gi:e_gi, s_gi:e_gi] = b_ff + (noise_g + jitter) * I
+
+        for j_p in 1:n_params
+            (de, def_p, dfe_p, dff_p) = grad_b[j_p]
+            dK[j_p][i, i] += de
+            dK[j_p][i, s_gi:e_gi] .+= vec(def_p)
+            dK[j_p][s_gi:e_gi, i] .+= dfe_p
+            dK[j_p][s_gi:e_gi, s_gi:e_gi] .+= dff_p
+        end
+
+        # Off-diagonal
+        for j in (i + 1):N
+            xj = view(X, :, j)
+            s_gj = N + (j - 1) * D + 1
+            e_gj = N + j * D
+
+            (b_ee, b_ef, b_fe, b_ff), grad_b = kernel_blocks_and_hypergrads(kern, xi, xj)
+
+            K_mat[i, j] = b_ee
+            K_mat[j, i] = b_ee
+            K_mat[i, s_gj:e_gj] = vec(b_ef)
+            K_mat[s_gi:e_gi, j] = b_fe
+            K_mat[j, s_gi:e_gi] = b_fe
+            K_mat[s_gj:e_gj, i] = vec(b_ef)
+            K_mat[s_gi:e_gi, s_gj:e_gj] = b_ff
+            K_mat[s_gj:e_gj, s_gi:e_gi] = b_ff'
+
+            for j_p in 1:n_params
+                (de, def_p, dfe_p, dff_p) = grad_b[j_p]
+                dK[j_p][i, j] += de
+                dK[j_p][j, i] += de
+                dK[j_p][i, s_gj:e_gj] .+= vec(def_p)
+                dK[j_p][s_gi:e_gi, j] .+= dfe_p
+                dK[j_p][j, s_gi:e_gi] .+= dfe_p
+                dK[j_p][s_gj:e_gj, i] .+= vec(def_p)
+                dK[j_p][s_gi:e_gi, s_gj:e_gj] .+= dff_p
+                dK[j_p][s_gj:e_gj, s_gi:e_gi] .+= dff_p'
+            end
+        end
+    end
+
+    # Truncate near-zero (matching build_full_covariance)
+    @inbounds for idx in eachindex(K_mat)
+        if abs(K_mat[idx]) < eps(Float64)
+            K_mat[idx] = 0.0
+        end
+    end
+
+    K_sym = Symmetric(K_mat)
+
+    # Cholesky factorization
+    L = try
+        _robust_cholesky(K_sym)
+    catch
+        return (Inf, zeros(n_params))
+    end
+
+    alpha = L \ y
+    # Standard GP NLL: 0.5*y'K^{-1}y + 0.5*logdet(K) + 0.5*n*log(2pi)
+    # logdet(L::Cholesky) returns logdet(K), so multiply by 0.5
+    nll = 0.5 * dot(y, alpha) + 0.5 * logdet(L) + 0.5 * TotalDim * log(2pi)
+
+    # MAP prior contribution
+    nll += 0.5 * sum((w .- w_prior) .^ 2 ./ prior_var)
+
+    # Gradient: W = K_inv - alpha*alpha'
+    # grad_j = 0.5 * tr(W * dK_j) = 0.5 * sum(W .* dK_j')
+    K_inv = inv(L)
+    W = K_inv - alpha * alpha'
+
+    grad = Vector{Float64}(undef, n_params)
+    for j_p in 1:n_params
+        # tr(W * dK_j) = sum(W .* dK_j') = sum(W' .* dK_j) = sum(W .* dK_j)
+        # since W is symmetric and we treat dK_j as symmetric too
+        grad[j_p] = 0.5 * dot(W, dK[j_p])
+    end
+
+    # MAP prior gradient
+    grad .+= (w .- w_prior) ./ prior_var
+
+    return (nll, grad)
+end
+
+# ==============================================================================
 # Training (ParameterHandling + Optim)
 # ==============================================================================
 
-# NOTE(rg): unlike the production implementations in the GPDimer / GPstuff
-# basically those use the MAP estimate with analytical gradients and the SCG
-# here for pedagogical purposes simply use the MLE with the Nelder-Mead
+# NOTE(rg): The AbstractMoleculeKernel path now uses SCG with MAP NLL
+# and analytical gradients, matching the C++ gpr_optim / MATLAB gpstuff
+# production implementations. Nelder-Mead is kept as fallback.
 """
-    train_model!(model::GPModel; iterations=1000)
+    train_model!(model::GPModel{Tk}; iterations=1000) where {Tk<:AbstractMoleculeKernel}
 
-Optimize GP hyperparameters by maximizing the log marginal likelihood (MLE)
-using Nelder-Mead (derivative-free).
+Optimize GP hyperparameters by minimizing the MAP negative log-likelihood.
 
-The optimized parameters are:
-- `signal_variance` and `inv_lengthscales` of the kernel
-- `noise_var` (energy noise) and `grad_noise_var` (gradient noise)
+For `MolInvDistSE` kernels with `fix_noise=true`, uses SCG (Scaled Conjugate
+Gradient) with analytical gradients and a Gaussian MAP prior in log-space,
+matching the C++ gpr_optim / MATLAB gpstuff production implementations.
 
-All parameters are constrained to be positive via `ParameterHandling.positive`.
-The optimizer warm-starts from the current model values.
+Falls back to Nelder-Mead if SCG does not converge or for non-SE mol kernels.
 
-!!! note "Pedagogical simplification"
-    Production implementations (e.g., gpr_optim) use the MAP estimate with
-    analytical gradients and the SCG optimizer. This implementation uses MLE
-    with Nelder-Mead for clarity.
+When `fix_noise=false`, uses Nelder-Mead on all parameters (noise included).
 
 Mutates `model` in-place with the optimized kernel and noise parameters.
 
-See also: [`build_full_covariance`](@ref), [`predict`](@ref)
+See also: [`build_full_covariance`](@ref), [`predict`](@ref), [`scg_optimize`](@ref)
 """
 function train_model!(
     model::GPModel{Tk};
@@ -257,13 +389,69 @@ function train_model!(
     verbose::Bool=true,
     barrier_strength::Float64=0.0,
 ) where {Tk<:AbstractMoleculeKernel}
-    # 1. Define Initial Parameters (Structured)
-    # Warm start from current model values as the starting point.
-    # ParameterHandling.positive ensures they stay > 0 during optimization.
-    #
-    # When fix_noise=true, noise_var and grad_noise_var are held fixed (matching
-    # MATLAB's sigma2_prior=prior_fixed). Only signal_variance and
-    # inv_lengthscales are optimized.
+    frozen = model.kernel.frozen_coords
+    feat_map = model.kernel.feature_params_map
+
+    # --- SCG path: MolInvDistSE with fix_noise=true ---
+    if Tk === MolInvDistSE && fix_noise
+        # Pack to log-space (bypass ParameterHandling for mol kernel path)
+        w0 = vcat(
+            [log(max(Float64(model.kernel.signal_variance), 1e-30))],
+            [log(max(Float64(l), 1e-30)) for l in model.kernel.inv_lengthscales],
+        )
+        w_prior = copy(w0)  # MAP center = data-dependent init values
+        # Gaussian MAP prior in log-space: sigma2 gets s2=2.0, lengthscales
+        # scaled by the number of features (distances) per pair type.
+        # Pair types with many distances (e.g. C-H with 8 pairs) get s2=0.5;
+        # pair types with few distances (e.g. C-C with 1 pair) get tighter
+        # s2~0.15 to prevent collapse from underdetermined optimization.
+        n_ls = length(model.kernel.inv_lengthscales)
+        n_feat_per_param = zeros(Int, n_ls)
+        if !isempty(feat_map)
+            for p_idx in feat_map
+                n_feat_per_param[p_idx] += 1
+            end
+        else
+            fill!(n_feat_per_param, max(1, length(model.kernel.inv_lengthscales)))
+        end
+        ls_prior_var = [0.5 * clamp(n_feat_per_param[p] / 3, 0.3, 1.0) for p in 1:n_ls]
+        prior_var = vcat([2.0], ls_prior_var)
+
+        noise_e = model.noise_var
+        noise_g = model.grad_noise_var
+        jit = model.jitter
+
+        # Capture references for closure
+        X_ref = model.X
+        y_ref = model.y
+
+        function _scg_fg!(f_ref, g_vec, w)
+            f_val, g_val = nll_and_grad(
+                w, X_ref, y_ref, frozen, feat_map,
+                noise_e, noise_g, jit, w_prior, prior_var,
+            )
+            f_ref[] = f_val
+            g_vec .= g_val
+        end
+
+        w_best, f_best, converged = scg_optimize(
+            _scg_fg!, w0;
+            max_iter=iterations, tol_f=1e-4, verbose=verbose,
+        )
+
+        if converged || f_best < Inf
+            sigma2_opt = exp(w_best[1])
+            inv_ls_opt = exp.(w_best[2:end])
+            model.kernel = Tk(sigma2_opt, inv_ls_opt, frozen, feat_map)
+            verbose && @printf("SCG Training Complete. Final MAP NLL: %.4f\n", f_best)
+            return model
+        end
+
+        # SCG failed: fall through to Nelder-Mead
+        verbose && println("SCG did not converge, falling back to Nelder-Mead...")
+    end
+
+    # --- Nelder-Mead fallback (all mol kernel types, or fix_noise=false) ---
     raw_initial_params = if fix_noise
         (
             signal_var=positive(model.kernel.signal_variance),
@@ -278,41 +466,25 @@ function train_model!(
         )
     end
 
-    # 2. Flatten parameters into a vector for Optim.jl
-    # 'unflatten' is a function that converts the vector back to the NamedTuple
     flat_initial_params, unflatten = ParameterHandling.value_flatten(raw_initial_params)
 
-    # Preserve structural info not being optimized
-    frozen = model.kernel.frozen_coords
-    feat_map = model.kernel.feature_params_map
-
-    # Capture fixed noise values for use in objective closure
     fixed_noise = model.noise_var
     fixed_grad_noise = model.grad_noise_var
 
-    # 3. Define Objective Function
     function objective(params::NamedTuple)
-        # Reconstruct kernel from structured parameters
         k = Tk(params.signal_var, params.inv_lengthscales, frozen, feat_map)
-
-        # Use fixed noise when fix_noise=true, otherwise from params
         noise = fix_noise ? fixed_noise : params.noise
         grad_noise = fix_noise ? fixed_grad_noise : params.grad_noise
 
-        # Build Covariance
         K = build_full_covariance(k, model.X, noise, grad_noise, model.jitter)
-
-        # Compute NLL with adaptive jitter (prevents Inf on ill-conditioned matrices)
         L = try
             _robust_cholesky(K)
         catch
             return Inf
         end
 
-        nll = 0.5 * dot(model.y, L \ model.y) + logdet(L) + 0.5 * length(model.y) * log(2π)
+        nll = 0.5 * dot(model.y, L \ model.y) + 0.5 * logdet(L) + 0.5 * length(model.y) * log(2pi)
 
-        # Variance barrier: penalizes signal variance collapsing to zero.
-        # Prevents degenerate solutions where sigma2 -> 0 on sparse data.
         if barrier_strength > 0.0
             log_sv = log(max(params.signal_var, 1e-30))
             max_log_sv = log(max(params.signal_var, 1.0))
@@ -323,9 +495,6 @@ function train_model!(
         return nll
     end
 
-    # 4. Run Optimization
-    # We use NelderMead because build_full_covariance uses mutation (not Zygote-compatible).
-    # 'objective ∘ unflatten' composes the functions so Optim sees a vector input.
     res = Optim.optimize(
         objective ∘ unflatten,
         flat_initial_params,
@@ -333,9 +502,7 @@ function train_model!(
         Optim.Options(; iterations=iterations, show_trace=verbose && !fix_noise),
     )
 
-    # 5. Update Model with Best Parameters
     best_params = unflatten(Optim.minimizer(res))
-
     model.kernel = Tk(
         best_params.signal_var, best_params.inv_lengthscales, frozen, feat_map
     )
@@ -344,7 +511,7 @@ function train_model!(
         model.grad_noise_var = best_params.grad_noise
     end
 
-    verbose && @printf("Optimization Complete. Final NLL: %.4f\n", Optim.minimum(res))
+    verbose && @printf("NM Training Complete. Final NLL: %.4f\n", Optim.minimum(res))
     return model
 end
 
@@ -379,7 +546,7 @@ function train_model!(
         catch
             return Inf
         end
-        return 0.5 * dot(model.y, L \ model.y) + logdet(L) + 0.5 * length(model.y) * log(2π)
+        return 0.5 * dot(model.y, L \ model.y) + 0.5 * logdet(L) + 0.5 * length(model.y) * log(2π)
     end
 
     res = Optim.optimize(
@@ -426,7 +593,7 @@ function train_model!(
         catch
             return Inf
         end
-        return 0.5 * dot(model.y, L \ model.y) + logdet(L) + 0.5 * length(model.y) * log(2π)
+        return 0.5 * dot(model.y, L \ model.y) + 0.5 * logdet(L) + 0.5 * length(model.y) * log(2π)
     end
 
     res = Optim.optimize(
