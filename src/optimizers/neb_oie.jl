@@ -330,6 +330,9 @@ function gp_neb_oie(
 
     path = NEBPath(images, energies, gradients, cfg.spring_constant)
 
+    # Compute initial NEB forces for LCB image selection in the first iteration
+    init_forces, _, _, _ = compute_all_neb_forces(path, cfg; ci_on=false)
+
     history = Dict(
         "max_force" => Float64[],
         "ci_force" => Float64[],
@@ -346,6 +349,10 @@ function gp_neb_oie(
 
     stagnation_count = 0
     prev_max_f = -Inf
+    cached_model = model_init  # reuse initial model for first iter's LCB selection
+    cached_E_ref = E_ref_init
+    cached_y_std = y_std_init
+    cached_forces = init_forces  # per-image NEB forces for LCB selection
 
     for outer_iter in 1:(cfg.max_outer_iter)
         # =====================================================================
@@ -367,50 +374,105 @@ function gp_neb_oie(
             cfg.verbose &&
                 @printf("GP-NEB-OIE %d: evaluate climbing image %d\n", outer_iter, i_eval)
         else
-            # Priority 3: image with highest predictive variance
-            # Need a trained GP to compute variance -- train first
-            model, E_ref, y_std, prev_kern = _train_neb_gp(
-                td,
-                kernel,
-                cfg,
-                prev_kern,
-                hess_X,
-                hess_E,
-                hess_G,
-                n_hess,
-                outer_iter;
-                images,
-            )
+            # Priority 3: Per-bead LCB selection along NEB tangent
+            #
+            # Pure max-variance fails when RFF variance collapses (all ~1e-6).
+            # Use a force-weighted LCB score with *perpendicular gradient
+            # uncertainty*: the GP predicts gradient components with per-
+            # component variances. We project into the perpendicular subspace
+            # (the same projection NEB uses) to get sigma_perp -- the
+            # uncertainty in the force that actually drives convergence.
+            #
+            #   score_i = |F_neb_i| + kappa * sigma_perp_i
+            #
+            # When variance is meaningful, high-uncertainty images get priority.
+            # When variance is near-zero (RFF), falls back to highest-force
+            # selection, which directly targets the convergence bottleneck.
+            #
+            # Reuse cached model from the previous iteration's step 3 when
+            # available.  Only train fresh on the first iteration (no cache).
+            var_model = if cached_model !== nothing
+                cached_model
+            else
+                m, _, _, prev_kern = _train_neb_gp(
+                    td,
+                    kernel,
+                    cfg,
+                    prev_kern,
+                    hess_X,
+                    hess_E,
+                    hess_G,
+                    n_hess,
+                    outer_iter;
+                    images,
+                )
+                m
+            end
 
-            # Predict at unevaluated images to get variance
-            max_var = -Inf
+            kappa_lcb = 2.0
+            best_score = -Inf
+            best_var_perp = 0.0
+            best_force = 0.0
+            max_sigma_seen = 0.0  # track max variance across images
             i_eval = 0
             for i in 2:(N - 1)
                 if uneval[i]
-                    _, var_vec = predict_with_variance(model, reshape(images[i], :, 1))
-                    var_E = var_vec[1]
-                    if var_E > max_var
-                        max_var = var_E
+                    _, var_vec = predict_with_variance(var_model, reshape(images[i], :, 1))
+                    # var_vec layout: [var_E, var_G1, ..., var_GD]
+                    # Project gradient variances perpendicular to path tangent.
+                    # For independent variance components:
+                    #   var(G_perp) = sum_d var(G_d) * (delta_d - tau_d * tau_d')^2
+                    #               ~ sum_d var(G_d) * (1 - tau_d^2)
+                    # (diagonal approximation of the projection)
+                    tau = path_tangent(images, energies, i)
+                    grad_var = @view var_vec[2:end]  # D-vector
+                    var_perp = sum(max(grad_var[d], 0.0) * (1.0 - tau[d]^2) for d in 1:D)
+                    sigma_perp = sqrt(max(var_perp, 0.0))
+                    max_sigma_seen = max(max_sigma_seen, sigma_perp)
+
+                    f_i = norm(cached_forces[i])
+                    # When variance is too low (collapsed RFF), kappa term is
+                    # negligible and score degenerates to pure force selection.
+                    # This is the correct fallback: target convergence bottleneck.
+                    score = f_i + kappa_lcb * sigma_perp
+                    if score > best_score
+                        best_score = score
+                        best_var_perp = var_perp
+                        best_force = f_i
                         i_eval = i
                     end
                 end
             end
-            # Fallback: if no unevaluated images, pick max variance overall
+            # When all variances collapsed, log the fallback for diagnostics
+            if max_sigma_seen < 1e-4 && cfg.verbose
+                @printf("  Variance collapsed (max sigma=%.2e), using pure force selection\n", max_sigma_seen)
+            end
+            # Fallback: if no unevaluated images, pick best score overall
             if i_eval == 0
                 for i in 2:(N - 1)
-                    _, var_vec = predict_with_variance(model, reshape(images[i], :, 1))
-                    var_E = var_vec[1]
-                    if var_E > max_var
-                        max_var = var_E
+                    _, var_vec = predict_with_variance(var_model, reshape(images[i], :, 1))
+                    tau = path_tangent(images, energies, i)
+                    grad_var = @view var_vec[2:end]
+                    var_perp = sum(max(grad_var[d], 0.0) * (1.0 - tau[d]^2) for d in 1:D)
+                    sigma_perp = sqrt(max(var_perp, 0.0))
+
+                    f_i = norm(cached_forces[i])
+                    score = f_i + kappa_lcb * sigma_perp
+                    if score > best_score
+                        best_score = score
+                        best_var_perp = var_perp
+                        best_force = f_i
                         i_eval = i
                     end
                 end
             end
             cfg.verbose && @printf(
-                "GP-NEB-OIE %d: evaluate max-variance image %d (var=%.3e)\n",
+                "GP-NEB-OIE %d: LCB-select image %d (|F|=%.3e, var_perp=%.3e, score=%.3e)\n",
                 outer_iter,
                 i_eval,
-                max_var
+                best_force,
+                best_var_perp,
+                best_score
             )
         end
 
@@ -430,22 +492,28 @@ function gp_neb_oie(
         push!(history["image_evaluated"], i_eval)
 
         # =====================================================================
-        # Check final convergence when ALL images are evaluated
+        # Check convergence on CI force (per-atom norm)
         # =====================================================================
+        # Convergence when the climbing image has been oracle-evaluated and
+        # its per-atom force norm is below tolerance.  This is the physical
+        # convergence criterion: the saddle point is accurately resolved.
+        # No need to evaluate every image -- the CI force is what matters.
         n_uneval = count(uneval)
-        if n_uneval == 0
-            forces, max_f, ci_f, i_max = compute_all_neb_forces(
+        i_ci = argmax(energies[2:(end - 1)]) + 1
+        ci_evaluated = !uneval[i_ci]
+        if ci_evaluated
+            ci_forces_check, _, ci_f_check, _ = compute_all_neb_forces(
                 path, cfg; ci_on=cfg.climbing_image
             )
-            if max_f < cfg.conv_tol && ci_f < ci_tol
-                push!(history["max_force"], max_f)
-                push!(history["ci_force"], ci_f)
+            if ci_f_check < ci_tol
+                push!(history["max_force"], ci_f_check)
+                push!(history["ci_force"], ci_f_check)
                 push!(history["oracle_calls"], oracle_calls)
                 push!(history["max_energy"], maximum(energies))
                 cfg.verbose && @printf(
-                    "GP-NEB-OIE converged! max|F|=%.5f, CI|F|=%.5f, calls=%d\n",
-                    max_f,
-                    ci_f,
+                    "GP-NEB-OIE converged! CI|F|=%.5f (tol=%.5f), calls=%d\n",
+                    ci_f_check,
+                    ci_tol,
                     oracle_calls
                 )
                 converged = true
@@ -463,6 +531,10 @@ function gp_neb_oie(
         model, E_ref, y_std, prev_kern = _train_neb_gp(
             td, kernel, cfg, prev_kern, hess_X, hess_E, hess_G, n_hess, outer_iter; images
         )
+        # Cache for next iteration's variance selection (avoids double training)
+        cached_model = model
+        cached_E_ref = E_ref
+        cached_y_std = y_std
 
         # Predict at unevaluated images
         for i in 2:(N - 1)
@@ -481,6 +553,8 @@ function gp_neb_oie(
         forces, max_f, ci_f, i_max = compute_all_neb_forces(
             path, cfg; ci_on=cfg.climbing_image
         )
+        # Cache per-image forces for next iteration's LCB selection
+        cached_forces = forces
 
         # Track smallest accurate perpendicular gradient
         # (use the force at the just-evaluated image if it's accurate)

@@ -120,6 +120,9 @@ Base.@kwdef struct OTGPDConfig
     hod_history_increment::Int = 2
     hod_max_history::Int = 30
 
+    # RFF approximation
+    rff_features::Int = 0            # 0 = exact GP; >0 = RFF approximation
+
     # Trust region metric and adaptive threshold
     trust_metric::Symbol = :emd
     atom_types::Vector{Int} = Int[]
@@ -160,75 +163,11 @@ end
 # ==============================================================================
 # FPS subset selection for hyperparameter optimization
 # ==============================================================================
+# _select_optim_subset and _extract_subset are in sampling.jl (shared)
 
 # Thin wrapper calling shared trust utility (see distances_trust.jl)
 function _fps_distance_fn(metric::Symbol, atom_types::Vector{Int}=Int[])
     trust_distance_fn(metric, atom_types)
-end
-
-"""
-    _select_optim_subset(td, x_current, n_select, n_latest; distance_fn)
-
-Select a subset of training data for hyperparameter optimization using
-farthest point sampling. Always includes the `n_latest` most recently
-added points, then fills the rest via FPS from the remaining candidates.
-
-Returns column indices into `td.X`.
-"""
-function _select_optim_subset(
-    td::TrainingData,
-    x_current::Vector{Float64},
-    n_select::Int,
-    n_latest::Int;
-    distance_fn::Function=max_1d_log_distance,
-)
-    N = npoints(td)
-    n_select <= 0 && return collect(1:N)
-    n_select >= N && return collect(1:N)
-
-    # Always include the most recent n_latest points
-    n_latest = min(n_latest, N, n_select)
-    latest_idx = collect((N - n_latest + 1):N)
-
-    n_fps = n_select - n_latest
-    if n_fps <= 0
-        return latest_idx
-    end
-
-    # Candidates: everything except the latest points
-    cand_idx = setdiff(1:N, latest_idx)
-    if isempty(cand_idx)
-        return latest_idx
-    end
-
-    # Build candidate and selected matrices for FPS
-    cand_X = td.X[:, cand_idx]
-    sel_X = td.X[:, latest_idx]
-
-    fps_idx = farthest_point_sampling(cand_X, sel_X, n_fps; distance_fn=distance_fn)
-
-    result = sort(vcat(latest_idx, cand_idx[fps_idx]))
-    return result
-end
-
-"""
-    _extract_subset(td, indices)
-
-Create a new TrainingData from selected column indices.
-"""
-function _extract_subset(td::TrainingData, indices::Vector{Int})
-    D = size(td.X, 1)
-    sub = TrainingData(D)
-    sub.X = td.X[:, indices]
-    sub.energies = td.energies[indices]
-    new_grads = Float64[]
-    for i in indices
-        s = (i - 1) * D + 1
-        e = i * D
-        append!(new_grads, td.gradients[s:e])
-    end
-    sub.gradients = new_grads
-    return sub
 end
 
 # ==============================================================================
@@ -649,6 +588,9 @@ function otgpd(
         n_sub = npoints(td_sub)
         barrier = min(1e-4 + 1e-3 * n_sub, 0.5)
 
+        # Adaptive training iterations: full budget on cold start, 1/3 on warm start
+        _train_iters = outer_iter == 1 ? cfg.gp_train_iter : max(cfg.gp_train_iter ÷ 3, 50)
+
         if kernel isa AbstractMoleculeKernel
             # Molecular kernel path: energy shift, fix_noise, warm-start
             E_ref_sub = td_sub.energies[1]
@@ -665,7 +607,7 @@ function otgpd(
             )
             train_model!(
                 model_sub;
-                iterations=cfg.gp_train_iter,
+                iterations=_train_iters,
                 fix_noise=true,
                 verbose=cfg.verbose,
                 barrier_strength=barrier,
@@ -690,7 +632,7 @@ function otgpd(
             model_sub = GPModel(
                 kernel, td_sub.X, y_sub; noise_var=1e-2, grad_noise_var=1e-1, jitter=1e-3
             )
-            train_model!(model_sub; iterations=cfg.gp_train_iter, verbose=cfg.verbose)
+            train_model!(model_sub; iterations=_train_iters, verbose=cfg.verbose)
 
             # Rebuild on full data
             y_gp, y_mean, y_std = normalize(td)
@@ -701,6 +643,22 @@ function otgpd(
                 noise_var=model_sub.noise_var,
                 grad_noise_var=model_sub.grad_noise_var,
                 jitter=model_sub.jitter,
+            )
+        end
+
+        # RFF approximation if configured (for fast variance queries in LCB)
+        rff_model = nothing
+        if cfg.rff_features > 0 && kernel isa MolInvDistSE
+            noise_e = kernel isa AbstractMoleculeKernel ? 1e-6 : 1e-2
+            noise_g = kernel isa AbstractMoleculeKernel ? 1e-4 : 1e-1
+            rff_model = build_rff(
+                model.kernel, td.X,
+                kernel isa AbstractMoleculeKernel ? vcat(td.energies .- td.energies[1], td.gradients) : y_gp,
+                cfg.rff_features;
+                noise_var=noise_e, grad_noise_var=noise_g,
+            )
+            cfg.verbose && @printf(
+                "  RFF: %d features, %d training points\n", cfg.rff_features, npoints(td)
             )
         end
 
@@ -726,6 +684,7 @@ function otgpd(
         F_trans_prev = Float64[]
 
         # Inner loop: optimize on GP surface
+        R_before_inner = copy(state.R)
         for inner_iter in 1:cfg.max_inner_iter
             # Rotate dimer to lowest curvature mode
             rotate_dimer!(state, model, dimer_cfg; y_std, verbose=false, rot_hist, cg_state)
@@ -816,6 +775,66 @@ function otgpd(
             end
 
             state.R = R_new
+        end
+
+        # LCB exploration along dimer minimum mode when stuck.
+        # Variance floor check: only use LCB when GP uncertainty is meaningful.
+        _eff_dedup_otgpd = T_gp * 0.1
+        if norm(state.R - R_before_inner) < _eff_dedup_otgpd
+            var_model_otgpd = rff_model !== nothing ? rff_model : model
+            _var_probe_o = predict_with_variance(var_model_otgpd, reshape(state.R, :, 1))
+            _grad_var_o = @view _var_probe_o[2][2:end]
+            _max_grad_var_o = maximum(max.(0.0, _grad_var_o)) * y_std^2
+            _sigma_probe_o = sqrt(_max_grad_var_o)
+
+            if _sigma_probe_o > 1e-4
+                cfg.verbose && println("  OTGPD barely moved -- LCB exploration along minimum mode")
+                orient_lcb = state.orient
+                function _otgpd_lcb_obj(x)
+                    mu_all, var_all = predict_with_variance(var_model_otgpd, reshape(x, :, 1))
+                    E_pred = mu_all[1] * y_std + y_mean
+                    grad_var = @view var_all[2:end]
+                    var_Ft = 0.0
+                    for d in 1:D
+                        vd = 0.0
+                        for j in 1:D
+                            Mdj = (d == j ? -1.0 : 0.0) + 2.0 * orient_lcb[d] * orient_lcb[j]
+                            vd += Mdj^2 * max(grad_var[j], 0.0)
+                        end
+                        var_Ft += vd
+                    end
+                    sigma_t = sqrt(max(var_Ft, 0.0)) * y_std
+                    return E_pred - 2.0 * sigma_t
+                end
+
+                res_lcb = Optim.optimize(
+                    _otgpd_lcb_obj, state.R, NelderMead(),
+                    Optim.Options(; iterations=80, show_trace=false),
+                )
+                R_lcb = Optim.minimizer(res_lcb)
+
+                # EMD trust clip
+                trust_thresh_lcb = _adaptive_trust_threshold(cfg, npoints(td), n_atoms)
+                d_lcb = _trust_min_distance(R_lcb, td, cfg)
+                if d_lcb > trust_thresh_lcb
+                    dist_fn = trust_distance_fn(cfg.trust_metric, cfg.atom_types)
+                    nearest_idx = argmin(dist_fn(R_lcb, view(td.X, :, j)) for j in 1:npoints(td))
+                    disp = R_lcb - td.X[:, nearest_idx]
+                    R_lcb = td.X[:, nearest_idx] + disp * (trust_thresh_lcb / d_lcb * 0.95)
+                end
+
+                # Energy sanity check
+                mu_lcb = predict(var_model_otgpd, reshape(R_lcb, :, 1))[1] * y_std + y_mean
+                E_best = minimum(td.energies)
+                if mu_lcb < E_best + 5.0 * _sigma_probe_o
+                    state.R = R_lcb
+                    cfg.verbose && @printf("  LCB candidate: d_from_prev=%.4f\n", norm(R_lcb - R_before_inner))
+                else
+                    cfg.verbose && @printf("  LCB rejected (E_pred=%.4f too high), keeping position\n", mu_lcb)
+                end
+            else
+                cfg.verbose && @printf("  OTGPD barely moved but variance too low (sigma=%.2e), skipping LCB\n", _sigma_probe_o)
+            end
         end
 
         # Evaluate oracle at converged position

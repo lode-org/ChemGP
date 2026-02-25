@@ -64,6 +64,7 @@ Base.@kwdef struct DimerConfig
     trust_radius::Float64 = 0.1      # Max distance from training data
     ratio_at_limit::Float64 = 2 / 3    # Inter-atomic distance ratio limit
     max_outer_iter::Int = 50       # Max outer iterations (oracle call cycles)
+    max_oracle_calls::Int = 0      # 0 = no cap; >0 = hard limit on oracle evaluations
     max_inner_iter::Int = 100      # Max GP steps per outer iteration
     max_rot_iter::Int = 10       # Max rotations per translation step
     alpha_trans::Float64 = 0.01     # Translation step size factor (simple mode)
@@ -75,6 +76,21 @@ Base.@kwdef struct DimerConfig
     lbfgs_memory::Int = 5        # L-BFGS memory depth
     max_step::Float64 = 0.5      # Max translation step length
     step_convex::Float64 = 0.1      # Step size in convex regions
+    max_training_points::Int = 0     # 0 = no pruning
+    rff_features::Int = 0            # 0 = exact GP; >0 = RFF approximation
+    # FPS subset selection for hyperparameter optimization
+    fps_history::Int = 0             # subset size for hyperopt (0=use all)
+    fps_latest_points::Int = 2       # most recent points always included
+    fps_metric::Symbol = :emd        # :emd, :max_1d_log, :euclidean
+    # Trust region metric and adaptive threshold (matching minimize/NEB/OTGPD)
+    trust_metric::Symbol = :emd
+    atom_types::Vector{Int} = Int[]
+    use_adaptive_threshold::Bool = false
+    adaptive_t_min::Float64 = 0.15
+    adaptive_delta_t::Float64 = 0.35
+    adaptive_n_half::Int = 50
+    adaptive_A::Float64 = 1.3
+    adaptive_floor::Float64 = 0.2
     verbose::Bool = true
 end
 
@@ -769,21 +785,97 @@ function gp_dimer(
     stop_reason = MAX_ITERATIONS
     stagnation_count = 0
     prev_f_true = -Inf
+    prev_kern = nothing  # warm-start kernel across outer iterations
+    is_mol = kernel isa AbstractMoleculeKernel
 
     for outer_iter in 1:(cfg.max_outer_iter)
+        if cfg.max_oracle_calls > 0 && oracle_calls >= cfg.max_oracle_calls
+            cfg.verbose && @printf("Reached oracle call cap (%d). Stopping.\n", cfg.max_oracle_calls)
+            stop_reason = ORACLE_CAP
+            break
+        end
+
         cfg.verbose && println("-"^70)
         cfg.verbose &&
             @printf("OUTER ITERATION %d (Oracle calls: %d)\n", outer_iter, oracle_calls)
 
-        # Train GP on current data
-        y_gp, y_mean, y_std = normalize(td)
+        # Optional training data pruning
+        if cfg.max_training_points > 0
+            prune_training_data!(
+                td, state.R, cfg.max_training_points;
+                distance_fn=trust_distance_fn(cfg.trust_metric, cfg.atom_types)
+            )
+        end
 
-        model = GPModel(
-            kernel, td.X, y_gp; noise_var=1e-2, grad_noise_var=1e-1, jitter=1e-3
-        )
+        # FPS subset selection for hyperparameter optimization
+        fps_dist = trust_distance_fn(cfg.fps_metric, cfg.atom_types)
+        if cfg.fps_history > 0 && npoints(td) > cfg.fps_history
+            sub_idx = _select_optim_subset(
+                td, state.R, cfg.fps_history, cfg.fps_latest_points; distance_fn=fps_dist
+            )
+            td_sub = _extract_subset(td, sub_idx)
+            cfg.verbose && @printf(
+                "  FPS subset: %d/%d points\n", npoints(td_sub), npoints(td)
+            )
+        else
+            td_sub = td
+        end
 
+        # Train GP on subset, rebuild on full data
+        # Adaptive training iterations: full budget on cold start, 1/3 on warm start
+        _train_iters = prev_kern === nothing ? cfg.gp_train_iter : max(cfg.gp_train_iter ÷ 3, 50)
         cfg.verbose && @printf("Training GP on %d points...\n", npoints(td))
-        train_model!(model; iterations=cfg.gp_train_iter)
+        if is_mol
+            E_ref_sub = td_sub.energies[1]
+            y_sub = vcat(td_sub.energies .- E_ref_sub, td_sub.gradients)
+
+            kern = prev_kern === nothing ? init_mol_invdist_se(td_sub, kernel) : prev_kern
+            gp_sub = GPModel(
+                kern, td_sub.X, y_sub; noise_var=1e-6, grad_noise_var=1e-4, jitter=1e-6
+            )
+            train_model!(
+                gp_sub; iterations=_train_iters, fix_noise=true, verbose=cfg.verbose
+            )
+            prev_kern = gp_sub.kernel
+
+            # Rebuild on full data
+            E_ref = td.energies[1]
+            y_gp = vcat(td.energies .- E_ref, td.gradients)
+            y_mean = E_ref
+            y_std = 1.0
+            model = GPModel(
+                gp_sub.kernel, td.X, y_gp; noise_var=1e-6, grad_noise_var=1e-4, jitter=1e-6
+            )
+        else
+            y_sub, _, _ = normalize(td_sub)
+            kern = prev_kern === nothing ? kernel : prev_kern
+            gp_sub = GPModel(
+                kern, td_sub.X, y_sub; noise_var=1e-2, grad_noise_var=1e-1, jitter=1e-3
+            )
+            train_model!(gp_sub; iterations=_train_iters, verbose=cfg.verbose)
+            prev_kern = gp_sub.kernel
+
+            y_gp, y_mean, y_std = normalize(td)
+            model = GPModel(
+                gp_sub.kernel, td.X, y_gp;
+                noise_var=gp_sub.noise_var, grad_noise_var=gp_sub.grad_noise_var, jitter=1e-3
+            )
+        end
+
+        # RFF approximation if configured
+        if cfg.rff_features > 0 && kernel isa MolInvDistSE
+            noise_e = is_mol ? 1e-6 : 1e-2
+            noise_g = is_mol ? 1e-4 : 1e-1
+            rff = build_rff(
+                model isa GPModel ? model.kernel : gp_sub.kernel,
+                td.X, y_gp, cfg.rff_features;
+                noise_var=noise_e, grad_noise_var=noise_g,
+            )
+            cfg.verbose && @printf(
+                "  RFF: %d features, %d training points\n", cfg.rff_features, npoints(td)
+            )
+            # Use RFF for variance queries (LCB), keep exact GP for rotation/translation
+        end
 
         # Reset L-BFGS/CG state for new outer iteration (new GP model)
         rot_hist !== nothing && reset!(rot_hist)
@@ -793,6 +885,7 @@ function gp_dimer(
 
         # Inner loop: optimize on GP surface
         R_prev = copy(state.R)
+        n_atoms = div(D, 3)
 
         for inner_iter in 1:(cfg.max_inner_iter)
             # Rotate dimer to find lowest curvature mode
@@ -850,17 +943,20 @@ function gp_dimer(
                 break
             end
 
-            # Check trust radius
-            min_dist_new = min_distance_to_data(R_new, td.X)
-            if min_dist_new > cfg.trust_radius
+            # Check trust radius (configurable metric: EMD or Euclidean)
+            trust_thresh = adaptive_trust_threshold(
+                cfg.trust_radius, npoints(td), n_atoms;
+                use_adaptive=cfg.use_adaptive_threshold,
+                t_min=cfg.adaptive_t_min, delta_t=cfg.adaptive_delta_t,
+                n_half=cfg.adaptive_n_half, A=cfg.adaptive_A, floor=cfg.adaptive_floor,
+            )
+            trust_dist = trust_min_distance(R_new, td.X, cfg.trust_metric; atom_types=cfg.atom_types)
+            if trust_dist > trust_thresh
                 cfg.verbose && @printf(
-                    "  Trust radius exceeded (%.4f > %.4f)\n",
-                    min_dist_new,
-                    cfg.trust_radius
+                    "  Trust radius exceeded (%.4f > %.4f)\n", trust_dist, trust_thresh
                 )
-                # Scale step to stay within trust radius
                 step_vec = R_new - state.R
-                scale = cfg.trust_radius / min_dist_new * 0.95
+                scale = trust_thresh / trust_dist * 0.95
                 R_prev = copy(state.R)
                 state.R = state.R + scale * step_vec
                 break
@@ -875,6 +971,83 @@ function gp_dimer(
             # Accept step
             R_prev = copy(state.R)
             state.R = R_new
+        end
+
+        # Post-inner EMD trust clip (matching minimize/NEB pattern)
+        _dimer_thresh = adaptive_trust_threshold(
+            cfg.trust_radius, npoints(td), n_atoms;
+            use_adaptive=cfg.use_adaptive_threshold,
+            t_min=cfg.adaptive_t_min, delta_t=cfg.adaptive_delta_t,
+            n_half=cfg.adaptive_n_half, A=cfg.adaptive_A, floor=cfg.adaptive_floor,
+        )
+        _dimer_td = trust_min_distance(state.R, td.X, cfg.trust_metric; atom_types=cfg.atom_types)
+        if _dimer_td > _dimer_thresh
+            dist_fn = trust_distance_fn(cfg.trust_metric, cfg.atom_types)
+            nearest_idx = argmin(dist_fn(state.R, view(td.X, :, j)) for j in 1:npoints(td))
+            nearest = td.X[:, nearest_idx]
+            disp = state.R - nearest
+            state.R = nearest + disp * (_dimer_thresh / _dimer_td * 0.95)
+            cfg.verbose && @printf("  Post-inner EMD trust clip: d=%.4f -> %.4f\n", _dimer_td, _dimer_thresh)
+        end
+
+        # LCB exploration along dimer minimum mode when stuck.
+        # Variance floor check: only use LCB when GP uncertainty is meaningful.
+        _eff_dedup = cfg.T_force_gp * 0.1
+        if norm(state.R - R_prev) < _eff_dedup
+            # Pick the model with variance: RFF if available, else exact GP
+            var_model = (cfg.rff_features > 0 && @isdefined(rff)) ? rff : model
+            _var_probe = predict_with_variance(var_model, reshape(state.R, :, 1))
+            _grad_var = @view _var_probe[2][2:end]
+            _max_grad_var = maximum(max.(0.0, _grad_var)) * y_std^2
+            _sigma_probe = sqrt(_max_grad_var)
+
+            if _sigma_probe > 1e-4
+                cfg.verbose && println("  Dimer barely moved -- LCB exploration along minimum mode")
+                orient = state.orient
+                function _dimer_lcb_obj(x)
+                    mu_all, var_all = predict_with_variance(var_model, reshape(x, :, 1))
+                    E_pred = mu_all[1] * y_std + y_mean
+                    grad_var = @view var_all[2:end]
+                    var_Ft = 0.0
+                    for d in 1:D
+                        vd = 0.0
+                        for j in 1:D
+                            Mdj = (d == j ? -1.0 : 0.0) + 2.0 * orient[d] * orient[j]
+                            vd += Mdj^2 * max(grad_var[j], 0.0)
+                        end
+                        var_Ft += vd
+                    end
+                    sigma_t = sqrt(max(var_Ft, 0.0)) * y_std
+                    return E_pred - 2.0 * sigma_t
+                end
+
+                res_lcb = Optim.optimize(
+                    _dimer_lcb_obj, state.R, NelderMead(),
+                    Optim.Options(; iterations=80, show_trace=false),
+                )
+                R_lcb = Optim.minimizer(res_lcb)
+
+                # EMD trust clip on LCB candidate
+                d_lcb = trust_min_distance(R_lcb, td.X, cfg.trust_metric; atom_types=cfg.atom_types)
+                if d_lcb > _dimer_thresh
+                    dist_fn = trust_distance_fn(cfg.trust_metric, cfg.atom_types)
+                    nearest_idx = argmin(dist_fn(R_lcb, view(td.X, :, j)) for j in 1:npoints(td))
+                    disp = R_lcb - td.X[:, nearest_idx]
+                    R_lcb = td.X[:, nearest_idx] + disp * (_dimer_thresh / d_lcb * 0.95)
+                end
+
+                # Energy sanity check
+                mu_lcb = predict(var_model, reshape(R_lcb, :, 1))[1] * y_std + y_mean
+                E_best = minimum(td.energies)
+                if mu_lcb < E_best + 5.0 * _sigma_probe
+                    state.R = R_lcb
+                    cfg.verbose && @printf("  LCB candidate: d_from_prev=%.4f\n", norm(R_lcb - R_prev))
+                else
+                    cfg.verbose && @printf("  LCB rejected (E_pred=%.4f too high), keeping position\n", mu_lcb)
+                end
+            else
+                cfg.verbose && @printf("  Dimer barely moved but variance too low (sigma=%.2e), skipping LCB\n", _sigma_probe)
+            end
         end
 
         # Call oracle at current position
