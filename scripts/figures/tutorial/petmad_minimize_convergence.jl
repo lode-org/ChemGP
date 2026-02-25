@@ -5,8 +5,9 @@
 # evaluated with PET-MAD universal ML potential via RPC.
 # Tracks max per-atom force vs oracle evaluations.
 #
-# Requires: PET-MAD server running via eonclient or rgpot potserv.
-#   export RGPOT_HOST=localhost RGPOT_PORT=12345
+# GP iteration data streamed to JSONL writer via TCP socket.
+#
+# Requires: PET-MAD server running at localhost:12345
 #
 # Output: petmad_minimize_convergence.pdf, petmad_minimize_convergence.csv
 #
@@ -63,61 +64,70 @@ const SYSTEM100_ATMNRS = Int32[6, 6, 8, 7, 7, 1, 1, 1, 1]
 const SYSTEM100_BOX = Float64[20, 0, 0, 0, 20, 0, 0, 0, 20]
 
 function run_convergence()
-    host = get(ENV, "RGPOT_HOST", "localhost")
-    port = parse(Int, get(ENV, "RGPOT_PORT", "12345"))
-
-    println("Connecting to PET-MAD server at $host:$port")
-    pot = RpcPotential(host, port, SYSTEM100_ATMNRS, SYSTEM100_BOX)
+    pot = RpcPotential("localhost", 12345, SYSTEM100_ATMNRS, SYSTEM100_BOX)
     oracle = make_rpc_oracle(pot)
 
     x_init = copy(SYSTEM100_REACT)
-    D = length(x_init)
+
+    # --- JSONL writer ---
+    jsonl_path = joinpath(PETMAD_CACHE_DIR, "minimize.jsonl")
+    writer, port = start_jsonl_writer(jsonl_path; port=9877)
 
     # --- GP-accelerated minimization ---
     println("Running GP-minimization on system100...")
 
-    kernel = MolInvDistSE(1.0, [1.0], Float64[])
+    kernel = MolInvDistSE(SYSTEM100_ATMNRS, Float64[])
 
     gp_config = MinimizationConfig(;
-        trust_radius=0.15,
+        trust_radius=0.10,
         conv_tol=0.05,
         max_iter=80,
         gp_opt_tol=1e-2,
         gp_train_iter=200,
-        n_initial_perturb=4,
-        perturb_scale=0.08,
+        n_initial_perturb=3,
+        perturb_scale=0.06,
         penalty_coeff=1e3,
-        max_move=0.1,
+        max_move=0.04,
         explosion_recovery=:perturb_best,
-        rff_features=200,
-        max_training_points=50,
-        verbose=true,
+        energy_regression_tol=0.5,
+        rff_features=300,
+        max_training_points=60,
+        verbose=false,
+        fps_history=40,
+        fps_latest_points=10,
+        fps_metric=:emd,
+        machine_output="localhost:$port",
     )
 
     result_gp = gp_minimize(oracle, copy(x_init), kernel; config=gp_config)
-    println("GP-min converged: $(result_gp.converged)")
-    println("GP-min oracle calls: $(result_gp.oracle_calls)")
+    println("GP-min: $(result_gp.stop_reason), oracle calls: $(result_gp.oracle_calls)")
+
+    stop_jsonl_writer(writer)
 
     # --- Classical minimization (oracle every step, no GP) ---
-    println("\nRunning classical L-BFGS on system100 (oracle every step)...")
+    println("Running classical L-BFGS on system100...")
 
     classical_fatom = Float64[]
+    classical_oc = Int[]
     x_curr = copy(x_init)
-    max_classical_iter = 200
     opt_state = OptimState(10)
+    oc_count = 0
 
     E_curr, G_curr = oracle(x_curr)
+    oc_count += 1
     push!(classical_fatom, max_fatom(G_curr))
+    push!(classical_oc, oc_count)
 
-    for iter in 1:max_classical_iter
+    for iter in 1:200
         step = optim_step!(opt_state, x_curr, -G_curr, 0.1)
         x_new = x_curr + step
         E_new, G_new = oracle(x_new)
+        oc_count += 1
 
-        # Accept if energy decreased, otherwise halve step
         if E_new > E_curr
             x_new = x_curr + 0.5 .* step
             E_new, G_new = oracle(x_new)
+            oc_count += 1
         end
 
         x_curr = x_new
@@ -125,17 +135,30 @@ function run_convergence()
         G_curr = G_new
 
         push!(classical_fatom, max_fatom(G_curr))
+        push!(classical_oc, oc_count)
 
-        if max_fatom(G_curr) < 0.05
-            println("Classical converged at iter $iter")
-            break
-        end
+        max_fatom(G_curr) < 0.05 && break
     end
 
-    println("Classical oracle calls: $(length(classical_fatom))")
-
+    println("Classical: $oc_count oracle calls")
     close(pot)
-    return result_gp, classical_fatom
+
+    # --- Build dataframes from JSONL ---
+    gp_data = parse_minimize_jsonl(jsonl_path)
+    n_gp = length(gp_data.oracle_calls)
+    n_cl = length(classical_fatom)
+
+    df_gp = DataFrame(;
+        oracle_calls=gp_data.oracle_calls,
+        max_fatom=gp_data.max_fatom,
+        method=fill("GP-minimization", n_gp),
+    )
+    df_cl = DataFrame(;
+        oracle_calls=classical_oc,
+        max_fatom=classical_fatom,
+        method=fill("Classical L-BFGS", n_cl),
+    )
+    return vcat(df_gp, df_cl)
 end
 
 function main()
@@ -145,36 +168,7 @@ function main()
         println("Using cached data from $csv_path")
         CSV.read(csv_path, DataFrame)
     else
-        result_gp, classical_fatom = run_convergence()
-
-        # Re-evaluate trajectory for per-atom force (need oracle again)
-        # Use cached energies/trajectory from result_gp
-        # The GP trajectory stores evaluated points; re-derive forces from
-        # the energies and gradients stored during the run.
-        # Since oracle calls are expensive, we cache the result.
-        host = get(ENV, "RGPOT_HOST", "localhost")
-        port = parse(Int, get(ENV, "RGPOT_PORT", "12345"))
-        pot = RpcPotential(host, port, SYSTEM100_ATMNRS, SYSTEM100_BOX)
-        oracle = make_rpc_oracle(pot)
-
-        gp_fatom = [max_fatom(oracle(x)[2]) for x in result_gp.trajectory]
-        close(pot)
-
-        n_gp = length(gp_fatom)
-        n_cl = length(classical_fatom)
-
-        df_gp = DataFrame(;
-            oracle_calls=1:n_gp,
-            max_fatom=gp_fatom,
-            method=fill("GP-minimization", n_gp),
-        )
-        df_cl = DataFrame(;
-            oracle_calls=1:n_cl,
-            max_fatom=classical_fatom,
-            method=fill("Classical L-BFGS", n_cl),
-        )
-        df_all = vcat(df_gp, df_cl)
-
+        df_all = run_convergence()
         CSV.write(csv_path, df_all)
         println("Cached convergence data to $csv_path")
         df_all
@@ -194,22 +188,10 @@ function main()
     df_gp = filter(:method => ==("GP-minimization"), df)
     df_cl = filter(:method => ==("Classical L-BFGS"), df)
 
-    lines!(
-        ax,
-        df_gp.oracle_calls,
-        df_gp.max_fatom;
-        color=RUHI.teal,
-        linewidth=1.5,
-        label="GP-minimization",
-    )
-    lines!(
-        ax,
-        df_cl.oracle_calls,
-        df_cl.max_fatom;
-        color=RUHI.sky,
-        linewidth=1.5,
-        label="Classical L-BFGS",
-    )
+    lines!(ax, df_gp.oracle_calls, df_gp.max_fatom;
+        color=RUHI.teal, linewidth=1.5, label="GP-minimization")
+    lines!(ax, df_cl.oracle_calls, df_cl.max_fatom;
+        color=RUHI.sky, linewidth=1.5, label="Classical L-BFGS")
     hlines!(ax, [0.05]; color=:gray, linewidth=0.8, linestyle=:dash)
 
     axislegend(ax; position=:rt, framevisible=false, labelsize=10)

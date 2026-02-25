@@ -26,7 +26,7 @@ D = length(x_init)
 N_atoms = div(D, 3)
 
 println("Collecting training data from GP-minimization on LEPS...")
-kernel_init = MolInvDistSE(1.0, [1.0, 1.0, 1.0], Float64[])
+kernel_init = MolInvDistSE([1, 1, 1], Float64[])
 config = MinimizationConfig(;
     trust_radius=0.15,
     conv_tol=1e-2,
@@ -64,8 +64,7 @@ end
 println("Training exact GP...")
 y_gp, y_mean, y_std = ChemGP.normalize(td)
 
-N_pairs = div(N_atoms * (N_atoms - 1), 2)
-mol_kernel = MolInvDistSE(1.0, ones(N_pairs), Float64[])
+mol_kernel = MolInvDistSE([1, 1, 1], Float64[])
 model = GPModel(mol_kernel, td.X, y_gp; noise_var=1e-2, grad_noise_var=1e-1, jitter=1e-3)
 train_model!(model; iterations=300)
 

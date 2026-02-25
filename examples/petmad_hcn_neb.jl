@@ -123,7 +123,7 @@ function main()
     if RUN_AIE
         println("\n=== GP-NEB (AIE) ===")
         gp_dir = joinpath(OUTDIR, "gp_aie")
-        kernel = MolInvDistSE(1.0, [1.0], Float64[])
+        kernel = MolInvDistSE(ATOMIC_NUMBERS, Float64[])
 
         gp_writer = make_neb_writer(gp_dir, ATOMIC_NUMBERS, BOX)
         gp_h5 = make_neb_hdf5_writer(
@@ -174,7 +174,7 @@ function main()
     # OIE evaluates one image per iteration (max uncertainty), so parallelism
     # does not apply -- pass single oracle.
     println("\n=== GP-NEB (OIE) ===")
-    kernel = MolInvDistSE(1.0, [1.0], Float64[])
+    kernel = MolInvDistSE(ATOMIC_NUMBERS, Float64[])
     oie_dir = joinpath(OUTDIR, "gp_oie")
 
     oie_writer = make_neb_writer(oie_dir, ATOMIC_NUMBERS, BOX)

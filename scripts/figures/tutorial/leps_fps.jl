@@ -12,7 +12,8 @@ include(joinpath(@__DIR__, "common.jl"))
 
 # --- Run GP-NEB AIE to collect training data ---
 println("Running GP-NEB AIE on LEPS to collect training points...")
-kernel = MolInvDistSE(1.0, [1.0, 1.0, 1.0], Float64[], Int[])
+# 3 H atoms -> 1 unique pair type (H-H), 3 inv-distance features sharing 1 lengthscale
+kernel = MolInvDistSE([1, 1, 1], Float64[])
 
 config = NEBConfig(;
     images=7,

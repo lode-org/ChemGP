@@ -12,15 +12,19 @@ include(joinpath(@__DIR__, "common.jl"))
 const HCN_CACHE_DIR = joinpath(OUTPUT_DIR, "hcn_cache")
 mkpath(HCN_CACHE_DIR)
 
-# HCN/HNC coordinates (same as hcn_neb_profile.jl)
-const X_HCN = [0.0, -0.0002, 0.4954, 0.0, 0.0001, -0.6503, 0.0, -0.0005, 1.5653]
-const X_HNC = [0.0, 0.0, 0.7366, 0.0, 0.0, -0.4277, 0.0, 0.0, -1.4258]
+# Load HCN/HNC from data files
+const _hcn_data = read_extxyz(joinpath(@__DIR__, "..", "..", "..", "data", "hcn", "hcn.extxyz"))
+const _hnc_data = read_extxyz(joinpath(@__DIR__, "..", "..", "..", "data", "hcn", "hnc.extxyz"))
+const X_HCN = _hcn_data.positions
+const X_HNC = _hnc_data.positions
+const HCN_ATNRS = _hcn_data.atomic_numbers
+const HCN_BOX = _hcn_data.box
 
 function run_convergence()
     host = get(ENV, "RGPOT_HOST", "localhost")
     port = parse(Int, get(ENV, "RGPOT_PORT", "12345"))
-    atomic_numbers = Int32[6, 7, 1]
-    box = 20.0 * [1.0 0.0 0.0; 0.0 1.0 0.0; 0.0 0.0 1.0]
+    atomic_numbers = Int32.(HCN_ATNRS)
+    box = Float64[HCN_BOX...]
 
     println("Connecting to PET-MAD server at $host:$port")
     pot = RpcPotential(host, port, atomic_numbers, box)
@@ -33,7 +37,7 @@ function run_convergence()
         energy_weighted=true,
         ew_k_min=0.972,
         ew_k_max=9.72,
-        max_iter=200,
+        max_iter=1000,
         conv_tol=0.05,
         step_size=0.01,
         verbose=true,
@@ -47,7 +51,7 @@ function run_convergence()
     result_aie = nothing
     try
         println("Running GP-NEB AIE...")
-        kernel = MolInvDistSE(1.0, [1.0], Float64[])
+        kernel = MolInvDistSE(HCN_ATNRS, Float64[])
         gp_cfg = NEBConfig(;
             images=8,
             spring_constant=1.0,
@@ -56,12 +60,12 @@ function run_convergence()
             ew_k_min=0.972,
             ew_k_max=9.72,
             conv_tol=0.05,
-            gp_train_iter=300,
+            gp_train_iter=200,
             max_outer_iter=50,
             trust_radius=0.15,
-            atom_types=Int[6, 7, 1],
+            atom_types=Int.(HCN_ATNRS),
             max_gp_points=40,
-            rff_features=300,
+            rff_features=200,
             verbose=true,
         )
         result_aie = gp_neb_aie(oracle, X_HCN, X_HNC, kernel; config=gp_cfg)
@@ -73,7 +77,7 @@ function run_convergence()
     result_oie = nothing
     try
         println("Running GP-NEB OIE...")
-        kernel = MolInvDistSE(1.0, [1.0], Float64[])
+        kernel = MolInvDistSE(HCN_ATNRS, Float64[])
         oie_cfg = NEBConfig(;
             images=8,
             spring_constant=1.0,
@@ -82,12 +86,12 @@ function run_convergence()
             ew_k_min=0.972,
             ew_k_max=9.72,
             conv_tol=0.05,
-            gp_train_iter=300,
+            gp_train_iter=200,
             max_outer_iter=120,
             trust_radius=0.15,
-            atom_types=Int[6, 7, 1],
+            atom_types=Int.(HCN_ATNRS),
             max_gp_points=40,
-            rff_features=300,
+            rff_features=200,
             verbose=true,
         )
         result_oie = gp_neb_oie(oracle, X_HCN, X_HNC, kernel; config=oie_cfg)

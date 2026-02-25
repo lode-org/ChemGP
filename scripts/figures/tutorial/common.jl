@@ -70,6 +70,46 @@ function eval_grid(oracle, x_range, y_range)
     return E
 end
 
+const JSONL_WRITER = joinpath(@__DIR__, "..", "..", "jsonl_writer.py")
+
+"""Launch the JSONL writer subprocess. Returns (process, port)."""
+function start_jsonl_writer(output_path; port::Int=9876)
+    cmd = `python3 $JSONL_WRITER --port $port --output $output_path`
+    proc = open(cmd, "r")
+    sleep(0.5)  # wait for server to bind
+    return proc, port
+end
+
+"""Stop the JSONL writer subprocess."""
+function stop_jsonl_writer(proc)
+    try
+        kill(proc)
+    catch
+    end
+end
+
+"""Parse JSONL from gp_minimize machine_output. Returns NamedTuple of vectors."""
+function parse_minimize_jsonl(path)
+    ocs = Int[]
+    forces = Float64[]
+    energies = Float64[]
+    gates = String[]
+    for line in readlines(path)
+        startswith(line, "{\"status\"") && continue
+        m_oc = match(r"\"oc\":(\d+)", line)
+        m_f = match(r"\"F\":([\d.eE+-]+)", line)
+        m_e = match(r"\"E\":([\d.eE+-]+)", line)
+        m_gate = match(r"\"gate\":\"(\w+)\"", line)
+        m_oc === nothing && continue
+        m_f === nothing && continue
+        push!(ocs, parse(Int, m_oc[1]))
+        push!(forces, parse(Float64, m_f[1]))
+        push!(energies, m_e !== nothing ? parse(Float64, m_e[1]) : NaN)
+        push!(gates, m_gate !== nothing ? String(m_gate[1]) : "ok")
+    end
+    return (; oracle_calls=ocs, max_fatom=forces, energy=energies, gate=gates)
+end
+
 # Helper: GP predict on a 2D grid, returns (E_mean, E_var) matrices.
 # Matrices have shape (nx, ny) in Makie convention.
 function gp_predict_grid(model, x_range, y_range, y_mean, y_std)

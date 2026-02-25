@@ -72,7 +72,7 @@ function run_rff_comparison()
 
     # --- Collect training data from a short GP-minimization ---
     println("Collecting training data from GP-minimization...")
-    kernel_init = MolInvDistSE(1.0, [1.0], Float64[])
+    kernel_init = MolInvDistSE(SYSTEM100_ATMNRS, Float64[])
     config = MinimizationConfig(;
         trust_radius=0.08,
         conv_tol=0.05,
@@ -113,7 +113,7 @@ function run_rff_comparison()
     println("Training exact GP...")
     y_gp, y_mean, y_std = ChemGP.normalize(td)
 
-    mol_kernel = MolInvDistSE(1.0, [1.0], Float64[])
+    mol_kernel = MolInvDistSE(SYSTEM100_ATMNRS, Float64[])
     model = GPModel(
         mol_kernel, td.X, y_gp; noise_var=1e-2, grad_noise_var=1e-1, jitter=1e-3
     )
