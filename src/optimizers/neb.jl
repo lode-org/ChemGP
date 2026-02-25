@@ -148,6 +148,9 @@ function _train_neb_gp(
         )
     end
 
+    # Adaptive training iterations: full budget on cold start, 1/3 on warm start
+    _train_iters = prev_kern === nothing ? cfg.gp_train_iter : max(cfg.gp_train_iter ÷ 3, 50)
+
     if kernel isa AbstractMoleculeKernel
         E_ref = td_use.energies[1]
 
@@ -170,16 +173,18 @@ function _train_neb_gp(
             kern, X_train, y_target; noise_var=1e-6, grad_noise_var=1e-4, jitter=1e-6
         )
         train_model!(
-            model; iterations=cfg.gp_train_iter, fix_noise=true, verbose=cfg.verbose
+            model; iterations=_train_iters, fix_noise=true, verbose=cfg.verbose
         )
 
-        # RFF approximation: train hyperparameters on subset, predict using all data
-        if cfg.rff_features > 0 && kernel isa MolInvDistSE && npoints(td) > npoints(td_use)
-            y_all = vcat(td.energies .- E_ref, td.gradients)
+        # RFF approximation: train hyperparameters on subset, predict using all data.
+        # Always build RFF when rff_features > 0 (not just when subset < full)
+        # so that predict_with_variance uses O(D_rff) instead of O(N^3).
+        if cfg.rff_features > 0 && kernel isa MolInvDistSE
+            y_rff = vcat(td.energies .- E_ref, td.gradients)
             rff_model = build_rff(
                 model.kernel,
                 td.X,
-                y_all,
+                y_rff,
                 cfg.rff_features;
                 noise_var=1e-6,
                 grad_noise_var=1e-4,
@@ -205,7 +210,7 @@ function _train_neb_gp(
         model = GPModel(
             kern, td_use.X, y_gp; noise_var=1e-6, grad_noise_var=1e-6, jitter=1e-4
         )
-        train_model!(model; iterations=cfg.gp_train_iter, verbose=cfg.verbose)
+        train_model!(model; iterations=_train_iters, verbose=cfg.verbose)
         return model, E_ref, y_std, model.kernel
     end
 end
