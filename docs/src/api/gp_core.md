@@ -25,9 +25,16 @@ predict
 predict_with_variance
 ```
 
+## NLL and Gradient
+
+```@docs
+nll_and_grad
+```
+
 ## Covariance Assembly
 
 ```@docs
 build_full_covariance
 kernel_blocks
+kernel_blocks_and_hypergrads
 ```

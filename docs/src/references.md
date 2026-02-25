@@ -48,6 +48,12 @@ Key publications underlying the methods implemented in ChemGP.
   *J. Chem. Phys.*, 111, 7010–7022.
   [doi:10.1063/1.480097](https://doi.org/10.1063/1.480097)
 
+## Hyperparameter Optimization
+
+- **Moller, M. F.** (1993). A scaled conjugate gradient algorithm for fast
+  supervised learning. *Neural Networks*, 6(4), 525--533.
+  [doi:10.1016/S0893-6080(05)80056-5](https://doi.org/10.1016/S0893-6080(05)80056-5)
+
 ## Gaussian Process Regression
 
 - **Rasmussen, C. E. & Williams, C. K. I.** (2006). *Gaussian Processes for

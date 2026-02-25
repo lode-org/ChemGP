@@ -32,15 +32,23 @@ Each evaluation provides both energy and gradient, so 5 oracle calls give
 
 ### GP Training
 
-At each outer iteration, the GP is retrained on all accumulated data. The
-hyperparameters (signal variance, lengthscales, noise variances) are optimized
-by minimizing the negative log marginal likelihood via Nelder-Mead:
+At each outer iteration, the GP is retrained on all accumulated data. For
+molecular kernels (MolInvDistSE, MolInvDistMatern52, MolInvDistMatern32),
+hyperparameters are optimized by minimizing the MAP negative log-likelihood
+using Scaled Conjugate Gradient (SCG) with analytical gradients. Parameters
+are packed in log-space as `w = [log(sigma2); log.(inv_lengthscales)]` with
+Gaussian priors centered at data-dependent initial values.
+
+The MAP prior variance is adaptive: pair types with many contributing inverse
+distances (e.g., C-H with 8 features) receive looser priors than pair types
+with few (e.g., C-C with 1 distance), preventing lengthscale collapse.
 
 ```julia
-train_model!(model, iterations = 300)
+train_model!(model, iterations = 100)
 ```
 
-See [`train_model!`](@ref) for details on the optimization.
+For non-molecular kernels, Nelder-Mead is used as a fallback.
+See [`train_model!`](@ref) and [`scg_optimize`](@ref) for details.
 
 ### GP Surface Optimization
 
@@ -76,11 +84,15 @@ The [`MinimizationConfig`](@ref) struct controls all algorithm parameters:
 |:----------|:--------|:------------|
 | `trust_radius` | 0.1 | Max distance from training data |
 | `conv_tol` | 5e-3 | Gradient norm convergence threshold |
-| `max_iter` | 500 | Max outer iterations (oracle calls) |
-| `gp_train_iter` | 300 | Nelder-Mead iterations for hyperparameters |
+| `max_iter` | 500 | Max outer iterations (GP-guided steps) |
+| `max_oracle_calls` | 0 | Hard limit on oracle evaluations (0 = no cap) |
+| `gp_train_iter` | 300 | SCG iterations for hyperparameters |
 | `n_initial_perturb` | 4 | Number of initial perturbation samples |
 | `perturb_scale` | 0.1 | Scale of perturbations |
 | `penalty_coeff` | 1e3 | Trust region penalty strength |
+| `max_move` | 0.1 | Per-atom max displacement (Angstrom) |
+| `rff_features` | 0 | 0 = exact GP; >0 = RFF approximation |
+| `machine_output` | `""` | JSONL output: `""` disabled, `"host:port"` TCP socket, else file |
 | `verbose` | true | Print progress |
 
 ## Comparison to Direct L-BFGS
@@ -94,6 +106,29 @@ GP-guided optimization uses the GP surrogate for most of the work:
 The savings are proportional to how expensive the oracle is. For DFT calculations
 that take minutes per evaluation, reducing from hundreds to tens of oracle calls
 is a major practical improvement.
+
+## Machine-Readable Output
+
+The `machine_output` field enables JSONL logging alongside human-readable output.
+Each iteration emits a JSON line with fields `i` (iteration), `E` (energy),
+`F` (max force), `oc` (oracle calls), `tp` (training points), `t` (train time),
+`sv` (signal variance), `ls` (lengthscales), `td` (trust distance), and
+`gate` (acceptance status). A summary line is emitted at convergence.
+
+For real-time output without Julia's stdout buffering, point `machine_output`
+at a TCP socket served by `scripts/jsonl_writer.py`:
+
+```bash
+python scripts/jsonl_writer.py --port 9876 --output convergence.jsonl
+```
+
+```julia
+config = MinimizationConfig(machine_output = "localhost:9876")
+```
+
+The writer accepts newline-terminated JSON over TCP, writes to file with
+`fsync`, and renders human-readable summaries to stdout immediately. This
+decouples I/O flushing from the Julia optimizer process.
 
 ## Next Steps
 

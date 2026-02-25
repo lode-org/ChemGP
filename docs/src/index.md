@@ -15,7 +15,10 @@ energy structures and transition states.
   energy and gradient, giving `1 + D` observations per evaluation
 - **Rotation-invariant molecular kernels**: Squared Exponential and Matern 5/2
   kernels operating on inverse interatomic distance features
-- **GP-guided minimization**: Surrogate-based geometry optimization with trust regions
+- **SCG hyperparameter optimization**: Analytical MAP NLL gradients with adaptive
+  priors, replacing derivative-free Nelder-Mead (Moller 1993)
+- **GP-guided minimization**: Surrogate-based geometry optimization with trust
+  regions, LCB acquisition, and JSONL machine-readable output
 - **GP-Dimer saddle point search**: Find transition states using the dimer method
   accelerated by GP predictions (Goswami et al. 2025)
 - **OTGPD**: Production GP-dimer with FPS subset selection, hyperparameter

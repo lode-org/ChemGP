@@ -51,6 +51,12 @@ OTGPDConfig
 OTGPDResult
 ```
 
+## SCG Hyperparameter Optimizer
+
+```@docs
+scg_optimize
+```
+
 ## Sampling and Data Management
 
 ```@docs

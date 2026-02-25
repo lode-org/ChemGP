@@ -13,9 +13,10 @@ dimer (OTGPD).
 
 -   **Molecular kernels**: Inverse-distance based SE, Matern 5/2, and Matern 3/2
     kernels with kernel composition (sum, product, constant offset)
--   **GP surrogate**: Full covariance with energy+gradient observations, automatic
-    hyperparameter optimization via marginal likelihood
--   **Minimization**: Trust-region GP-guided geometry optimization
+-   **GP surrogate**: Full covariance with energy+gradient observations, SCG
+    hyperparameter optimization with analytical MAP NLL gradients
+-   **Minimization**: Trust-region GP-guided geometry optimization with JSONL
+    machine-readable output (file or TCP socket)
 -   **Dimer method**: GP-accelerated saddle point search
 -   **NEB**: Standard NEB, GP-NEB with all-image evaluation (AIE) and
     outer-image-only evaluation (OIE)

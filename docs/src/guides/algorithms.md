@@ -17,16 +17,48 @@ Input: oracle, x_init, kernel, config
 Output: MinimizationResult
 
 1. Generate initial training data (perturbations around x_init)
-2. for outer_iter = 1:max_outer_iter
-   a. Train GP on accumulated data
-   b. Inner loop (on GP surface):
-      - Predict gradient at current x
-      - Take gradient descent step
-      - Check: |G_gp| < T_gp → break
-      - Check: trust radius exceeded → scale step, break
-   c. Evaluate oracle at new position
-   d. Add to training data
-   e. Check: |G_true| < T_force → CONVERGED
+2. x_best = argmin_E(training_data), stagnation = 0
+3. for outer_iter = 1:max_iter
+   a. Phase selection: use_gp = cyclic_schedule(stagnation)
+   b. If use_gp:
+      - Train GP (SCG + analytical NLL grad for mol kernels)
+      - If rff_features > 0: build RFF from trained kernel
+      - x_cand = L-BFGS_minimize(LCB_surface, x_best)
+      - Apply Kastner overshooting along consistent descent
+   c. Else (L-BFGS fallback):
+      - x_cand = x_fb + optim_step!(lbfgs, x_fb, -G_fb)
+   d. Trust clip + per-atom max-move clip
+   e. Evaluate oracle at x_cand
+   f. Add to training data (dedup, FPS prune if needed)
+   g. If E < E_best or force decreased: accept, reset stagnation
+      Else: stagnation++, advance fallback trajectory
+   h. Check: max_per_atom_force(G) < conv_tol → CONVERGED
+```
+
+## SCG Hyperparameter Optimization ([`scg_optimize`](@ref))
+
+```
+Input: fg!(f_ref, g_vec, w), w0, config
+Output: (w_best, f_best, converged)
+
+Scaled Conjugate Gradient (Moller 1993). Used for MAP NLL optimization
+of molecular kernel hyperparameters in log-space with analytical gradients.
+
+1. r = gradient(w), p = -r, lambda = 1.0
+2. for iter = 1:max_iter
+   a. If success:
+      - mu = p'r (must be < 0 for descent)
+      - kappa = p'p; sigma = sigma0/sqrt(kappa)
+      - Finite-diff Hessian-vector product: gamma = p'(g(w+sigma*p)-r)/sigma
+   b. delta = gamma + lambda*kappa
+      If delta <= 0: delta = lambda*kappa, lambda -= gamma/kappa
+   c. alpha = -mu/delta; w_new = w + alpha*p
+   d. Evaluate f_new, g_new at w_new
+   e. comparison = 2*(f_new - f_old)/(alpha*mu)
+   f. If comparison >= 0: accept, Polak-Ribiere CG update
+      Else: reject, success = false
+   g. Adjust lambda: *4 if comparison < 0.25, *0.5 if > 0.75
+   h. Convergence: |alpha*p| < tol_x, |df| < tol_f, or ||g|| < eps
 ```
 
 ## GP-Dimer ([`gp_dimer`](@ref))
