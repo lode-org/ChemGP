@@ -507,8 +507,8 @@
         @test result.path.images[1] ≈ x_r
         @test result.path.images[end] ≈ x_p
 
-        # Oracle calls bounded
-        @test 3 < result.oracle_calls <= 15
+        # Oracle calls bounded (loose conv_tol may converge in 1 outer iteration)
+        @test 3 <= result.oracle_calls <= 15
 
         # Forces should be bounded (EMD trust prevents wild steps)
         @test all(f -> f < 50.0, result.history["max_force"])

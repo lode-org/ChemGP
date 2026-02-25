@@ -6,6 +6,7 @@ using KernelFunctions
 using Random
 
 @testset "ChemGP" begin
+    include("test_scg.jl")
     include("test_lbfgs.jl")
     include("test_kernels.jl")
     include("test_variance.jl")
