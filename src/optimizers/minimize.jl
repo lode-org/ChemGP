@@ -31,6 +31,7 @@ All fields have sensible defaults via `@kwdef`.
 - `max_move::Float64`: Per-atom max displacement (Ang)
 - `dedup_tol::Float64`: 0 = auto (conv_tol * 0.1)
 - `explosion_recovery::Symbol`: :perturb_best or :reset_prev
+- `energy_regression_tol::Float64`: Revert to best if oracle E > E_best + tol AND forces large (0 = auto)
 - `max_training_points::Int`: 0 = no pruning
 - `rff_features::Int`: 0 = exact GP; >0 = RFF approximation
 - `trust_metric::Symbol`: :emd or :euclidean
@@ -42,6 +43,8 @@ All fields have sensible defaults via `@kwdef`.
 - `adaptive_A::Float64`: Steepness of adaptive trust radius curve
 - `adaptive_floor::Float64`: Floor for adaptive trust radius
 - `verbose::Bool`: Whether to print progress
+- `machine_output::String`: JSONL output destination; `""` = disabled,
+  `"host:port"` = TCP socket to writer, otherwise = file path
 """
 Base.@kwdef struct MinimizationConfig
     trust_radius::Float64 = 0.1     # Max distance from training data
@@ -56,9 +59,15 @@ Base.@kwdef struct MinimizationConfig
     max_move::Float64 = 0.1          # Per-atom max displacement (Ang)
     dedup_tol::Float64 = 0.0         # 0 = auto (conv_tol * 0.1)
     explosion_recovery::Symbol = :perturb_best  # or :reset_prev
+    energy_regression_tol::Float64 = 0.0  # 0 = auto (max(std(E)*3, 1.0))
     max_training_points::Int = 0     # 0 = no pruning
     rff_features::Int = 0            # 0 = exact GP; >0 = RFF approximation
     # Trust region metric and adaptive threshold (matching GP-NEB/OTGPD)
+    # FPS subset selection for hyperparameter optimization
+    fps_history::Int = 0          # subset size for hyperopt (0=use all)
+    fps_latest_points::Int = 2    # most recent points always included
+    fps_metric::Symbol = :emd     # :emd, :max_1d_log, :euclidean
+    # Trust region metric and adaptive threshold
     trust_metric::Symbol = :emd
     atom_types::Vector{Int} = Int[]
     use_adaptive_threshold::Bool = false
@@ -68,6 +77,7 @@ Base.@kwdef struct MinimizationConfig
     adaptive_A::Float64 = 1.3
     adaptive_floor::Float64 = 0.2
     verbose::Bool = true
+    machine_output::String = ""  # "" = disabled; "host:port" = TCP socket; else = file path
 end
 
 """
@@ -84,6 +94,25 @@ struct MinimizationResult
     oracle_calls::Int                  # Total oracle evaluations
     trajectory::Vector{Vector{Float64}} # All evaluated configurations
     energies::Vector{Float64}          # All evaluated energies
+end
+
+# JSONL formatting helpers (no JSON dependency, just @sprintf)
+function _jsonl_iter(;
+    i::Int, E::Float64, F::Float64, oc::Int, tp::Int, t::Float64,
+    sv::Float64, ls::Vector{Float64}, td::Float64, gate::String,
+)
+    ls_str = join([@sprintf("%.4e", l) for l in ls], ",")
+    return @sprintf(
+        "{\"i\":%d,\"E\":%.6f,\"F\":%.6f,\"oc\":%d,\"tp\":%d,\"t\":%.3f,\"sv\":%.4e,\"ls\":[%s],\"td\":%.4f,\"gate\":\"%s\"}",
+        i, E, F, oc, tp, t, sv, ls_str, td, gate,
+    )
+end
+
+function _jsonl_summary(; status::String, oc::Int, E::Float64, F::Float64, iters::Int)
+    return @sprintf(
+        "{\"status\":\"%s\",\"oc\":%d,\"E\":%.6f,\"F\":%.6f,\"iters\":%d}",
+        status, oc, E, F, iters,
+    )
 end
 
 """
@@ -155,6 +184,27 @@ function gp_minimize(
     x_curr = copy(x_init)
     oracle_calls = npoints(td)
 
+    # Machine-readable output sink (file or TCP socket to writer)
+    _mach_io = if !isempty(cfg.machine_output)
+        _mo = cfg.machine_output
+        if occursin(r"^[^/].*:\d+$", _mo)
+            # "host:port" -> TCP socket
+            _parts = split(_mo, ":")
+            _host = String(_parts[1])
+            _port = parse(Int, _parts[2])
+            try
+                Sockets.connect(_host, _port)
+            catch e
+                @warn "JSONL writer connection failed, falling back to file" host=_host port=_port exception=e
+                open(_mo * ".jsonl", "w")
+            end
+        else
+            open(_mo, "w")
+        end
+    else
+        nothing
+    end
+
     cfg.verbose && println("\n=== Starting GP Minimization ===")
     cfg.verbose && @printf(
         "Trust radius: %.3f | Conv. tol: %.1e | Training points: %d\n\n",
@@ -186,23 +236,38 @@ function gp_minimize(
         # Two paths matching GP-NEB _train_neb_gp:
         #   Molecular kernels: fix_noise=true, low noise, data-dependent init
         #   Generic kernels:   normalize, optimize all hyperparameters
-        cfg.verbose && @printf("Training GP on %d points...\n", npoints(td))
+        # FPS subset selection for hyperparameter optimization
+        fps_dist = trust_distance_fn(cfg.fps_metric, cfg.atom_types)
+        if cfg.fps_history > 0 && npoints(td) > cfg.fps_history
+            sub_idx = _select_optim_subset(
+                td, x_curr, cfg.fps_history, cfg.fps_latest_points; distance_fn=fps_dist
+            )
+            td_sub = _extract_subset(td, sub_idx)
+            cfg.verbose && @printf(
+                "Training GP on %d points (FPS subset: %d/%d)...\n",
+                npoints(td), npoints(td_sub), npoints(td)
+            )
+        else
+            td_sub = td
+            cfg.verbose && @printf("Training GP on %d points...\n", npoints(td))
+        end
         _t_train = time()
 
-        if is_mol
-            E_ref = td.energies[1]
-            y_gp = vcat(td.energies .- E_ref, td.gradients)
-            y_mean = E_ref
-            y_std = 1.0
+        # Adaptive training iterations: full budget on cold start, 1/3 on warm start
+        _train_iters = prev_kern === nothing ? cfg.gp_train_iter : max(cfg.gp_train_iter ÷ 3, 50)
 
-            kern = prev_kern === nothing ? init_mol_invdist_se(td, kernel) : prev_kern
+        if is_mol
+            E_ref_sub = td_sub.energies[1]
+            y_sub = vcat(td_sub.energies .- E_ref_sub, td_sub.gradients)
+
+            kern = prev_kern === nothing ? init_mol_invdist_se(td_sub, kernel) : prev_kern
             # Clamp inv_lengthscales and signal_variance to finite, positive ranges
             # to prevent failure when Nelder-Mead drives values to Inf/NaN.
             _eps_ph = 1e-6
             _max_ph = 1e10
             clamped_ls = [isfinite(x) ? clamp(x, _eps_ph, _max_ph) : _max_ph for x in kern.inv_lengthscales]
             clamped_sv = isfinite(kern.signal_variance) ? clamp(kern.signal_variance, _eps_ph, _max_ph) : _max_ph
-            
+
             if clamped_ls != kern.inv_lengthscales || clamped_sv != kern.signal_variance
                 kern = typeof(kern)(
                     clamped_sv,
@@ -211,19 +276,37 @@ function gp_minimize(
                     kern.feature_params_map,
                 )
             end
-            gp_model = GPModel(
-                kern, td.X, y_gp; noise_var=1e-6, grad_noise_var=1e-4, jitter=1e-6
+            gp_sub = GPModel(
+                kern, td_sub.X, y_sub; noise_var=1e-6, grad_noise_var=1e-4, jitter=1e-6
             )
             train_model!(
-                gp_model; iterations=cfg.gp_train_iter, fix_noise=true, verbose=cfg.verbose
+                gp_sub; iterations=_train_iters, fix_noise=true, verbose=cfg.verbose
             )
-            prev_kern = gp_model.kernel
+            prev_kern = gp_sub.kernel
+
+            # Rebuild on full data with optimized hyperparameters
+            E_ref = td.energies[1]
+            y_gp = vcat(td.energies .- E_ref, td.gradients)
+            y_mean = E_ref
+            y_std = 1.0
+            gp_model = GPModel(
+                gp_sub.kernel, td.X, y_gp; noise_var=1e-6, grad_noise_var=1e-4, jitter=1e-6
+            )
         else
+            y_sub, y_mean_sub, y_std_sub = normalize(td_sub)
+            kern = prev_kern === nothing ? kernel : prev_kern
+            gp_sub = GPModel(
+                kern, td_sub.X, y_sub; noise_var=1e-2, grad_noise_var=1e-1, jitter=1e-3
+            )
+            train_model!(gp_sub; iterations=_train_iters, verbose=cfg.verbose)
+            prev_kern = gp_sub.kernel
+
+            # Rebuild on full data
             y_gp, y_mean, y_std = normalize(td)
             gp_model = GPModel(
-                kernel, td.X, y_gp; noise_var=1e-2, grad_noise_var=1e-1, jitter=1e-3
+                gp_sub.kernel, td.X, y_gp;
+                noise_var=gp_sub.noise_var, grad_noise_var=gp_sub.grad_noise_var, jitter=1e-3
             )
-            train_model!(gp_model; iterations=cfg.gp_train_iter, verbose=cfg.verbose)
         end
 
         _dt_train = time() - _t_train
@@ -316,33 +399,49 @@ function gp_minimize(
 
         x_curr = Optim.minimizer(result)
 
-        # Ensure we don't get stuck: if x_curr is too close to x_prev or existing data, 
+        # Ensure we don't get stuck: if x_curr is too close to x_prev or existing data,
         # and we haven't converged, use a Lower Confidence Bound (LCB) acquisition
         # function to intelligently explore the GP surface.
         if norm(x_curr - x_prev) < eff_dedup || min_distance_to_data(x_curr, td.X) < eff_dedup
-            cfg.verbose && println("  Stuck or duplicate point predicted - seeking improvement via LCB...")
-            
-            # LCB objective for minimization (mu - kappa * sigma)
-            # kappa=2.0 corresponds to roughly 95% confidence
-            function lcb_objective(x)
-                mu_all, var_all = predict_with_variance(gp_model, reshape(x, :, 1))
-                mu = mu_all[1] * y_std + y_mean
-                sigma = sqrt(max(var_all[1], 1e-12)) * y_std
-                return mu - 2.0 * sigma
-            end
+            # Variance floor check: only use LCB when GP uncertainty is meaningful.
+            # When RFF variance collapses (~1e-6), LCB degenerates to pure mean
+            # prediction and can drive the optimizer into uncharted bad regions.
+            _var_probe = predict_with_variance(model, reshape(x_curr, :, 1))
+            _sigma_probe = sqrt(max(_var_probe[2][1], 0.0)) * y_std
+            if _sigma_probe > 1e-4
+                cfg.verbose && println("  Stuck or duplicate point predicted - seeking improvement via LCB...")
 
-            # Optimize LCB starting from best training point
-            # Use NelderMead as we don't have gradients for sigma
-            best_idx = argmin(td.energies)
-            res_lcb = Optim.optimize(
-                lcb_objective,
-                td.X[:, best_idx],
-                NelderMead(),
-                Optim.Options(; iterations=100, show_trace=false),
-            )
-            x_curr = Optim.minimizer(res_lcb)
-            cfg.verbose && @printf("  LCB candidate: obj=%.4f, dist_from_prev=%.4f\n",
-                Optim.minimum(res_lcb), norm(x_curr - x_prev))
+                # LCB objective for minimization (mu - kappa * sigma)
+                # kappa=2.0 corresponds to roughly 95% confidence
+                function lcb_objective(x)
+                    mu_all, var_all = predict_with_variance(model, reshape(x, :, 1))
+                    mu = mu_all[1] * y_std + y_mean
+                    sigma = sqrt(max(var_all[1], 1e-12)) * y_std
+                    return mu - 2.0 * sigma
+                end
+
+                best_idx = argmin(td.energies)
+                res_lcb = Optim.optimize(
+                    lcb_objective,
+                    td.X[:, best_idx],
+                    NelderMead(),
+                    Optim.Options(; iterations=100, show_trace=false),
+                )
+                x_lcb = Optim.minimizer(res_lcb)
+
+                # Energy sanity check: reject if LCB candidate predicts much worse
+                # energy than current best (exploration went too far)
+                mu_lcb = predict(model, reshape(x_lcb, :, 1))[1] * y_std + y_mean
+                if mu_lcb < td.energies[best_idx] + 5.0 * _sigma_probe
+                    x_curr = x_lcb
+                    cfg.verbose && @printf("  LCB candidate: obj=%.4f, dist_from_prev=%.4f\n",
+                        Optim.minimum(res_lcb), norm(x_curr - x_prev))
+                else
+                    cfg.verbose && @printf("  LCB rejected (E_pred=%.4f too high), keeping GP minimum\n", mu_lcb)
+                end
+            else
+                cfg.verbose && @printf("  Stuck but variance too low (sigma=%.2e), skipping LCB\n", _sigma_probe)
+            end
         end
 
         # Per-atom max-move clip for 3D molecular systems
@@ -413,12 +512,64 @@ function gp_minimize(
         # Explosion recovery
         if !isfinite(E_true) || E_true > 1e6
             cfg.verbose && println("  Energy exploded - recovering")
+            if _mach_io !== nothing
+                _k_mach = is_mol ? gp_model.kernel : nothing
+                _sv_mach = _k_mach !== nothing ? Float64(_k_mach.signal_variance) : 0.0
+                _ls_mach = _k_mach !== nothing ? Float64.(collect(_k_mach.inv_lengthscales)) : Float64[]
+                println(_mach_io, _jsonl_iter(;
+                    i=outer_step, E=isfinite(E_true) ? E_true : 1e30,
+                    F=isfinite(G_norm) ? G_norm : 1e30,
+                    oc=oracle_calls, tp=npoints(td), t=_dt_train,
+                    sv=_sv_mach, ls=_ls_mach, td=d_trust, gate="exploded",
+                ))
+                flush(_mach_io)
+            end
             if cfg.explosion_recovery == :perturb_best
                 best_idx = argmin(td.energies)
                 x_curr = td.X[:, best_idx] + (rand(D) .- 0.5) .* (cfg.perturb_scale * 0.5)
             else
                 x_curr = td.X[:, end]
             end
+            continue
+        end
+
+        # Energy regression gate: if oracle energy is much worse than best AND
+        # forces are large, the GP prediction was wrong. Add data (so GP learns)
+        # but revert to best position instead of continuing from the bad point.
+        _gate = "ok"
+        best_idx = argmin(td.energies)
+        E_best = td.energies[best_idx]
+        _regress_tol = if cfg.energy_regression_tol > 0
+            cfg.energy_regression_tol
+        else
+            npoints(td) >= 3 ? max(std(td.energies) * 3, 1.0) : Inf
+        end
+        if E_true > E_best + _regress_tol && G_norm > cfg.conv_tol * 10
+            cfg.verbose && @printf(
+                "  Energy regression gate: E=%.4f >> E_best=%.4f (delta=%.4f > tol=%.4f)\n",
+                E_true, E_best, E_true - E_best, _regress_tol,
+            )
+            cfg.verbose && println("  Reverting to best position (data retained for GP)")
+            _gate = "energy_revert"
+            # Record the bad point for GP training and trajectory
+            push!(trajectory, copy(x_curr))
+            push!(all_energies, E_true)
+            if min_distance_to_data(x_curr, td.X) > eff_dedup
+                add_point!(td, x_curr, E_true, G_true)
+            end
+            # Emit JSONL before reverting
+            if _mach_io !== nothing
+                _k_mach = is_mol ? gp_model.kernel : nothing
+                _sv_mach = _k_mach !== nothing ? Float64(_k_mach.signal_variance) : 0.0
+                _ls_mach = _k_mach !== nothing ? Float64.(collect(_k_mach.inv_lengthscales)) : Float64[]
+                println(_mach_io, _jsonl_iter(;
+                    i=outer_step, E=E_true, F=G_norm, oc=oracle_calls,
+                    tp=npoints(td), t=_dt_train, sv=_sv_mach, ls=_ls_mach,
+                    td=d_trust, gate=_gate,
+                ))
+                flush(_mach_io)
+            end
+            x_curr = copy(td.X[:, best_idx])
             continue
         end
 
@@ -436,6 +587,19 @@ function gp_minimize(
             prune_training_data!(
                 td, x_curr, cfg.max_training_points; distance_fn=(a, b) -> norm(a - b)
             )
+        end
+
+        # Machine-readable JSONL output
+        if _mach_io !== nothing
+            _k_mach = is_mol ? gp_model.kernel : nothing
+            _sv_mach = _k_mach !== nothing ? Float64(_k_mach.signal_variance) : 0.0
+            _ls_mach = _k_mach !== nothing ? Float64.(collect(_k_mach.inv_lengthscales)) : Float64[]
+            println(_mach_io, _jsonl_iter(;
+                i=outer_step, E=E_true, F=G_norm, oc=oracle_calls,
+                tp=npoints(td), t=_dt_train, sv=_sv_mach, ls=_ls_mach,
+                td=d_trust, gate=_gate,
+            ))
+            flush(_mach_io)
         end
 
         # on_step callback
@@ -475,6 +639,22 @@ function gp_minimize(
     cfg.verbose && @printf("Stop reason: %s\n", stop_reason)
 
     E_final, G_final = oracle(x_curr)
+
+    # Machine-readable summary line
+    if _mach_io !== nothing
+        D_g_final = length(G_final)
+        n_atoms_final = div(D_g_final, 3)
+        F_final = if n_atoms_final >= 1 && D_g_final == 3 * n_atoms_final
+            maximum(norm(@view G_final[(3 * (a - 1) + 1):(3 * a)]) for a in 1:n_atoms_final)
+        else
+            norm(G_final)
+        end
+        println(_mach_io, _jsonl_summary(;
+            status=string(stop_reason), oc=oracle_calls,
+            E=E_final, F=F_final, iters=length(all_energies),
+        ))
+        close(_mach_io)
+    end
 
     return MinimizationResult(
         x_curr, E_final, G_final, converged, stop_reason, oracle_calls, trajectory, all_energies
