@@ -1,22 +1,14 @@
-# LEPS-MIN: GP-minimization vs classical L-BFGS on LEPS
+# LEPS-MIN generator: GP-minimization vs classical L-BFGS on LEPS
 #
-# Compares oracle-call efficiency of GP-guided minimization against
-# naive oracle-every-step L-BFGS on the 9D LEPS surface (3-atom collinear).
-# Tracks max per-atom force vs oracle evaluations.
+# Runs GP-guided minimization and classical L-BFGS on the 9D LEPS surface,
+# writes convergence data to HDF5, and streams iteration metrics via TCP socket.
 #
-# GP iteration data streamed to JSONL writer via TCP socket.
-#
-# Output: leps_minimize_convergence.pdf, leps_minimize_convergence.csv
-#
-# Intended for sec:gprmin of the GPR tutorial review.
+# Output: {stem}.h5 with /table group (oracle_calls, max_fatom, method)
 
+include(joinpath(@__DIR__, "common_data.jl"))
 using ChemGP
-using DataFrames
-using CSV
 using LinearAlgebra
 using Random
-using LaTeXStrings
-include(joinpath(@__DIR__, "common.jl"))
 
 """Max per-atom force magnitude (3D norm per atom, then max)."""
 function max_fatom(G)
@@ -27,16 +19,14 @@ end
 function main()
     Random.seed!(42)
 
-    # --- Starting geometry: perturbed LEPS reactant ---
     x_init = Float64.(LEPS_REACTANT) .+ 0.4 .* (rand(9) .- 0.5)
     oracle = leps_energy_gradient
 
-    # --- JSONL writer ---
-    jsonl_path = joinpath(OUTPUT_DIR, "leps_minimize.jsonl")
-    writer, port = start_jsonl_writer(jsonl_path)
-
     # --- GP-accelerated minimization ---
     kernel = MolInvDistSE([1, 1, 1], Float64[])
+
+    # Use TCP socket for machine_output if port is available
+    machine_out = FIG_PORT === nothing ? "" : "localhost:$(FIG_PORT)"
 
     gp_config = MinimizationConfig(;
         trust_radius=0.15,
@@ -50,13 +40,29 @@ function main()
         max_move=0.1,
         explosion_recovery=:perturb_best,
         verbose=false,
-        machine_output="localhost:$port",
+        machine_output=machine_out,
     )
 
     result_gp = gp_minimize(oracle, copy(x_init), kernel; config=gp_config)
     println("GP-min: $(result_gp.stop_reason), oracle calls: $(result_gp.oracle_calls)")
 
-    stop_jsonl_writer(writer)
+    # --- Parse GP data from JSONL (written by socket) ---
+    jsonl_path = joinpath(FIG_OUTPUT, FIG_STEM * ".jsonl")
+
+    # Fallback: if no JSONL (socket disabled), extract from trajectory
+    gp_ocs = Int[]
+    gp_fatom = Float64[]
+    if isfile(jsonl_path) && filesize(jsonl_path) > 0
+        for line in readlines(jsonl_path)
+            startswith(line, "{\"status\"") && continue
+            m_oc = match(r"\"oc\":(\d+)", line)
+            m_f = match(r"\"F\":([\d.eE+-]+)", line)
+            m_oc === nothing && continue
+            m_f === nothing && continue
+            push!(gp_ocs, parse(Int, m_oc[1]))
+            push!(gp_fatom, parse(Float64, m_f[1]))
+        end
+    end
 
     # --- Classical minimization (oracle every step, no GP) ---
     println("Running classical L-BFGS...")
@@ -97,44 +103,22 @@ function main()
 
     println("Classical: $oc_count oracle calls")
 
-    # --- Build dataframes from JSONL ---
-    gp_data = parse_minimize_jsonl(jsonl_path)
-    n_gp = length(gp_data.oracle_calls)
+    # --- Write combined table to HDF5 ---
+    n_gp = length(gp_ocs)
     n_cl = length(classical_fatom)
 
-    df_gp = DataFrame(;
-        oracle_calls=gp_data.oracle_calls,
-        max_fatom=gp_data.max_fatom,
-        method=fill("GP-minimization", n_gp),
-    )
-    df_cl = DataFrame(;
-        oracle_calls=classical_oc,
-        max_fatom=classical_fatom,
-        method=fill("Classical L-BFGS", n_cl),
-    )
-    df = vcat(df_gp, df_cl)
+    all_oc = vcat(gp_ocs, classical_oc)
+    all_fatom = vcat(gp_fatom, classical_fatom)
+    all_method = vcat(fill("GP-minimization", n_gp), fill("Classical L-BFGS", n_cl))
 
-    # --- Plot ---
-    set_theme!(PUBLICATION_THEME)
+    h5_write_table(h5_path(), "table", Dict(
+        "oracle_calls" => all_oc,
+        "max_fatom" => all_fatom,
+        "method" => all_method,
+    ))
 
-    fig = Figure(; size=(504, 350))
-    ax = Axis(
-        fig[1, 1];
-        xlabel="Oracle calls",
-        ylabel=L"max $|F_\mathrm{atom}|$ (eV/\AA)",
-        yscale=log10,
-    )
-
-    lines!(ax, df_gp.oracle_calls, df_gp.max_fatom;
-        color=RUHI.teal, linewidth=1.5, label="GP-minimization")
-    lines!(ax, df_cl.oracle_calls, df_cl.max_fatom;
-        color=RUHI.sky, linewidth=1.5, label="Classical L-BFGS")
-    hlines!(ax, [0.01]; color=:gray, linewidth=0.8, linestyle=:dash)
-
-    axislegend(ax; position=:rt, framevisible=false, labelsize=10)
-
-    save_figure(fig, "leps_minimize_convergence")
-    CSV.write(joinpath(OUTPUT_DIR, "leps_minimize_convergence.csv"), df)
+    h5_write_metadata(h5_path(); n_gp=n_gp, n_cl=n_cl)
+    println("Wrote HDF5: $(h5_path())")
 end
 
 main()

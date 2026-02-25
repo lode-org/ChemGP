@@ -1,36 +1,20 @@
-# PETMAD-MIN: GP-minimization vs classical L-BFGS on PET-MAD
+# PETMAD-MIN generator: GP-minimization vs classical L-BFGS on PET-MAD
 #
 # Compares oracle-call efficiency of GP-guided minimization against
 # naive oracle-every-step L-BFGS on a 9-atom organic fragment (2C, 1O, 2N, 4H)
 # evaluated with PET-MAD universal ML potential via RPC.
-# Tracks max per-atom force vs oracle evaluations.
 #
-# GP iteration data streamed to JSONL writer via TCP socket.
-#
+# Uses cache pattern: checks for existing HDF5 before running.
 # Requires: PET-MAD server running at localhost:12345
 #
-# Output: petmad_minimize_convergence.pdf, petmad_minimize_convergence.csv
-#
-# Intended for sec:gprmin of the GPR tutorial review.
+# Output: {stem}.h5 with /table group (oracle_calls, max_fatom, method)
 
+include(joinpath(@__DIR__, "common_data.jl"))
 using ChemGP
-using DataFrames
-using CSV
 using LinearAlgebra
-using LaTeXStrings
-include(joinpath(@__DIR__, "common.jl"))
-
-const PETMAD_CACHE_DIR = joinpath(OUTPUT_DIR, "petmad_cache")
-mkpath(PETMAD_CACHE_DIR)
-
-"""Max per-atom force magnitude (3D norm per atom, then max)."""
-function max_fatom(G)
-    n_atoms = div(length(G), 3)
-    return maximum(norm(@view G[(3 * (i - 1) + 1):(3 * i)]) for i in 1:n_atoms)
-end
+using Random
 
 # --- System100 reactant: 9-atom fragment (2C, 1O, 2N, 4H) ---
-# Source: system100-react.xyz from eOn ewNEB benchmark set
 const SYSTEM100_REACT = Float64[
     -1.58572291100237,
     -0.84160847213746,
@@ -63,15 +47,20 @@ const SYSTEM100_REACT = Float64[
 const SYSTEM100_ATMNRS = Int32[6, 6, 8, 7, 7, 1, 1, 1, 1]
 const SYSTEM100_BOX = Float64[20, 0, 0, 0, 20, 0, 0, 0, 20]
 
+"""Max per-atom force magnitude (3D norm per atom, then max)."""
+function max_fatom(G)
+    n_atoms = div(length(G), 3)
+    return maximum(norm(@view G[(3 * (i - 1) + 1):(3 * i)]) for i in 1:n_atoms)
+end
+
 function run_convergence()
     pot = RpcPotential("localhost", 12345, SYSTEM100_ATMNRS, SYSTEM100_BOX)
     oracle = make_rpc_oracle(pot)
 
     x_init = copy(SYSTEM100_REACT)
 
-    # --- JSONL writer ---
-    jsonl_path = joinpath(PETMAD_CACHE_DIR, "minimize.jsonl")
-    writer, port = start_jsonl_writer(jsonl_path; port=9877)
+    # Use TCP socket for machine_output if port is available
+    machine_out = FIG_PORT === nothing ? "" : "localhost:$(FIG_PORT)"
 
     # --- GP-accelerated minimization ---
     println("Running GP-minimization on system100...")
@@ -96,13 +85,28 @@ function run_convergence()
         fps_history=40,
         fps_latest_points=10,
         fps_metric=:emd,
-        machine_output="localhost:$port",
+        machine_output=machine_out,
     )
 
     result_gp = gp_minimize(oracle, copy(x_init), kernel; config=gp_config)
     println("GP-min: $(result_gp.stop_reason), oracle calls: $(result_gp.oracle_calls)")
 
-    stop_jsonl_writer(writer)
+    # --- Parse GP data from JSONL (written by socket) ---
+    jsonl_path = joinpath(FIG_OUTPUT, FIG_STEM * ".jsonl")
+
+    gp_ocs = Int[]
+    gp_fatom = Float64[]
+    if isfile(jsonl_path) && filesize(jsonl_path) > 0
+        for line in readlines(jsonl_path)
+            startswith(line, "{\"status\"") && continue
+            m_oc = match(r"\"oc\":(\d+)", line)
+            m_f = match(r"\"F\":([\d.eE+-]+)", line)
+            m_oc === nothing && continue
+            m_f === nothing && continue
+            push!(gp_ocs, parse(Int, m_oc[1]))
+            push!(gp_fatom, parse(Float64, m_f[1]))
+        end
+    end
 
     # --- Classical minimization (oracle every step, no GP) ---
     println("Running classical L-BFGS on system100...")
@@ -143,61 +147,34 @@ function run_convergence()
     println("Classical: $oc_count oracle calls")
     close(pot)
 
-    # --- Build dataframes from JSONL ---
-    gp_data = parse_minimize_jsonl(jsonl_path)
-    n_gp = length(gp_data.oracle_calls)
-    n_cl = length(classical_fatom)
-
-    df_gp = DataFrame(;
-        oracle_calls=gp_data.oracle_calls,
-        max_fatom=gp_data.max_fatom,
-        method=fill("GP-minimization", n_gp),
-    )
-    df_cl = DataFrame(;
-        oracle_calls=classical_oc,
-        max_fatom=classical_fatom,
-        method=fill("Classical L-BFGS", n_cl),
-    )
-    return vcat(df_gp, df_cl)
+    return gp_ocs, gp_fatom, classical_oc, classical_fatom
 end
 
 function main()
-    csv_path = joinpath(PETMAD_CACHE_DIR, "minimize_convergence.csv")
+    hp = h5_path()
 
-    df = if isfile(csv_path)
-        println("Using cached data from $csv_path")
-        CSV.read(csv_path, DataFrame)
-    else
-        df_all = run_convergence()
-        CSV.write(csv_path, df_all)
-        println("Cached convergence data to $csv_path")
-        df_all
+    if isfile(hp)
+        println("Using cached data from $hp")
+        return
     end
 
-    # --- Plot ---
-    set_theme!(PUBLICATION_THEME)
+    gp_ocs, gp_fatom, classical_oc, classical_fatom = run_convergence()
 
-    fig = Figure(; size=(504, 350))
-    ax = Axis(
-        fig[1, 1];
-        xlabel="Oracle calls",
-        ylabel=L"max $|F_\mathrm{atom}|$ (eV/\AA)",
-        yscale=log10,
-    )
+    n_gp = length(gp_ocs)
+    n_cl = length(classical_fatom)
 
-    df_gp = filter(:method => ==("GP-minimization"), df)
-    df_cl = filter(:method => ==("Classical L-BFGS"), df)
+    all_oc = vcat(gp_ocs, classical_oc)
+    all_fatom = vcat(gp_fatom, classical_fatom)
+    all_method = vcat(fill("GP-minimization", n_gp), fill("Classical L-BFGS", n_cl))
 
-    lines!(ax, df_gp.oracle_calls, df_gp.max_fatom;
-        color=RUHI.teal, linewidth=1.5, label="GP-minimization")
-    lines!(ax, df_cl.oracle_calls, df_cl.max_fatom;
-        color=RUHI.sky, linewidth=1.5, label="Classical L-BFGS")
-    hlines!(ax, [0.05]; color=:gray, linewidth=0.8, linestyle=:dash)
+    h5_write_table(hp, "table", Dict(
+        "oracle_calls" => all_oc,
+        "max_fatom" => all_fatom,
+        "method" => all_method,
+    ))
 
-    axislegend(ax; position=:rt, framevisible=false, labelsize=10)
-
-    save_figure(fig, "petmad_minimize_convergence")
-    CSV.write(joinpath(OUTPUT_DIR, "petmad_minimize_convergence.csv"), df)
+    h5_write_metadata(hp; n_gp=n_gp, n_cl=n_cl)
+    println("Wrote HDF5: $hp")
 end
 
 main()

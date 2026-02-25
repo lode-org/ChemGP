@@ -1,24 +1,32 @@
-# REAL-2: HCN convergence comparison
+# HCN-CONV generator: convergence comparison for HCN -> HNC isomerization
 #
 # Tracks max force residual vs oracle calls for standard NEB, GP-NEB AIE,
-# and GP-NEB OIE on the HCN -> HNC isomerization. Reuses cached data from
-# REAL-1 if available; otherwise requires PET-MAD server.
+# and GP-NEB OIE on the HCN -> HNC isomerization.
+#
+# Uses cache pattern: checks for existing HDF5 before running.
+# Requires: PET-MAD server running at localhost:12345
+#
+# Output: {stem}.h5 with /table group (oracle_calls, max_force, method)
 
+include(joinpath(@__DIR__, "common_data.jl"))
 using ChemGP
-using DataFrames
-using CSV
-include(joinpath(@__DIR__, "common.jl"))
-
-const HCN_CACHE_DIR = joinpath(OUTPUT_DIR, "hcn_cache")
-mkpath(HCN_CACHE_DIR)
+using LinearAlgebra
 
 # Load HCN/HNC from data files
-const _hcn_data = read_extxyz(joinpath(@__DIR__, "..", "..", "..", "data", "hcn", "hcn.extxyz"))
-const _hnc_data = read_extxyz(joinpath(@__DIR__, "..", "..", "..", "data", "hcn", "hnc.extxyz"))
+# From generators/ the path to data is one more .. than from tutorial/
+const _hcn_data = read_extxyz(joinpath(@__DIR__, "..", "..", "..", "..", "data", "hcn", "hcn.extxyz"))
+const _hnc_data = read_extxyz(joinpath(@__DIR__, "..", "..", "..", "..", "data", "hcn", "hnc.extxyz"))
 const X_HCN = _hcn_data.positions
 const X_HNC = _hnc_data.positions
 const HCN_ATNRS = _hcn_data.atomic_numbers
 const HCN_BOX = _hcn_data.box
+
+function extract_convergence(result, label)
+    calls = result.history["oracle_calls"]
+    forces = result.history["max_force"]
+    n = min(length(calls), length(forces))
+    return calls[1:n], forces[1:n], fill(label, n)
+end
 
 function run_convergence()
     host = get(ENV, "RGPOT_HOST", "localhost")
@@ -103,63 +111,43 @@ function run_convergence()
     return result_std, result_aie, result_oie
 end
 
-function extract_convergence(result, label)
-    calls = result.history["oracle_calls"]
-    forces = result.history["max_force"]
-    n = min(length(calls), length(forces))
-    DataFrame(; oracle_calls=calls[1:n], max_force=forces[1:n], method=fill(label, n))
-end
+function main()
+    hp = h5_path()
 
-function cache_or_run()
-    csv_path = joinpath(HCN_CACHE_DIR, "convergence_all.csv")
-
-    if isfile(csv_path)
-        println("Using cached convergence data from $csv_path")
-        return CSV.read(csv_path, DataFrame)
+    if isfile(hp)
+        println("Using cached data from $hp")
+        return
     end
 
     result_std, result_aie, result_oie = run_convergence()
 
-    df = extract_convergence(result_std, "Standard NEB")
+    oc_std, mf_std, m_std = extract_convergence(result_std, "Standard NEB")
+
+    all_oc = copy(oc_std)
+    all_mf = copy(mf_std)
+    all_method = copy(m_std)
 
     if result_aie !== nothing
-        df = vcat(df, extract_convergence(result_aie, "GP-NEB AIE"))
-    end
-    if result_oie !== nothing
-        df = vcat(df, extract_convergence(result_oie, "GP-NEB OIE"))
+        oc_aie, mf_aie, m_aie = extract_convergence(result_aie, "GP-NEB AIE")
+        append!(all_oc, oc_aie)
+        append!(all_mf, mf_aie)
+        append!(all_method, m_aie)
     end
 
-    CSV.write(csv_path, df)
-    println("Cached convergence data to $csv_path")
-    return df
+    if result_oie !== nothing
+        oc_oie, mf_oie, m_oie = extract_convergence(result_oie, "GP-NEB OIE")
+        append!(all_oc, oc_oie)
+        append!(all_mf, mf_oie)
+        append!(all_method, m_oie)
+    end
+
+    h5_write_table(hp, "table", Dict(
+        "oracle_calls" => all_oc,
+        "max_force" => all_mf,
+        "method" => all_method,
+    ))
+
+    println("Wrote HDF5: $hp")
 end
 
-# --- Run or load ---
-df = cache_or_run()
-
-# --- Plot ---
-set_theme!(PUBLICATION_THEME)
-
-plt =
-    data(df) *
-    mapping(:oracle_calls, :max_force; color=:method) *
-    visual(Lines; linewidth=1.5)
-
-n_methods = length(unique(df.method))
-palette_slice = RUHI_CYCLE[1:min(n_methods, length(RUHI_CYCLE))]
-
-fg = draw(
-    plt,
-    scales(; Color=(; palette=palette_slice));
-    axis=(xlabel="Oracle calls", ylabel=L"$|F|_\mathrm{max}$ (eV/\AA)", yscale=log10),
-    figure=(size=(504, 350),),
-)
-
-# Convergence threshold
-hlines!(current_axis(), [0.05]; color=:gray, linewidth=0.8, linestyle=:dash)
-
-save_figure(fg, "hcn_convergence")
-
-# Export for R/BRMS
-CSV.write(joinpath(OUTPUT_DIR, "hcn_convergence_data.csv"), df)
-println("Convergence data exported to $(joinpath(OUTPUT_DIR, "hcn_convergence_data.csv"))")
+main()
