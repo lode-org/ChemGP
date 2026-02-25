@@ -81,6 +81,71 @@ function farthest_point_sampling(
 end
 
 """
+    _select_optim_subset(td, x_current, n_select, n_latest; distance_fn)
+
+Select a subset of training data for hyperparameter optimization using
+farthest point sampling. Always includes the `n_latest` most recently
+added points, then fills the rest via FPS from the remaining candidates.
+
+Returns column indices into `td.X`.
+"""
+function _select_optim_subset(
+    td::TrainingData,
+    x_current::Vector{Float64},
+    n_select::Int,
+    n_latest::Int;
+    distance_fn::Function=max_1d_log_distance,
+)
+    N = npoints(td)
+    n_select <= 0 && return collect(1:N)
+    n_select >= N && return collect(1:N)
+
+    # Always include the most recent n_latest points
+    n_latest = min(n_latest, N, n_select)
+    latest_idx = collect((N - n_latest + 1):N)
+
+    n_fps = n_select - n_latest
+    if n_fps <= 0
+        return latest_idx
+    end
+
+    # Candidates: everything except the latest points
+    cand_idx = setdiff(1:N, latest_idx)
+    if isempty(cand_idx)
+        return latest_idx
+    end
+
+    # Build candidate and selected matrices for FPS
+    cand_X = td.X[:, cand_idx]
+    sel_X = td.X[:, latest_idx]
+
+    fps_idx = farthest_point_sampling(cand_X, sel_X, n_fps; distance_fn=distance_fn)
+
+    result = sort(vcat(latest_idx, cand_idx[fps_idx]))
+    return result
+end
+
+"""
+    _extract_subset(td, indices)
+
+Create a new TrainingData from selected column indices.
+"""
+function _extract_subset(td::TrainingData, indices::Vector{Int})
+    D = size(td.X, 1)
+    sub = TrainingData(D)
+    sub.X = td.X[:, indices]
+    sub.energies = td.energies[indices]
+    new_grads = Float64[]
+    for i in indices
+        s = (i - 1) * D + 1
+        e = i * D
+        append!(new_grads, td.gradients[s:e])
+    end
+    sub.gradients = new_grads
+    return sub
+end
+
+"""
     prune_training_data!(td::TrainingData, x_current::Vector{Float64},
                          max_points::Int; distance_fn=max_1d_log_distance)
 

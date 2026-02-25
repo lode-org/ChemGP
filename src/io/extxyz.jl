@@ -74,6 +74,54 @@ const ELEMENT_SYMBOLS = Dict{Int,String}(
     83 => "Bi",
 )
 
+# Reverse lookup: element symbol -> atomic number
+const SYMBOL_TO_ATOMIC_NUMBER = Dict{String,Int}(v => k for (k, v) in ELEMENT_SYMBOLS)
+
+# --------------------------------------------------------------------------
+# ExtXYZ reader (minimal, no external dependencies)
+# --------------------------------------------------------------------------
+
+"""
+    read_extxyz(filename) -> (positions, atomic_numbers, box)
+
+Read a single frame from an extended XYZ file.
+
+Returns:
+- `positions::Vector{Float64}`: flat coordinate vector [x1,y1,z1, x2,y2,z2, ...]
+- `atomic_numbers::Vector{Int}`: atomic number for each atom
+- `box::Vector{Float64}`: 9-element lattice vector (row-major 3x3)
+"""
+function read_extxyz(filename::AbstractString)
+    lines = readlines(filename)
+    n_atoms = parse(Int, strip(lines[1]))
+
+    # Parse Lattice from info line
+    info = lines[2]
+    box = Float64[20, 0, 0, 0, 20, 0, 0, 0, 20]  # default
+    m = match(r"Lattice=\"([^\"]+)\"", info)
+    if m !== nothing
+        box = parse.(Float64, split(strip(m.captures[1])))
+    end
+
+    positions = Vector{Float64}(undef, 3 * n_atoms)
+    atomic_numbers = Vector{Int}(undef, n_atoms)
+
+    for i in 1:n_atoms
+        parts = split(strip(lines[2 + i]))
+        sym = String(parts[1])
+        z = get(SYMBOL_TO_ATOMIC_NUMBER, sym, 0)
+        if z == 0
+            error("Unknown element symbol: $sym")
+        end
+        atomic_numbers[i] = z
+        positions[3*(i-1)+1] = parse(Float64, parts[2])
+        positions[3*(i-1)+2] = parse(Float64, parts[3])
+        positions[3*(i-1)+3] = parse(Float64, parts[4])
+    end
+
+    return (positions=positions, atomic_numbers=atomic_numbers, box=box)
+end
+
 # --------------------------------------------------------------------------
 # Internal: compute f_parallel via improved H&J tangent
 # --------------------------------------------------------------------------

@@ -57,6 +57,38 @@ function ChemGP.atomsbase_system(
     end
 end
 
+function ChemGP.make_mol_kernel(
+    sys::AbstractSystem;
+    frozen_indices::AbstractVector{<:Integer}=Int[],
+    kernel_type::Type=ChemGP.MolInvDistSE,
+    signal_variance::Real=1.0,
+    inv_lengthscale::Real=1.0,
+)
+    n = length(sys)
+    all_idx = collect(1:n)
+    fro_set = Set(frozen_indices)
+    mov_idx = [i for i in all_idx if !(i in fro_set)]
+
+    atnrs_mov = Int[atomic_number(sys, i) for i in mov_idx]
+    atnrs_fro = Int[atomic_number(sys, i) for i in frozen_indices]
+
+    # Frozen flat coordinates
+    frozen_coords = Float64[]
+    for i in frozen_indices
+        p = position(sys, i)
+        push!(frozen_coords, ustrip(u"Å", p[1]))
+        push!(frozen_coords, ustrip(u"Å", p[2]))
+        push!(frozen_coords, ustrip(u"Å", p[3]))
+    end
+
+    return kernel_type(
+        atnrs_mov, frozen_coords;
+        atomic_numbers_fro=atnrs_fro,
+        signal_variance=signal_variance,
+        inv_lengthscale=inv_lengthscale,
+    )
+end
+
 function ChemGP.atomsbase_neb_trajectory(
     result,
     atomic_numbers::AbstractVector{<:Integer},
