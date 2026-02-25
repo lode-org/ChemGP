@@ -85,6 +85,73 @@ end
     @test all(k_ff .== 0.0)
 end
 
+@testset "build_pair_scheme" begin
+    # HCN: 3 different atoms, all moving, no frozen
+    # C(6), N(7), H(1) -> 3 unique pairs: H-C, H-N, C-N
+    scheme = build_pair_scheme([6, 7, 1])
+    @test scheme.n_params == 3
+    @test length(scheme.species) == 3
+    @test sort(scheme.species) == [1, 6, 7]
+    # pair_map should be symmetric
+    n_t = length(scheme.species)
+    for i in 1:n_t, j in 1:n_t
+        @test scheme.pair_map[i, j] == scheme.pair_map[j, i]
+    end
+
+    # LEPS: 3 identical H atoms -> 1 pair type (H-H)
+    scheme_leps = build_pair_scheme([1, 1, 1])
+    @test scheme_leps.n_params == 1
+
+    # 4 Cu atoms -> 1 pair type (Cu-Cu)
+    scheme_cu = build_pair_scheme([29, 29, 29, 29])
+    @test scheme_cu.n_params == 1
+
+    # System100: 2C, 1O, 2N, 4H -> 4 types, 9 unique used pairs
+    # (no O-O since only 1 O)
+    scheme_s100 = build_pair_scheme([6, 6, 8, 7, 7, 1, 1, 1, 1])
+    @test scheme_s100.n_params == 9  # H-H, H-C, H-N, H-O, C-C, C-N, C-O, N-N, N-O (no O-O)
+    @test length(scheme_s100.species) == 4
+
+    # With frozen atoms: 2 moving Cu, 1 frozen H
+    scheme_fro = build_pair_scheme([29, 29]; atomic_numbers_fro=[1])
+    @test scheme_fro.n_params == 2  # Cu-Cu (mov-mov) + Cu-H (mov-fro)
+end
+
+@testset "Atomic-number kernel constructors" begin
+    # HCN kernel: should have 3 lengthscales
+    k_hcn = MolInvDistSE([6, 7, 1], Float64[])
+    @test length(k_hcn.inv_lengthscales) == 3
+    @test !isempty(k_hcn.feature_params_map)
+
+    # LEPS kernel: should have 1 lengthscale
+    k_leps = MolInvDistSE([1, 1, 1], Float64[])
+    @test length(k_leps.inv_lengthscales) == 1
+    @test !isempty(k_leps.feature_params_map)
+
+    # Should evaluate correctly (not degenerate)
+    x1 = [0.0, 0.0, 0.0, 1.5, 0.0, 0.0, 3.0, 0.0, 0.0]
+    x2 = [0.0, 0.0, 0.0, 1.6, 0.0, 0.0, 3.1, 0.0, 0.0]
+    @test k_leps(x1, x1) > 0    # self-covariance
+    @test k_leps(x1, x2) < k_leps(x1, x1)  # different points -> lower cov
+
+    # Matern variants
+    k_m52 = MolInvDistMatern52([6, 7, 1], Float64[])
+    @test length(k_m52.inv_lengthscales) == 3
+    k_m32 = MolInvDistMatern32([6, 7, 1], Float64[])
+    @test length(k_m32.inv_lengthscales) == 3
+end
+
+@testset "read_extxyz" begin
+    hcn_path = joinpath(@__DIR__, "..", "data", "hcn", "hcn.extxyz")
+    if isfile(hcn_path)
+        data = read_extxyz(hcn_path)
+        @test length(data.atomic_numbers) == 3
+        @test data.atomic_numbers == [6, 7, 1]  # C, N, H
+        @test length(data.positions) == 9
+        @test length(data.box) == 9
+    end
+end
+
 @testset "MolSumKernel" begin
     k_se = MolInvDistSE(1.0, [1.0], Float64[])
     k_const = OffsetKernel(0.5)
