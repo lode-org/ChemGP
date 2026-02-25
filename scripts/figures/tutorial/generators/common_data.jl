@@ -69,9 +69,11 @@ end
 
 Each entry in `cols` becomes a dataset under `/<name>/<key>`.
 Creates the file if it does not exist; appends groups if it does.
+Overwrites an existing group of the same name.
 """
 function h5_write_table(path, name, cols::Dict)
     h5open(path, isfile(path) ? "r+" : "w") do f
+        haskey(f, name) && delete_object(f, name)
         g = create_group(f, name)
         for (k, v) in cols
             write(g, string(k), v)
@@ -82,12 +84,14 @@ end
 """Write a 2D grid to HDF5 under `/grids/<name>`.
 
 Stores the matrix as a dataset and optionally x_range/y_range as attributes.
+Overwrites an existing dataset of the same name.
 """
 function h5_write_grid(path, name, data::AbstractMatrix;
     x_range::Union{Nothing,AbstractVector}=nothing,
     y_range::Union{Nothing,AbstractVector}=nothing)
     h5open(path, isfile(path) ? "r+" : "w") do f
         g = haskey(f, "grids") ? f["grids"] : create_group(f, "grids")
+        haskey(g, name) && delete_object(g, name)
         write(g, name, collect(data))
         ds = g[name]
         if x_range !== nothing
@@ -104,10 +108,12 @@ end
 """Write a path (ordered sequence of points) to HDF5 under `/paths/<name>`.
 
 Keyword arguments become datasets, e.g. `h5_write_path(p, "neb"; x=xs, y=ys)`.
+Overwrites an existing path of the same name.
 """
 function h5_write_path(path, name; kwargs...)
     h5open(path, isfile(path) ? "r+" : "w") do f
         pg = haskey(f, "paths") ? f["paths"] : create_group(f, "paths")
+        haskey(pg, name) && delete_object(pg, name)
         g = create_group(pg, name)
         for (k, v) in kwargs
             write(g, string(k), collect(v))
@@ -118,10 +124,12 @@ end
 """Write point sets to HDF5 under `/points/<name>`.
 
 Keyword arguments become datasets, e.g. `h5_write_points(p, "minima"; x=xs, y=ys, labels=ls)`.
+Overwrites an existing point set of the same name.
 """
 function h5_write_points(path, name; kwargs...)
     h5open(path, isfile(path) ? "r+" : "w") do f
         pg = haskey(f, "points") ? f["points"] : create_group(f, "points")
+        haskey(pg, name) && delete_object(pg, name)
         g = create_group(pg, name)
         for (k, v) in kwargs
             write(g, string(k), collect(v))
