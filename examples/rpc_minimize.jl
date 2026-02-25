@@ -68,7 +68,7 @@ function main()
     println("Max |gradient|: $(maximum(abs.(G)))")
 
     # GP-guided minimization
-    kernel = MolInvDistSE(1.0, [1.0], Float64[])
+    kernel = MolInvDistSE(ATOMIC_NUMBERS, Float64[])
     config = MinimizationConfig(; max_iter=50, conv_tol=1e-3, trust_radius=0.5)
 
     result = gp_minimize(oracle, X_INIT, kernel; config=config)

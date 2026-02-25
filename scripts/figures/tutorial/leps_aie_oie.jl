@@ -10,8 +10,8 @@ using CSV
 include(joinpath(@__DIR__, "common.jl"))
 
 # --- Kernel: MolInvDistSE for 3-atom system ---
-# 3 atoms -> 1 type of atom, eventhough inverse distances (AB, BC, AC), no frozen atoms
-kernel = MolInvDistSE(1.0, [1.0], Float64[], Int[])
+# 3 H atoms -> 1 unique pair type (H-H), 3 inv-distance features sharing 1 lengthscale
+kernel = MolInvDistSE([1, 1, 1], Float64[])
 
 # --- Standard NEB (oracle every step) ---
 println("Running standard NEB on LEPS...")
