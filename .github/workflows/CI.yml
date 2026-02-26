@@ -27,8 +27,7 @@ jobs:
           - '1.12'
           - 'pre'
         os:
-          - ubuntu-latest
-          - macos-latest
+          - self-hosted
         arch:
           - x64
     steps:
