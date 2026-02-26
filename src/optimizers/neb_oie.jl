@@ -86,7 +86,11 @@ function _oie_check_early_stop(
     N = length(R_new)
     N_train = npoints(td)
     log_limit = abs(log(cfg.bond_stretch_limit))
-    disp_limit = cfg.max_step_frac * path_scale
+    # Scale displacement limit with sqrt(n_atoms): Euclidean displacement in
+    # D dimensions is sqrt(D/3) larger on average than per-atom displacement,
+    # so compensate to keep per-atom limits comparable across system sizes.
+    n_atoms = max(1, div(length(R_new[1]), 3))
+    disp_limit = cfg.max_step_frac * path_scale * sqrt(n_atoms)
 
     for i in 2:(N - 1)
         # Check 1: interatomic distance ratios (max-1D-log)
@@ -220,16 +224,20 @@ function _oie_inner_relax(
             candidate_images[img_idx + 1] = candidate
         end
 
-        # Early stopping: check bond stretch and displacement
-        stop, offending = _oie_check_early_stop(candidate_images, td, cfg, path_scale)
-        if stop
-            early_stop_img = offending
-            cfg.verbose && @printf(
-                "    Inner iter %d: early stop (image %d violated trust)\n",
-                inner_iter,
-                offending
-            )
-            break  # reject step, return current gp_images (not candidate)
+        # Early stopping: check bond stretch and displacement.
+        # Allow the first step unconditionally -- the Euclidean trust clip
+        # already bounds it. Early stopping activates from step 2 onward.
+        if inner_iter > 1
+            stop, offending = _oie_check_early_stop(candidate_images, td, cfg, path_scale)
+            if stop
+                early_stop_img = offending
+                cfg.verbose && @printf(
+                    "    Inner iter %d: early stop (image %d violated trust)\n",
+                    inner_iter,
+                    offending
+                )
+                break  # reject step, return current gp_images (not candidate)
+            end
         end
 
         # Accept step
@@ -409,7 +417,7 @@ function gp_neb_oie(
                 m
             end
 
-            kappa_lcb = 2.0
+            kappa_lcb = cfg.lcb_kappa
             best_score = -Inf
             best_var_perp = 0.0
             best_force = 0.0
@@ -579,17 +587,18 @@ function gp_neb_oie(
         )
 
         # Stagnation check (force-based: detect when max force stops changing)
-        if abs(max_f - prev_max_f) < 1e-10
+        stag_tol = max(1e-6, 1e-4 * max_f)
+        if abs(max_f - prev_max_f) < stag_tol
             stagnation_count += 1
         else
             stagnation_count = 0
         end
         prev_max_f = max_f
         cfg.verbose && stagnation_count > 0 &&
-            @printf("  Stagnation counter: %d/3\n", stagnation_count)
+            @printf("  Stagnation counter: %d/5\n", stagnation_count)
 
-        if stagnation_count >= 3
-            cfg.verbose && @printf("  Outer %d: Force stagnation (max|F| unchanged for 3 steps). Exiting.\n", outer_iter)
+        if stagnation_count >= 5
+            cfg.verbose && @printf("  Outer %d: Force stagnation (max|F| unchanged for 5 steps). Exiting.\n", outer_iter)
             stop_reason = FORCE_STAGNATION
             break
         end
