@@ -451,8 +451,9 @@ function neb_optimize(
     for iter in 1:(cfg.max_iter)
         forces, max_f, ci_f, i_max = compute_all_neb_forces(path, cfg; ci_on)
 
-        # Stagnation check (force-based)
-        if abs(max_f - prev_max_f) < 1e-10
+        # Stagnation check (force-based, relative tolerance with floor)
+        stag_tol = max(1e-6, 1e-4 * max_f)
+        if abs(max_f - prev_max_f) < stag_tol
             stagnation_count += 1
         else
             stagnation_count = 0
@@ -757,8 +758,9 @@ function gp_neb_aie(
         # Compute true forces
         forces_true, max_f_true, ci_f_true, i_max = compute_all_neb_forces(path, cfg; ci_on)
 
-        # Stagnation check (force-based)
-        if abs(max_f_true - prev_max_f) < 1e-10
+        # Stagnation check (force-based, relative tolerance with floor)
+        stag_tol = max(1e-6, 1e-4 * max_f_true)
+        if abs(max_f_true - prev_max_f) < stag_tol
             stagnation_count += 1
         else
             stagnation_count = 0

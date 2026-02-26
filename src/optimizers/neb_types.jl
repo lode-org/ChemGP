@@ -65,6 +65,7 @@ Configuration parameters for NEB path optimization.
 - `gp_tol_divisor`: Adaptive GP convergence tolerance = smallest_observed_force / divisor; 0 = fixed min(conv_tol, ci_force_tol)/10 (default 10)
 - `max_step_frac`: Reject inner step if any image moves further than this fraction of the initial path length from nearest training point (default 0.1)
 - `bond_stretch_limit`: Reject inner step if any interatomic distance ratio to nearest training point exceeds |log(limit)|, e.g. 2/3 means bonds cannot shrink below 2/3 or stretch above 3/2 (default 2/3)
+- `lcb_kappa`: LCB exploration weight for OIE image selection; score = |F| + lcb_kappa * sigma_perp (default 2.0)
 
 # Virtual Hessian points (Koistinen et al. 2017, J. Chem. Phys. 147, 152720)
 - `num_hess_iter`: Outer iterations to include Hessian perturbation points; 0 disables (default 0)
@@ -112,6 +113,7 @@ Base.@kwdef struct NEBConfig
     gp_tol_divisor::Int = 10      # GP inner tol = smallest_accurate_force / divisor (0 = fixed)
     max_step_frac::Float64 = 0.1     # max displacement from training data / initial path length
     bond_stretch_limit::Float64 = 2.0/3.0 # bond ratio limit for early stopping
+    lcb_kappa::Float64 = 2.0        # LCB exploration weight for OIE image selection
     # Virtual Hessian points (Koistinen et al. 2017):
     # Generate finite-difference perturbation points around endpoints to
     # bootstrap GP training with curvature information.
