@@ -62,7 +62,7 @@ fn main() {
     oie_cfg.climbing_image = false;
     oie_cfg.gp_train_iter = 100;
     oie_cfg.max_gp_points = 50;
-    oie_cfg.rff_features = 500;
+    oie_cfg.rff_features = 1000;
     oie_cfg.verbose = false;
 
     eprintln!("Running GP-NEB OIE...");
