@@ -1,0 +1,70 @@
+#+TITLE: Installation
+#+OPTIONS: toc:nil todo:nil num:nil author:nil title:nil
+#+STARTUP: content
+
+* Installation
+
+** Requirements
+
+- Rust 1.75+ (for building from source)
+- Python 3.10+ (for Python bindings, optional)
+- [[https://prefix.dev/pixi][pixi]] (recommended, handles dependencies)
+
+** Building from source
+
+#+begin_src bash
+git clone https://github.com/HaoZeke/ChemGP.git
+cd ChemGP
+cargo build --release
+#+end_src
+
+Or using pixi:
+
+#+begin_src bash
+pixi run -e dev build
+#+end_src
+
+** Running tests
+
+#+begin_src bash
+cargo test -p chemgp-core
+#+end_src
+
+Or:
+
+#+begin_src bash
+pixi run -e dev test
+#+end_src
+
+** Optional features
+
+The =chemgp-core= crate has two optional feature flags:
+
+- =io= :: Enables file I/O through =chemfiles= (for =.extxyz=) and
+  =readcon-core= (for =.con= files).
+
+- =rgpot= :: Enables the RPC oracle interface through =rgpot-core= for
+  connecting to external potential energy calculators.
+
+Enable features in your =Cargo.toml=:
+
+#+begin_src toml
+[dependencies]
+chemgp-core = { version = "0.1", features = ["io", "rgpot"] }
+#+end_src
+
+** Python bindings
+
+The Python package is built with [[https://www.maturin.rs/][maturin]]:
+
+#+begin_src bash
+pip install maturin
+cd crates/chemgp-py
+maturin develop --release
+#+end_src
+
+Or install directly:
+
+#+begin_src bash
+pip install chemgp
+#+end_src

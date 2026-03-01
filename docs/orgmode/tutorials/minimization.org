@@ -1,0 +1,144 @@
+#+TITLE: Minimization
+#+OPTIONS: toc:nil todo:nil num:nil author:nil title:nil
+#+STARTUP: content
+
+* Minimization
+
+** GP-Guided Minimization
+
+The GP minimizer (=gp_minimize=) replaces most oracle calls with GP predictions,
+querying the true potential only when the GP uncertainty is high or when the
+predicted step leaves the trust region.
+
+*** Algorithm outline
+
+1. *Initialization*: Evaluate the oracle at the starting point and several small
+   perturbations (controlled by =n_initial_perturb= and =perturb_scale=). These
+   bootstrap the GP with enough data to start predicting.
+
+2. *GP training*: Select an FPS subset of the training data near the current
+   point. Train hyperparameters on this subset via SCG (MAP-NLL). Build a
+   =PredModel= (exact GP or RFF) on the full training set.
+
+3. *Inner optimization*: Minimize the GP surrogate using L-BFGS within the trust
+   region. The trust region penalty prevents stepping into regions where the GP
+   has no data.
+
+4. *Oracle call*: Evaluate the true potential at the proposed minimum. Compare
+   the GP prediction with the oracle result.
+
+5. *Convergence check*: If the true gradient norm is below =conv_tol=, stop.
+   Otherwise, add the new point to training data and repeat from step 2.
+
+*** Key components
+
+- *FPS subset selection* limits the GP training set to the most informative
+  points, keeping Cholesky cost manageable.
+
+- *Trust regions* clip proposed steps to regions where the GP has sufficient
+  training data coverage. EMD distance for molecules, Euclidean distance for
+  Cartesian surfaces.
+
+- *LCB exploration* adds a variance penalty to the predicted energy, encouraging
+  sampling of uncertain regions.
+
+- *Energy regression gate* rejects steps where the GP predicts implausibly low
+  energies (extrapolation artifacts).
+
+- *PredModel dispatch* uses RFF approximation for scalable prediction when
+  =rff_features > 0=, otherwise exact GP.
+
+** Muller-Brown Example
+
+The Muller-Brown surface is a standard 2D test potential with three minima and
+two saddle points. Using the =CartesianSE= kernel:
+
+#+begin_src bash
+cargo run --release --example mb_minimize
+#+end_src
+
+GP minimization converges to the nearest local minimum in 7 oracle calls. Direct
+gradient descent with the same convergence tolerance needs 34 calls, a 4.9x
+improvement.
+
+*** Configuration notes for non-molecular surfaces
+
+Non-molecular surfaces require explicit =dedup_tol= configuration. The default
+(=conv_tol * 0.1=) can be too large relative to the coordinate space. For
+Muller-Brown, the coordinate space spans roughly 3 units, but a =conv_tol= of
+10 gives =dedup_tol = 1.0=, which rejects almost all new training points and
+causes the GP to stagnate.
+
+Use =TrustMetric::Euclidean= instead of the default EMD metric, since there are
+no interatomic distances to compute.
+
+#+begin_src rust
+use chemgp_core::kernel::{Kernel, CartesianSE};
+use chemgp_core::minimize::{gp_minimize, MinimizationConfig};
+use chemgp_core::trust::TrustMetric;
+
+let kernel = Kernel::Cartesian(CartesianSE::new(100.0, 2.0));
+let mut cfg = MinimizationConfig::default();
+cfg.conv_tol = 1.0;
+cfg.dedup_tol = 0.001;    // explicit, not derived from conv_tol
+cfg.n_initial_perturb = 3;
+cfg.perturb_scale = 0.15;
+cfg.trust_radius = 0.3;
+cfg.penalty_coeff = 1000.0;
+cfg.trust_metric = TrustMetric::Euclidean;
+#+end_src
+
+** LEPS Example
+
+The LEPS surface models a collinear H + H2 reaction. Using the =MolInvDistSE=
+kernel:
+
+#+begin_src bash
+cargo run --release --example leps_minimize
+#+end_src
+
+GP minimization converges in 9 oracle calls to the reactant minimum (E =
+-4.515). Direct gradient descent needs 200 calls and still has not converged to
+the same precision.
+
+The =MolInvDistSE= kernel handles the molecular invariances automatically. EMD
+trust distance is the appropriate metric here.
+
+#+begin_src rust
+use chemgp_core::kernel::{Kernel, MolInvDistSE};
+use chemgp_core::minimize::{gp_minimize, MinimizationConfig};
+
+let kernel = Kernel::MolInvDist(
+    MolInvDistSE::isotropic(1.0, 1.0, vec![1, 1, 1])
+);
+let cfg = MinimizationConfig::default();
+// defaults work well for molecular systems
+#+end_src
+
+** Configuration Reference
+
+| Parameter | Default | Description |
+|-----------+---------+-------------|
+| =conv_tol= | 5e-3 | Gradient norm convergence threshold |
+| =trust_radius= | 0.1 | Max distance from training data |
+| =max_oracle_calls= | 0 (unlimited) | Oracle call budget |
+| =n_initial_perturb= | 4 | Bootstrap perturbation points |
+| =perturb_scale= | 0.1 | Perturbation radius |
+| =penalty_coeff= | 1e3 | Trust region penalty in inner L-BFGS |
+| =rff_features= | 0 (exact GP) | RFF feature count |
+| =fps_history= | 0 (use all) | FPS subset size |
+| =trust_metric= | Emd | Distance metric for trust region |
+| =dedup_tol= | 0 (auto) | Minimum distance between training points |
+| =max_move= | 0.1 | Maximum step size per outer iteration |
+| =energy_regression_tol= | 0 (auto) | Gate for implausible energy predictions |
+
+** Inner L-BFGS details
+
+The inner optimization uses L-BFGS with trust region penalty. The L-BFGS
+direction is already curvature-scaled, so the step size is 1.0 (clamped by
+=trust_radius=). For the initial steepest descent steps (before L-BFGS has
+curvature history), the step size is =trust_radius * 0.5 / ||d||=.
+
+The penalty term =penalty_coeff * max(0, dist - trust_radius)^2= softly
+constrains the inner optimization to stay within the trust region, where =dist=
+is the Euclidean or EMD distance from the nearest training point.

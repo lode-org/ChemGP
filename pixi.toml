@@ -13,22 +13,31 @@ python = ">=3.10"
 
 [feature.docs.dependencies]
 nodejs = ">=22,<26"
+emacs  = ">=30.2,<31"
 
 [feature.docs.pypi-dependencies]
-myst-parser = ">=4.0, <5"
-shibuya     = ">=2025.12.13, <2026"
-sphinx      = ">=8.0, <10"
+shibuya        = ">=2025.12.13, <2026"
+sphinx         = ">=8.0, <10"
 sphinx-sitemap = ">=2.9.0, <3"
 
+[feature.docs.tasks.mkrst]
+cwd = "docs"
+cmd = "emacs --batch --load export.el"
+
 [feature.docs.tasks.sphinxbld]
-cmd = "sphinx-build docs/source/ docs/build"
+depends-on = ["mkrst"]
+cmd = "sphinx-build -d docs/doctrees docs/source/ docs/build"
 
 [feature.docs.tasks.docbld]
-depends-on = ["sphinxbld"]
+depends-on = ["mkrst", "sphinxbld"]
 
 [feature.docs.tasks.docdel]
-cmd = "rm -rf docs/build"
-cwd = "."
+cwd = "docs"
+cmd = """
+rm -rf build
+rm -rf doctrees
+rm -rf source/*.rst
+"""
 
 [feature.docs.tasks.minify]
 cmd = """

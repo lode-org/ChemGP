@@ -26,7 +26,12 @@ scripts/figures/tutorial/output/
 
 # Sphinx build output
 docs/build/
+docs/doctrees/
 docs/Manifest.toml
+
+# Generated RST (from org-to-RST export pipeline)
+docs/source/*.rst
+docs/source/**/*.rst
 
 # Logs
 *.log

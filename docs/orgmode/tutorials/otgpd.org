@@ -1,0 +1,76 @@
+#+TITLE: OTGPD
+#+OPTIONS: toc:nil todo:nil num:nil author:nil title:nil
+#+STARTUP: content
+
+* OTGPD
+
+** Adaptive Threshold GP Dimer
+
+The Optimal Transport GP Dimer (OTGPD) extends the GP-Dimer with an adaptive
+convergence threshold. Instead of requiring a fixed GP force tolerance, OTGPD
+adjusts the threshold based on the history of observed true forces:
+
+#+begin_example
+T_gp = max(min(F_true) / divisor, T_dimer / 10)
+#+end_example
+
+When the GP-predicted force is below =T_gp=, the GP is trusted. Otherwise, the
+oracle is invoked and the GP is retrained.
+
+** How It Differs from GP-Dimer
+
+The standard GP-Dimer uses a fixed schedule for oracle calls: train the GP,
+optimize on the surrogate, then always call the oracle at the proposed point.
+OTGPD adds a decision criterion: /should/ the oracle be called?
+
+This matters because:
+
+- Early in the search, forces are large and the GP is uncertain. The oracle
+  should be called frequently.
+- Late in the search, the GP is well-trained near the saddle. Many steps can
+  be taken on the surrogate without oracle calls.
+
+The adaptive threshold captures this automatically. As =min(F_true)= decreases
+(approaching the saddle), =T_gp= tightens, and the GP must predict very small
+forces before being trusted. This provides a smooth transition from
+oracle-intensive exploration to GP-dominated refinement.
+
+** HOD Training Data Management
+
+OTGPD uses History-Ordered Data (HOD) management: training points are kept in
+temporal order and older points are pruned via FPS when the dataset exceeds
+=fps_history=. This differs from the standard GP-Dimer which uses spatial FPS
+relative to the current position.
+
+HOD is natural for saddle point search because the optimizer follows a single
+trajectory. Older points become less relevant as the search moves toward the
+saddle, so temporal pruning is appropriate.
+
+** Initial Rotation
+
+OTGPD can accept an initial dimer orientation from a prior NEB calculation or
+Hessian eigenanalysis. When a good initial orientation is available, rotation can
+be skipped entirely (=max_rot_iter = 0=), saving oracle calls that would
+otherwise be spent refining the orientation.
+
+** Relationship to GP-Dimer
+
+OTGPD reduces to the GP-Dimer when:
+- =fps_history= is large enough that FPS never activates
+- The adaptive threshold saturates at =T_dimer / 10=
+
+On the LEPS surface, both methods converge in ~13 oracle calls starting from
+0.05 A displaced from the known saddle along the negative eigenmode.
+
+** Configuration Reference
+
+| Parameter | Default | Description |
+|-----------+---------+-------------|
+| =conv_tol= | 0.1 | Force norm convergence threshold |
+| =dimer_sep= | 0.005 | Half-length of the dimer |
+| =max_iter= | 200 | Maximum outer iterations |
+| =max_oracle_calls= | 0 (unlimited) | Oracle call budget |
+| =rff_features= | 0 (exact GP) | RFF feature count for PredModel |
+| =fps_history= | 0 (use all) | FPS subset size (HOD management) |
+| =t_gp_divisor= | 5.0 | Divisor for adaptive threshold |
+| =trust_radius= | 0.1 | Trust region radius |
