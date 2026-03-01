@@ -10,4 +10,4 @@ crate-type = ["cdylib"]
 
 [dependencies]
 chemgp-core = { path = "../chemgp-core" }
-pyo3 = { version = "0.23", features = ["extension-module"] }
+pyo3 = { version = "0.28", features = ["extension-module"] }

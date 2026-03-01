@@ -116,6 +116,12 @@ pub const LEPS_PRODUCT: [f64; 9] = [
     0.0, 0.0, 0.0, 3.0, 0.0, 0.0, 3.0 + LEPS_R_E, 0.0, 0.0,
 ];
 
+/// Saddle point geometry (collinear, r_AB=1.1491, r_BC=0.8625).
+/// E = -3.177, Hessian eigenvalues: -6.10, +13.70.
+pub const LEPS_SADDLE: [f64; 9] = [
+    0.0, 0.0, 0.0, 1.149098, 0.0, 0.0, 2.011623, 0.0, 0.0,
+];
+
 /// LEPS potential for 3-atom system (9D flat coordinates).
 pub fn leps_energy_gradient(x: &[f64]) -> (f64, Vec<f64>) {
     let ra = &x[0..3];
