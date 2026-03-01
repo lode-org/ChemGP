@@ -1,0 +1,220 @@
+#+TITLE: chemgp-core Rust API Quick Reference
+#+OPTIONS: toc:2
+
+* Setup
+
+#+begin_src toml
+# Cargo.toml
+[dependencies]
+chemgp-core = { path = "crates/chemgp-core" }
+
+# Optional: I/O for .extxyz/.con files
+chemgp-core = { path = "crates/chemgp-core", features = ["io"] }
+#+end_src
+
+* Defining an Oracle
+
+All optimizers take an oracle function: coordinates in, energy + gradient out.
+
+#+begin_src rust
+// Closure form (most common)
+let oracle = |x: &[f64]| -> (f64, Vec<f64>) {
+    // your_potential(x) -> (energy, gradient)
+    potentials::leps_energy_gradient(x)
+};
+
+// Type alias used internally
+type OracleFn = dyn Fn(&[f64]) -> (f64, Vec<f64>);
+#+end_src
+
+* GP Minimization
+
+#+begin_src rust
+use chemgp_core::kernel::MolInvDistSE;
+use chemgp_core::minimize::{gp_minimize, MinimizationConfig};
+
+let kernel = MolInvDistSE::isotropic(1.0, 1.0, vec![]);
+let cfg = MinimizationConfig {
+    conv_tol: 0.01,
+    max_iter: 100,
+    verbose: false,
+    ..Default::default()
+};
+
+let result = gp_minimize(&oracle, &x_init, &kernel, &cfg, None);
+// result.x_final, result.e_final, result.converged,
+// result.stop_reason, result.oracle_calls
+#+end_src
+
+* NEB (Nudged Elastic Band)
+
+Three variants, ordered by oracle efficiency:
+
+#+begin_src rust
+use chemgp_core::neb::{neb_optimize, gp_neb_aie};
+use chemgp_core::neb_oie::gp_neb_oie;
+use chemgp_core::neb_path::NEBConfig;
+
+let cfg = NEBConfig {
+    images: 5,            // intermediate images
+    conv_tol: 0.05,       // max force convergence
+    climbing_image: true, // CI-NEB
+    ..Default::default()
+};
+
+// Standard NEB (oracle at every image, every step)
+let r1 = neb_optimize(&oracle, &x_start, &x_end, &cfg);
+
+// GP-NEB AIE (all images evaluated per outer iteration)
+let r2 = gp_neb_aie(&oracle, &x_start, &x_end, &kernel, &cfg);
+
+// GP-NEB OIE (one oracle call per outer iteration, LCB selection)
+let r3 = gp_neb_oie(&oracle, &x_start, &x_end, &kernel, &cfg);
+
+// result.path.images -- Vec<Vec<f64>>, the relaxed path
+// result.path.energies -- energy at each image
+// result.history.max_force -- convergence trace
+// result.oracle_calls -- total oracle evaluations
+#+end_src
+
+* Dimer / OTGPD (Saddle Point Search)
+
+#+begin_src rust
+use chemgp_core::dimer::{gp_dimer, DimerConfig};
+use chemgp_core::otgpd::{otgpd, OTGPDConfig};
+
+// GP-Dimer
+let dimer_cfg = DimerConfig {
+    t_force_true: 0.01,
+    max_outer_iter: 50,
+    ..Default::default()
+};
+let r1 = gp_dimer(&oracle, &x_init, &orient, &kernel, &dimer_cfg, None, 0.01);
+
+// OTGPD (initial rotation on true potential + adaptive GP threshold + HOD)
+let otgpd_cfg = OTGPDConfig {
+    t_dimer: 0.01,
+    initial_rotation: true,
+    ..Default::default()
+};
+let r2 = otgpd(&oracle, &x_init, &orient, &kernel, &otgpd_cfg, None);
+
+// Convergence requires BOTH small force AND negative curvature
+// result.converged, result.r, result.orient
+#+end_src
+
+* Kernel Construction
+
+#+begin_src rust
+use chemgp_core::kernel::MolInvDistSE;
+
+// Isotropic: single lengthscale for all pair distances
+let k = MolInvDistSE::isotropic(signal_var, inv_lengthscale, frozen_coords);
+
+// Data-dependent initialization (recommended)
+use chemgp_core::types::init_mol_invdist_se;
+let k = init_mol_invdist_se(&training_data, &template_kernel);
+#+end_src
+
+* Training Data
+
+#+begin_src rust
+use chemgp_core::types::TrainingData;
+
+let mut td = TrainingData::new(dim); // dim = 3 * n_atoms
+td.add_point(&coords, energy, &gradient);
+td.npoints(); // number of stored configurations
+
+// Access stored data
+let x_i = td.col(i);            // coordinates of point i
+let e_i = td.energies[i];       // energy of point i
+#+end_src
+
+* GP Model
+
+#+begin_src rust
+use chemgp_core::types::GPModel;
+use chemgp_core::train::train_model;
+use chemgp_core::predict::{predict, predict_with_variance};
+
+// Target vector: [E1-Eref, E2-Eref, ..., G1_x, G1_y, G1_z, ...]
+let e_ref = td.energies[0];
+let mut y: Vec<f64> = td.energies.iter().map(|e| e - e_ref).collect();
+y.extend_from_slice(&td.gradients);
+
+let mut gp = GPModel::new(kernel, &td, y, 1e-6, 1e-4, 1e-6);
+//                                         noise  grad_noise  jitter
+train_model(&mut gp, 300, false); // 300 SCG iterations
+
+// Predict at new point
+let preds = predict(&gp, &x_test, 1);
+// preds[0] = energy (shifted), preds[1..] = gradient
+
+// With uncertainty
+let (mu, var) = predict_with_variance(&gp, &x_test, 1);
+// var[0] = energy variance, var[1..] = gradient variances
+#+end_src
+
+* I/O (requires ~features = ["io"]~)
+
+#+begin_src rust
+use chemgp_core::io::{read_structure, read_extxyz, read_con, write_extxyz, MolConfig};
+
+// Unified reader (dispatches on extension)
+let config = read_structure("molecule.con").unwrap();
+let config = read_structure("trajectory.extxyz").unwrap();
+
+// config.positions -- flat [x1,y1,z1, x2,y2,z2, ...]
+// config.atomic_numbers -- Vec<i32>
+// config.cell -- [[f64; 3]; 3]
+// config.energy -- Option<f64>
+// config.forces -- Option<Vec<f64>>
+
+// Write trajectory
+write_extxyz("output.xyz", &configs).unwrap();
+#+end_src
+
+* Built-in Potentials
+
+For testing and benchmarking (always available, no feature gate):
+
+#+begin_src rust
+use chemgp_core::potentials::*;
+
+let (e, g) = lj_energy_gradient(&coords_9d, epsilon, sigma);
+let (e, g) = muller_brown_energy_gradient(&xy_2d);
+let (e, g) = leps_energy_gradient(&coords_9d);
+let (e, g) = leps_energy_gradient_2d(&r_ab_bc);
+
+// Reference geometries
+let start = LEPS_REACTANT;  // [f64; 9]
+let end_  = LEPS_PRODUCT;   // [f64; 9]
+let mins  = MULLER_BROWN_MINIMA;   // [[f64; 2]; 3]
+let saddles = MULLER_BROWN_SADDLES; // [[f64; 2]; 2]
+#+end_src
+
+* StopReason
+
+#+begin_src rust
+use chemgp_core::StopReason;
+
+match result.stop_reason {
+    StopReason::Converged       => { /* success */ },
+    StopReason::MaxIterations   => { /* hit iter limit */ },
+    StopReason::OracleCap       => { /* budget exhausted */ },
+    StopReason::ForceStagnation => { /* forces plateaued */ },
+    StopReason::UserCallback    => { /* on_step returned :stop */ },
+}
+#+end_src
+
+* Running Examples
+
+#+begin_src bash
+# All examples output JSONL for plotting
+cargo run --release -p chemgp-core --example leps_minimize
+cargo run --release -p chemgp-core --example leps_neb
+cargo run --release -p chemgp-core --example leps_dimer
+
+# Plot results
+python scripts/plot_comparisons.py
+#+end_src
