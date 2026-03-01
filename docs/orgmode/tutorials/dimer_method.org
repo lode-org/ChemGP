@@ -103,6 +103,16 @@ Starting from 0.05 A displaced from the known LEPS saddle along the negative
 eigenmode (from Hessian), GP-Dimer converges in ~9 oracle calls and OTGPD in
 ~13. The standard dimer needs ~45 calls.
 
+#+begin_export rst
+.. figure:: /_static/figures/leps_dimer_convergence.pdf
+   :width: 70%
+
+   Translation force vs oracle calls for standard dimer, GP-Dimer, and OTGPD
+   on the LEPS surface. GP-Dimer converges fastest because the GP learns
+   the curvature near the saddle quickly. OTGPD is slightly slower due to
+   the adaptive threshold mechanism but more robust for difficult surfaces.
+#+end_export
+
 The starting configuration avoids the rotation issue by providing the correct
 dimer orientation from the outset (=max_rot_iter = 0=).
 

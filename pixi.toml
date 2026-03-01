@@ -24,8 +24,11 @@ sphinx-sitemap = ">=2.9.0, <3"
 cwd = "docs"
 cmd = "emacs --batch --load export.el"
 
+[feature.docs.tasks.cpfigs]
+cmd = "cp -f scripts/figures/tutorial/output/*.pdf docs/source/_static/figures/ 2>/dev/null || true"
+
 [feature.docs.tasks.sphinxbld]
-depends-on = ["mkrst"]
+depends-on = ["mkrst", "cpfigs"]
 cmd = "sphinx-build -d docs/doctrees docs/source/ docs/build"
 
 [feature.docs.tasks.docbld]
@@ -67,11 +70,19 @@ cmd = "cargo build --release"
 cmd = """
 cargo run --release --example leps_minimize && \
 cargo run --release --example leps_dimer && \
-cargo run --release --example leps_neb
+cargo run --release --example leps_neb && \
+cargo run --release --example mb_minimize && \
+cargo run --release --example mb_gp_quality && \
+cargo run --release --example leps_rff_quality
 """
 
 [feature.dev.tasks.figures]
-cmd = "python scripts/plot_comparisons.py"
+cmd = """
+python scripts/plot_comparisons.py && \
+python scripts/plot_surfaces.py && \
+python scripts/plot_gp_quality.py && \
+python scripts/plot_rff_quality.py
+"""
 depends-on = ["examples"]
 
 [environments]

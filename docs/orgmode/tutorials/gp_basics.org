@@ -101,7 +101,7 @@ needed to change the energy).
 use chemgp_core::kernel::{Kernel, MolInvDistSE};
 // Isotropic: all pair types share the same length scale initially
 let kernel = Kernel::MolInvDist(
-    MolInvDistSE::isotropic(1.0, 1.0, vec![1, 1, 1])
+    MolInvDistSE::isotropic(1.0, 1.0, vec![])
 );
 #+end_src
 
@@ -220,6 +220,48 @@ without the cost of exact GP prediction.
 When =rff_features > 0=, the RFF model provides O(D_rff) prediction cost instead
 of O((N*(1+D))^2) for exact GP. For inner optimization loops that call predict
 hundreds of times, this speedup is essential.
+
+** GP quality on Muller-Brown
+
+The following figures demonstrate GP behavior as training data accumulates.
+Run =cargo run --release --example mb_gp_quality= followed by
+=python scripts/plot_gp_quality.py= to regenerate.
+
+*** GP surrogate progression
+
+#+begin_export rst
+.. figure:: /_static/figures/mb_gp_progression.pdf
+   :width: 100%
+
+   GP predicted energy surface at N = 5, 15, 21, 30 training points. White
+   circles mark training locations. With only 5 points, the GP captures the
+   general topology; by 21, it resolves all three minima and both saddle points.
+#+end_export
+
+*** Variance and uncertainty
+
+#+begin_export rst
+.. figure:: /_static/figures/mb_variance.pdf
+   :width: 80%
+
+   GP variance overlay with crosshatching. Dashed blue contours mark medium
+   variance; solid magenta contours mark high variance. Training points (white
+   circles) suppress local variance; regions far from training data show high
+   uncertainty. The downward triangle marks the point of maximum variance,
+   which is where the next oracle call would be most informative.
+#+end_export
+
+*** Prediction error
+
+#+begin_export rst
+.. figure:: /_static/figures/mb_gp_error.pdf
+   :width: 80%
+
+   GP prediction error (predicted minus true energy) at N = 21. The diverging
+   colormap highlights regions of over-prediction (red) and under-prediction
+   (blue). Errors are smallest near training points and largest in under-sampled
+   regions, as expected from the variance map above.
+#+end_export
 
 ** Computational cost summary
 

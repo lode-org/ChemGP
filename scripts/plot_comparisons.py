@@ -54,6 +54,8 @@ TEAL = "#004D40"
 CORAL = "#FF655D"
 YELLOW = "#F1DB4B"
 
+OUTDIR = Path("scripts/figures/tutorial/output")
+
 PALETTE = {
     "gp_minimize": TEAL,
     "direct_minimize": CORAL,
@@ -131,9 +133,10 @@ def plot_minimize():
     ax.set_title("LEPS Minimization")
     ax.legend(frameon=False)
     fig.tight_layout()
-    fig.savefig("fig_minimize.pdf")
+    OUTDIR.mkdir(parents=True, exist_ok=True)
+    fig.savefig(OUTDIR / "leps_minimize_convergence.pdf")
     plt.close(fig)
-    print("Wrote fig_minimize.pdf")
+    print(f"Wrote {OUTDIR / 'leps_minimize_convergence.pdf'}")
 
 
 def plot_neb():
@@ -163,9 +166,10 @@ def plot_neb():
     ax.set_title("LEPS NEB Convergence")
     ax.legend(frameon=False)
     fig.tight_layout()
-    fig.savefig("fig_neb.pdf")
+    OUTDIR.mkdir(parents=True, exist_ok=True)
+    fig.savefig(OUTDIR / "leps_neb_convergence.pdf")
     plt.close(fig)
-    print("Wrote fig_neb.pdf")
+    print(f"Wrote {OUTDIR / 'leps_neb_convergence.pdf'}")
 
 
 def plot_dimer():
@@ -195,9 +199,10 @@ def plot_dimer():
     ax.set_title("LEPS Saddle Point Search")
     ax.legend(frameon=False)
     fig.tight_layout()
-    fig.savefig("fig_dimer.pdf")
+    OUTDIR.mkdir(parents=True, exist_ok=True)
+    fig.savefig(OUTDIR / "leps_dimer_convergence.pdf")
     plt.close(fig)
-    print("Wrote fig_dimer.pdf")
+    print(f"Wrote {OUTDIR / 'leps_dimer_convergence.pdf'}")
 
 
 if __name__ == "__main__":

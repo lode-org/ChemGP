@@ -40,7 +40,9 @@ ChemGP/
         oracle.rs         # rgpot-core wrapper (feature-gated)
       examples/
         mb_minimize.rs    # GP minimize on Muller-Brown (CartesianSE)
+        mb_gp_quality.rs  # GP quality grids on Muller-Brown
         leps_minimize.rs  # GP minimize on LEPS (MolInvDistSE)
+        leps_rff_quality.rs # RFF vs exact GP on LEPS
         leps_neb.rs       # NEB vs AIE vs OIE
         leps_dimer.rs     # GP-Dimer vs OTGPD
     chemgp-py/            # pyo3 bindings
@@ -111,6 +113,16 @@ identity entirely.
 *Tradeoff*: RFF introduces approximation error. With D_rff = 500 features, the
 approximation is excellent for LEPS (3 atoms). Larger systems may need more
 features, but the O(D_rff^3) cost is always independent of N and D.
+
+#+begin_export rst
+.. figure:: /_static/figures/leps_rff_quality.pdf
+   :width: 100%
+
+   RFF approximation quality on the LEPS surface. Energy and gradient MAE
+   decrease with increasing D_rff, converging toward the exact GP baseline
+   (dotted coral line). At D_rff = 150, the RFF error is within 2x of the
+   exact GP for both energy and gradient.
+#+end_export
 
 *** LCB exploration
 
