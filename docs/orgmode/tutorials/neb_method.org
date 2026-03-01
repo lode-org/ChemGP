@@ -145,6 +145,15 @@ cargo run --release --example leps_neb
 On the LEPS surface: OIE converges in ~49 oracle calls, AIE in ~62, standard NEB
 in ~127.
 
+#+begin_export rst
+.. figure:: /_static/figures/leps_neb_convergence.pdf
+   :width: 70%
+
+   Maximum NEB force vs oracle calls for standard NEB, GP-NEB AIE, and GP-NEB
+   OIE on the LEPS surface. OIE converges fastest because it selects only the
+   most informative image at each iteration.
+#+end_export
+
 ** Configuration Reference
 
 | Parameter | Default | Description |
