@@ -4,98 +4,146 @@
 
 * GP Basics
 
-** Gaussian Process Regression
+This tutorial introduces the Gaussian Process machinery underlying all
+ChemGP optimizers. Understanding the GP model, its kernels, and its
+computational costs motivates the design decisions throughout the library.
 
-A GP models an unknown function as a distribution over functions, characterized
-by a mean function and a kernel (covariance function). For potential energy
-surfaces, the GP jointly models energies and gradients, providing both
-predictions and uncertainty estimates.
+** Why Gaussian Processes for PES?
 
-Given training data ={(x_i, E_i, G_i)}= (coordinates, energy, gradient), the GP
-posterior at a new point provides:
+A potential energy surface (PES) maps atomic coordinates to energies and forces.
+Computing this map from first principles (DFT, coupled cluster) is expensive:
+minutes per evaluation for molecules of practical size. An optimizer that needs
+200 evaluations to converge therefore takes hours.
 
-- Predicted energy and gradient (posterior mean)
-- Uncertainty estimates (posterior variance)
+A Gaussian Process learns a surrogate of the PES from a small number of true
+evaluations. The surrogate has two properties that make it ideal for optimization:
 
-The joint energy+gradient model is the key to reducing oracle calls: a single
-energy+gradient evaluation provides =1 + D= observations (one scalar energy plus
-=D= gradient components), giving the GP much more information per oracle call
-than energy-only models.
+1. *Predictions are cheap.* Once trained, the GP evaluates in microseconds. An
+   inner optimization loop that would need 50 oracle calls can run entirely on
+   the GP surrogate.
+
+2. *Uncertainty is quantified.* The GP posterior provides not just a predicted
+   energy/gradient, but also a variance. This tells the optimizer where the
+   surrogate is reliable and where it needs more oracle data. This is the basis
+   for trust regions and LCB exploration.
+
+** Information density: why energy+gradient matters
+
+Most GPs in machine learning model a scalar function f(x). For PES modeling,
+we jointly model the energy E(x) and its gradient G(x) = dE/dx.
+
+For a system with D Cartesian degrees of freedom, each oracle call returns:
+- 1 energy value
+- D gradient components
+
+That is 1 + D observations per call. For a 3-atom system (D = 9), each call
+provides 10 observations. For a 50-atom system (D = 150), each call provides 151
+observations.
+
+This information density is why GP-accelerated methods converge in so few oracle
+calls: a handful of energy+gradient evaluations gives the GP enough data to build
+a useful surrogate. Energy-only GPs (without gradients) converge much more slowly
+because each call provides only 1 observation.
+
+The price is computational: the GP covariance matrix has N*(1+D) rows and columns
+for N training points, so Cholesky factorization costs O(N^3*(1+D)^3). For LEPS
+with 3 atoms and 30 training points, this is a 300x300 matrix (manageable). For
+50 atoms and 30 points, it would be 4530x4530 (expensive). This scaling
+motivates FPS subset selection and RFF approximation.
+
+** Gaussian Process regression
+
+Given training data ={(x_i, E_i, G_i)}= for i = 1..N, the GP posterior at a new
+point x* is:
+
+#+begin_example
+mean(x*) = k(x*, X) @ K^{-1} @ y
+var(x*)  = k(x*, x*) - k(x*, X) @ K^{-1} @ k(X, x*)
+#+end_example
+
+where K is the N*(1+D) x N*(1+D) covariance matrix of the training data, y is
+the vector of energies and gradients, and k(x*, X) is the covariance between the
+test point and all training data.
+
+The mean gives predictions; the variance gives uncertainty. Both are used by the
+optimizer: the mean drives the inner optimization loop, and the variance drives
+trust and exploration decisions.
 
 ** Kernels
 
-ChemGP provides two kernel types via the =Kernel= enum.
+The kernel k(x, y) defines the covariance structure. ChemGP provides two kernels
+via the =Kernel= enum.
 
 *** MolInvDistSE (molecular systems)
 
-Maps Cartesian coordinates to inverse interatomic distances, then applies a
-squared exponential in feature space:
+For molecules, raw Cartesian coordinates are not a good input to the kernel:
+rotating or translating a molecule changes the coordinates but not the physics.
+The =MolInvDistSE= kernel solves this by mapping coordinates to inverse
+interatomic distances:
 
 #+begin_example
 f_ij(x) = 1 / ||x_i - x_j||
+#+end_example
+
+These features are invariant under rotation and translation by construction. The
+kernel then applies a squared exponential in feature space:
+
+#+begin_example
 k(x, y) = sigma^2 * exp(-sum_p theta_p^2 * ||f_p(x) - f_p(y)||^2)
 #+end_example
 
-This provides rotational and translational invariance by construction, with
-pair-type-specific length scales (H-H, H-C, etc.).
+Each pair type p (H-H, H-C, C-C, etc.) has its own length scale theta_p. This
+lets the kernel distinguish between stretching a C-C bond (stiff, small
+displacement matters) and a van der Waals contact (soft, large displacement
+needed to change the energy).
 
 #+begin_src rust
 use chemgp_core::kernel::{Kernel, MolInvDistSE};
-let kernel = Kernel::MolInvDist(MolInvDistSE::isotropic(1.0, 1.0, vec![]));
+// Isotropic: all pair types share the same length scale initially
+let kernel = Kernel::MolInvDist(
+    MolInvDistSE::isotropic(1.0, 1.0, vec![1, 1, 1])
+);
 #+end_src
 
-The =isotropic= constructor creates a kernel with uniform length scales across
-all pair types. The pair scheme is built automatically from the atomic numbers.
+The =isotropic= constructor sets uniform initial length scales. SCG training
+adjusts them independently per pair type.
 
 *** CartesianSE (arbitrary surfaces)
 
-Operates directly on raw coordinates:
+For non-molecular surfaces (Muller-Brown, 2D test potentials), coordinates /are/
+the natural input. The =CartesianSE= kernel operates directly:
 
 #+begin_example
 k(x, y) = sigma^2 * exp(-theta^2 * ||x - y||^2)
 #+end_example
 
-Two hyperparameters: signal variance =sigma^2= and a single inverse length scale
-=theta=. Use for analytical surfaces (Muller-Brown, model potentials) or systems
-where rotational invariance is not needed.
+Two hyperparameters: signal variance sigma^2 (controls the output scale) and
+inverse length scale theta (controls how quickly correlation decays with
+distance).
 
 #+begin_src rust
 use chemgp_core::kernel::{Kernel, CartesianSE};
 let kernel = Kernel::Cartesian(CartesianSE::new(100.0, 2.0));
 #+end_src
 
-The arguments are initial =sigma^2= and =theta= values; SCG training adjusts
-them during optimization.
+Use =CartesianSE= only for systems where rotational invariance is meaningless.
+For real molecules, always use =MolInvDistSE=.
 
-** Training via MAP-NLL
+** Kernel blocks
 
-Hyperparameters (signal variance, length scales) are optimized by minimizing the
-negative log-likelihood with a MAP prior, using the Scaled Conjugate Gradient
-(SCG) optimizer. Data-dependent initialization (=init_kernel=) estimates starting
-hyperparameters from the training data ranges.
+For two training points, the kernel computes four blocks reflecting the joint
+energy+gradient model:
 
-The MAP prior prevents overfitting when training data is sparse (the typical
-regime in GP-accelerated optimization, where only a handful of oracle calls have
-been made). Prior variance is adaptive: pair types with fewer distances get
-tighter priors, preventing length scales from wandering when constraint data is
-limited.
+- =k_ee= :: Energy-energy covariance (scalar). How correlated are the energies
+  at two points?
 
-** Kernel Blocks
+- =k_ef= / =k_fe= :: Energy-gradient cross-covariance (D-vectors). How does
+  knowing the energy at one point inform the gradient at another?
 
-For each pair of training points, the kernel computes four blocks:
+- =k_ff= :: Gradient-gradient covariance (D x D matrix). How correlated are the
+  gradient components at two points?
 
-- =k_ee= :: energy-energy covariance (scalar)
-- =k_ef= / =k_fe= :: energy-gradient cross-covariance (D-vectors)
-- =k_ff= :: gradient-gradient covariance (D x D matrix)
-
-The full covariance for N points with D-dimensional gradients is N*(1+D) x
-N*(1+D). This grows quickly, which is why FPS subset selection and RFF
-approximation are essential for scalability.
-
-** Covariance Matrix Structure
-
-The full covariance matrix for N training points with D-dimensional gradients
-has a block structure:
+These blocks are arranged into the full covariance matrix:
 
 #+begin_example
          E_1      E_2     ...   G_1^1    G_1^2   ...   G_N^D
@@ -106,13 +154,55 @@ G_1^1 [ k_fe     k_fe    ...   k_ff+ng  k_ff    ...   k_ff   ]
 ...
 #+end_example
 
-where =ne= is the energy noise variance plus jitter, and =ng= is the gradient
-noise variance plus jitter. The matrix is symmetric by construction.
+where ne is the energy noise variance (accounts for observation noise or oracle
+numerical error) and ng is the gradient noise variance.
+
+The cross-covariance blocks k_ef and k_fe are what make the joint model powerful:
+knowing the gradient at one point constrains the energy prediction at nearby
+points, and vice versa. This coupling is why gradient information is so valuable.
+
+** Training via MAP-NLL
+
+Hyperparameters (sigma^2, theta_p) are optimized by minimizing the negative
+log-marginal-likelihood (NLL) with a Maximum A Posteriori (MAP) prior:
+
+#+begin_example
+NLL = 0.5 * (y^T K^{-1} y + log|K| + N*(1+D)*log(2*pi))
+MAP = NLL + prior_penalty
+#+end_example
+
+The prior prevents overfitting when training data is sparse. This is the typical
+regime in GP-accelerated optimization: after only 5-10 oracle calls, the GP must
+extrapolate, and unconstrained hyperparameters can produce overconfident
+predictions.
+
+The prior variance is adaptive per pair type: pair types with fewer distances
+(e.g., a single H atom has no H-H pair) get tighter priors to prevent their
+length scales from wandering.
+
+Training uses the Scaled Conjugate Gradient (SCG) optimizer, which requires
+analytical gradients of the NLL with respect to log-space hyperparameters.
+Both kernel types provide these gradients via =kernel_blocks_and_hypergrads=.
+
+** Data-dependent initialization
+
+Good starting hyperparameters matter. The =init_kernel= function estimates
+initial values from the training data:
+
+- *Signal variance* (sigma^2): estimated from the range of observed energies.
+- *Length scales* (theta_p): estimated from pairwise feature distances, scaled by
+  =NORMINV_075= (the 75th percentile of a standard normal). This follows the
+  MATLAB GPstuff initialization strategy.
+
+This avoids pathological starting points where the GP is either too stiff
+(length scales too small, every point uncorrelated) or too smooth (length scales
+too large, all points equally correlated).
 
 ** PredModel dispatch
 
-The =PredModel= enum in =predict.rs= dispatches between exact GP and RFF
-approximation for inner-loop predictions:
+Once hyperparameters are trained, predictions can use either the exact GP or a
+Random Fourier Feature (RFF) approximation. The =PredModel= enum dispatches
+transparently:
 
 #+begin_src rust
 pub enum PredModel {
@@ -122,6 +212,24 @@ pub enum PredModel {
 #+end_src
 
 All optimizers use =build_pred_model()= to construct the appropriate variant.
-When =rff_features > 0=, the RFF approximation provides O(D_rff) prediction cost
-instead of O((N*(1+D))^3) for exact GP. Hyperparameters are always trained on
-the exact GP (via SCG on the FPS subset); only the prediction phase uses RFF.
+The key insight: hyperparameters are always trained on the exact GP (via SCG on
+the FPS subset), because SCG needs exact NLL gradients. Only the prediction
+model can be approximate. This means RFF inherits well-tuned hyperparameters
+without the cost of exact GP prediction.
+
+When =rff_features > 0=, the RFF model provides O(D_rff) prediction cost instead
+of O((N*(1+D))^2) for exact GP. For inner optimization loops that call predict
+hundreds of times, this speedup is essential.
+
+** Computational cost summary
+
+| Operation | Exact GP | RFF |
+|-----------+----------+-----|
+| Build covariance | O(N^2 * (1+D)^2) | O(N * D * D_rff) |
+| Cholesky factor | O(N^3 * (1+D)^3) | O(D_rff^3) |
+| One prediction | O(N * (1+D)) | O(D_rff) |
+| SCG training (M iters) | M * Cholesky | M * Cholesky |
+
+For LEPS (D=9) with 30 training points: exact GP operates on a 300x300 matrix.
+For a 50-atom system (D=150) with 30 points: exact GP needs a 4530x4530 matrix.
+RFF with 500 features: always 500x500, regardless of N or D.

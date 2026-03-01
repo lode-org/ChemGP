@@ -17,59 +17,83 @@ pub enum Kernel {
 
 All optimizers, training, prediction, and RFF code accept =&Kernel= and dispatch
 through unified methods (=kernel_blocks=, =kernel_blocks_and_hypergrads=,
-=with_params=, etc.).
+=with_params=, etc.). This avoids trait objects and generics while supporting
+both molecular and non-molecular surfaces with zero runtime overhead.
 
-This design avoids trait objects and generics while supporting both molecular and
-non-molecular surfaces with zero runtime overhead.
+** Choosing a kernel
+
+| System | Kernel | Why |
+|--------+--------+-----|
+| Molecules (any size) | =MolInvDistSE= | Rotational/translational invariance |
+| 2D test surfaces | =CartesianSE= | Coordinates are the natural input |
+| Rigid-body systems | =MolInvDistSE= | Invariance still matters |
+| Model potentials (LJ, Morse) | =MolInvDistSE= | Invariant features match the physics |
+
+The decision is simple: if the system has atoms, use =MolInvDistSE=. If it is a
+mathematical surface parameterized by coordinates, use =CartesianSE=.
 
 ** MolInvDistSE
 
-The =MolInvDistSE= kernel maps Cartesian coordinates to inverse interatomic
-distances, then applies a squared exponential kernel in feature space. This
-provides:
+*** Why inverse distances?
 
-- Rotational and translational invariance by construction
-- Pair-type-specific length scales (e.g., H-H vs H-C distances)
-- Efficient derivative blocks (EE, EF, FE, FF) via the chain rule
+Raw Cartesian coordinates break under rotation and translation: rotating a
+molecule changes all coordinates but not the energy. A kernel on Cartesian
+coordinates must learn this invariance from data, wasting training points on
+symmetry the physics guarantees.
 
-*** Feature transformation
+Inverse interatomic distances are invariant by construction:
 
 #+begin_example
 f_ij(x) = 1 / ||x_i - x_j||
 #+end_example
 
-The Jacobian =df/dx= is computed analytically from the chain rule of the inverse
-distance. For N_atoms atoms, there are N_atoms*(N_atoms-1)/2 pair distances
-(minus pruned pair types with no representatives).
+/Why inverse/ (not plain distances): inverse distances emphasize short-range
+interactions (where 1/r changes rapidly) and compress long-range interactions
+(where 1/r is small and changes slowly). This matches the physics: bond
+stretching produces large energy changes, while distant atom pairs contribute
+weakly.
 
-*** Kernel function
+*** Pair-type-specific length scales
+
+The kernel:
 
 #+begin_example
 k(x, y) = sigma^2 * exp(-sum_p theta_p^2 * ||f_p(x) - f_p(y)||^2)
 #+end_example
 
-where the sum runs over pair types p, each with its own inverse length scale
-=theta_p=.
+has a separate length scale theta_p for each pair type (H-H, H-C, C-C, etc.).
+/Why/: different bond types have different stiffness. A C-C bond stretch of 0.01
+A changes the energy significantly; a van der Waals contact between two atoms 5
+A apart barely matters. Per-pair length scales let the kernel capture these
+differences.
 
-*** Pair scheme
+The =build_pair_scheme= function constructs pair types from atomic numbers and
+prunes types with no representatives (e.g., a single H atom has no H-H pair).
 
-The =build_pair_scheme= function constructs the list of pair types from atomic
-numbers. It prunes pair types with no representatives (e.g., a single H atom has
-no H-H pair). This determines the number of length scale parameters.
+*** Jacobian computation
 
-Use this kernel for molecular systems where invariance matters.
+The kernel blocks (k_ef, k_fe, k_ff) require the Jacobian df/dx of the feature
+transformation. For inverse distances, this is:
+
+#+begin_example
+d(1/r_ij)/dx_k = -(x_i - x_j)_k / r_ij^3   (for atom i or j)
+#+end_example
+
+This Jacobian is computed analytically in =invdist.rs=. The chain rule through
+the Jacobian produces the energy-gradient cross-covariance (k_ef) and
+gradient-gradient covariance (k_ff) blocks.
 
 ** CartesianSE
 
-The =CartesianSE= kernel operates directly on raw coordinates:
+The =CartesianSE= kernel operates directly on coordinates:
 
 #+begin_example
 k(x, y) = sigma^2 * exp(-theta^2 * ||x - y||^2)
 #+end_example
 
-Two hyperparameters: signal variance =sigma^2= and a single inverse length scale
-=theta=. The features are simply the coordinates themselves (identity Jacobian),
-so the kernel blocks simplify:
+Two hyperparameters: signal variance sigma^2 and inverse length scale theta.
+
+Since features = coordinates and Jacobian = identity, the kernel blocks simplify:
 
 - =k_ee = sigma^2 * exp(-theta^2 * d^2)=
 - =k_ef[d] = 2 * theta^2 * r_d * k_ee=
@@ -78,54 +102,70 @@ so the kernel blocks simplify:
 
 where =r_d = x_d - y_d= and =d = ||x - y||=.
 
-Use this kernel for 2D/3D analytical surfaces (Muller-Brown, model potentials)
-or systems where rotational invariance is not needed.
+** Kernel blocks
 
-** Kernel Blocks
+For two training points, the kernel computes four blocks:
 
-For two points, the kernel computes four blocks:
+- =k_ee= :: Energy-energy covariance (scalar). Controls how correlated the
+  energies are at two points. Near points have high covariance; distant points
+  have low covariance.
 
-- =k_ee= :: energy-energy covariance (scalar)
-- =k_ef= / =k_fe= :: energy-gradient cross-covariance (D-vectors)
-- =k_ff= :: gradient-gradient covariance (D x D matrix)
+- =k_ef= / =k_fe= :: Energy-gradient cross-covariance (D-vectors). Knowing the
+  energy at one point constrains the gradient at a nearby point (and vice versa).
+  This coupling is why joint energy+gradient observations are so powerful.
 
-The full covariance for N points with D-dimensional gradients is N*(1+D) x
-N*(1+D). For LEPS with 3 atoms (D=9), even 30 training points give a 300x300
-covariance matrix.
+- =k_ff= :: Gradient-gradient covariance (D x D matrix). Correlates gradient
+  components at two points. For close points, gradients are highly correlated
+  (the surface is smooth). For distant points, they are independent.
 
-** Hyperparameter Gradients
+The full covariance matrix for N training points is N*(1+D) x N*(1+D). For LEPS
+(3 atoms, D=9), 30 training points give a 300x300 matrix. For a protein (1000
+atoms, D=3000), even 10 points give a 30010x30010 matrix. This scaling is why
+FPS and RFF are essential.
 
-Analytical gradients of the NLL with respect to log-space hyperparameters
-(=log(sigma2)=, =log(theta_p)=) enable efficient SCG optimization. Both kernel
-types provide =kernel_blocks_and_hypergrads= returning the blocks and their
-derivatives simultaneously.
+** Hyperparameter gradients
 
-For =MolInvDistSE=, the FF block hyperparameter gradient uses the PURE
-=theta^2= derivative (not including the =kval= chain-rule contribution).
-Including it double-counts the chain rule. This is the most subtle correctness
-issue in the kernel code and is validated against SymPy symbolic differentiation.
+SCG training requires analytical gradients of the NLL with respect to log-space
+hyperparameters. Both kernels provide =kernel_blocks_and_hypergrads= returning
+the blocks and their derivatives simultaneously.
 
-** Data-Dependent Initialization
+The most subtle correctness issue: for MolInvDistSE, the FF block hyperparameter
+gradient uses the PURE theta^2 derivative. The chain rule through kval is already
+accounted for in the outer product term. Including it again double-counts the
+contribution. This was validated against SymPy symbolic differentiation.
+
+** Data-dependent initialization
 
 =init_kernel()= dispatches to kernel-specific initialization:
 
-- =MolInvDistSE= :: Computes features, estimates signal variance from energy
-  range, length scales from feature distances (GPstuff approach).
-- =CartesianSE= :: Estimates sigma from energy range, theta from max pairwise
-  coordinate distance.
+- =MolInvDistSE= :: Computes features on the training data, estimates sigma from
+  the energy range, and theta_p from pairwise feature distances. The GPstuff
+  approach uses NORMINV_075 (75th percentile of a standard normal) to set the
+  length scale at the median feature distance.
 
-Both use =NORMINV_075= scaling for the 75th percentile of a normal distribution,
-following the MATLAB GPstuff initialization strategy.
+- =CartesianSE= :: Estimates sigma from the energy range and theta from the
+  maximum pairwise coordinate distance.
 
-** RFF Feature Modes
+/Why data-dependent/: poor initial hyperparameters can leave the GP in a local
+minimum of the NLL landscape. If theta is too small, every point is uncorrelated
+and the GP predicts zero everywhere. If theta is too large, all points are
+perfectly correlated and the GP fits a constant. Data-dependent initialization
+places theta in a sensible range where the GP captures the training data's
+spatial structure.
 
-The RFF approximation dispatches on kernel type via =FeatureMode=:
+** RFF feature modes
+
+RFF approximation dispatches on kernel type via =FeatureMode=:
 
 - =InverseDistances= :: Computes inverse distance features + finite difference
-  Jacobian (for =MolInvDistSE=).
-- =Cartesian= :: Uses raw coordinates with identity Jacobian (for
-  =CartesianSE=).
+  Jacobian (for MolInvDistSE). /Why finite difference/: the RFF feature map
+  involves sin/cos of random projections of the features, and its Jacobian with
+  respect to Cartesian coordinates is expensive to derive analytically. Finite
+  differences (step size 1e-5) are cheaper and sufficiently accurate.
+
+- =Cartesian= :: Uses raw coordinates with identity Jacobian (for CartesianSE).
+  No finite differences needed.
 
 RFF replaces the O(N^3) exact GP with an O(D_rff^3) linear model. The frequency
-matrix is sampled from a normal distribution scaled by the length scales, and
+matrix is sampled from a normal distribution scaled by the kernel length scales,
 seeded for reproducibility (=StdRng::seed_from_u64(seed)=).
