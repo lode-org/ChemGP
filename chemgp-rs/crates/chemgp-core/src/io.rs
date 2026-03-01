@@ -1,0 +1,283 @@
+//! I/O for molecular structures.
+//!
+//! Feature-gated behind `io`. Provides:
+//! - ExtXYZ reading/writing via chemfiles
+//! - CON file reading via readcon-core
+//! - Unified `read_structure` dispatcher
+
+use chemfiles::{Frame, Trajectory};
+use readcon_core::helpers::symbol_to_atomic_number;
+use readcon_core::iterators::ConFrameIterator;
+
+/// A molecular configuration.
+#[derive(Debug, Clone)]
+pub struct MolConfig {
+    /// Flat Cartesian coordinates [x1,y1,z1, x2,y2,z2, ...].
+    pub positions: Vec<f64>,
+    /// Atomic numbers for each atom.
+    pub atomic_numbers: Vec<i32>,
+    /// Energy (if present in frame properties).
+    pub energy: Option<f64>,
+    /// Flat forces [fx1,fy1,fz1, ...] (if present).
+    pub forces: Option<Vec<f64>>,
+    /// Cell matrix (row-major 3x3, zeros for non-periodic).
+    pub cell: [[f64; 3]; 3],
+}
+
+// ---------------------------------------------------------------------------
+// Unified dispatcher
+// ---------------------------------------------------------------------------
+
+/// Read the first structure from a file, dispatching on extension.
+///
+/// Supported formats:
+/// - `.extxyz`, `.xyz` -> chemfiles
+/// - `.con`, `.convel` -> readcon-core
+pub fn read_structure(path: &str) -> Result<MolConfig, String> {
+    let lower = path.to_lowercase();
+    if lower.ends_with(".con") || lower.ends_with(".convel") {
+        let frames = read_con(path)?;
+        frames
+            .into_iter()
+            .next()
+            .ok_or_else(|| format!("No frames in {}", path))
+    } else if lower.ends_with(".extxyz") || lower.ends_with(".xyz") {
+        let frames = read_extxyz(path)?;
+        frames
+            .into_iter()
+            .next()
+            .ok_or_else(|| format!("No frames in {}", path))
+    } else {
+        Err(format!(
+            "Unsupported file format for '{}' (supported: .extxyz, .xyz, .con, .convel)",
+            path
+        ))
+    }
+}
+
+// ---------------------------------------------------------------------------
+// CON reader via readcon-core
+// ---------------------------------------------------------------------------
+
+/// Read all frames from a CON file.
+pub fn read_con(path: &str) -> Result<Vec<MolConfig>, String> {
+    let contents =
+        std::fs::read_to_string(path).map_err(|e| format!("Failed to read {}: {}", path, e))?;
+    let iter = ConFrameIterator::new(&contents);
+    let mut configs = Vec::new();
+
+    for result in iter {
+        let frame = result.map_err(|e| format!("CON parse error in {}: {:?}", path, e))?;
+        let n = frame.atom_data.len();
+
+        let mut positions = Vec::with_capacity(3 * n);
+        let mut atomic_numbers = Vec::with_capacity(n);
+
+        for atom in &frame.atom_data {
+            positions.push(atom.x);
+            positions.push(atom.y);
+            positions.push(atom.z);
+            let z = symbol_to_atomic_number(&atom.symbol);
+            atomic_numbers.push(z as i32);
+        }
+
+        // Build row-major 3x3 cell from box lengths + angles
+        let [a, b, c] = frame.header.boxl;
+        let [alpha, beta, gamma] = frame.header.angles;
+
+        let cell = if a == 0.0 && b == 0.0 && c == 0.0 {
+            // Non-periodic default
+            [[20.0, 0.0, 0.0], [0.0, 20.0, 0.0], [0.0, 0.0, 20.0]]
+        } else {
+            let ar = alpha.to_radians();
+            let br = beta.to_radians();
+            let gr = gamma.to_radians();
+            let cos_g = gr.cos();
+            let sin_g = gr.sin();
+            let cos_b = br.cos();
+            let cos_a = ar.cos();
+
+            let bx = b * cos_g;
+            let by = b * sin_g;
+            let cx = c * cos_b;
+            let cy = c * (cos_a - cos_b * cos_g) / sin_g;
+            let cz = (c * c - cx * cx - cy * cy).max(0.0).sqrt();
+
+            [[a, 0.0, 0.0], [bx, by, 0.0], [cx, cy, cz]]
+        };
+
+        configs.push(MolConfig {
+            positions,
+            atomic_numbers,
+            energy: None,
+            forces: None,
+            cell,
+        });
+    }
+
+    Ok(configs)
+}
+
+// ---------------------------------------------------------------------------
+// ExtXYZ via chemfiles
+// ---------------------------------------------------------------------------
+
+/// Read all frames from an extxyz file.
+pub fn read_extxyz(path: &str) -> Result<Vec<MolConfig>, String> {
+    let mut traj =
+        Trajectory::open(path, 'r').map_err(|e| format!("Failed to open {}: {}", path, e))?;
+    let nsteps = traj.nsteps();
+    let mut configs = Vec::with_capacity(nsteps as usize);
+    let mut frame = Frame::new();
+
+    for step in 0..nsteps {
+        traj.read_step(step, &mut frame)
+            .map_err(|e| format!("Failed to read step {}: {}", step, e))?;
+
+        let natoms = frame.size();
+        let pos = frame.positions();
+        let mut positions = Vec::with_capacity(natoms * 3);
+        for p in pos {
+            positions.push(p[0]);
+            positions.push(p[1]);
+            positions.push(p[2]);
+        }
+
+        let mut atomic_numbers = Vec::with_capacity(natoms);
+        for atom in frame.iter_atoms() {
+            atomic_numbers.push(atom.atomic_number() as i32);
+        }
+
+        let energy = frame
+            .get("energy")
+            .and_then(|p| match p {
+                chemfiles::Property::Double(v) => Some(v),
+                _ => None,
+            })
+            .or_else(|| {
+                frame.get("Energy").and_then(|p| match p {
+                    chemfiles::Property::Double(v) => Some(v),
+                    _ => None,
+                })
+            });
+
+        let forces = {
+            let mut fvec = Vec::with_capacity(natoms * 3);
+            let mut found = false;
+            for i in 0..natoms {
+                let atom = frame.atom(i);
+                if let Some(chemfiles::Property::Vector3D(f)) = atom.get("forces") {
+                    fvec.push(f[0]);
+                    fvec.push(f[1]);
+                    fvec.push(f[2]);
+                    found = true;
+                } else if let Some(chemfiles::Property::Vector3D(f)) = atom.get("force") {
+                    fvec.push(f[0]);
+                    fvec.push(f[1]);
+                    fvec.push(f[2]);
+                    found = true;
+                } else {
+                    fvec.push(0.0);
+                    fvec.push(0.0);
+                    fvec.push(0.0);
+                }
+            }
+            if found { Some(fvec) } else { None }
+        };
+
+        let cell = frame.cell().matrix();
+
+        configs.push(MolConfig {
+            positions,
+            atomic_numbers,
+            energy,
+            forces,
+            cell,
+        });
+    }
+
+    Ok(configs)
+}
+
+/// Write a sequence of configurations to an extxyz file.
+pub fn write_extxyz(path: &str, configs: &[MolConfig]) -> Result<(), String> {
+    let mut traj =
+        Trajectory::open(path, 'w').map_err(|e| format!("Failed to open {}: {}", path, e))?;
+
+    for (step, cfg) in configs.iter().enumerate() {
+        let natoms = cfg.atomic_numbers.len();
+        let mut frame = Frame::new();
+        frame.resize(natoms);
+
+        let pos_mut = frame.positions_mut();
+        for i in 0..natoms {
+            pos_mut[i] = [
+                cfg.positions[3 * i],
+                cfg.positions[3 * i + 1],
+                cfg.positions[3 * i + 2],
+            ];
+        }
+
+        for i in 0..natoms {
+            let sym = element_symbol(cfg.atomic_numbers[i]);
+            frame.atom_mut(i).set_name(sym);
+        }
+
+        if let Some(e) = cfg.energy {
+            frame.set("energy", e);
+        }
+
+        frame.set_step(step as u64);
+
+        if let Some(ref forces) = cfg.forces {
+            for i in 0..natoms {
+                let mut atom = frame.atom_mut(i);
+                atom.set(
+                    "forces",
+                    chemfiles::Property::Vector3D([
+                        forces[3 * i],
+                        forces[3 * i + 1],
+                        forces[3 * i + 2],
+                    ]),
+                );
+            }
+        }
+
+        traj.write(&frame)
+            .map_err(|e| format!("Failed to write step {}: {}", step, e))?;
+    }
+
+    Ok(())
+}
+
+fn element_symbol(z: i32) -> &'static str {
+    match z {
+        1 => "H",
+        2 => "He",
+        3 => "Li",
+        4 => "Be",
+        5 => "B",
+        6 => "C",
+        7 => "N",
+        8 => "O",
+        9 => "F",
+        10 => "Ne",
+        11 => "Na",
+        12 => "Mg",
+        13 => "Al",
+        14 => "Si",
+        15 => "P",
+        16 => "S",
+        17 => "Cl",
+        18 => "Ar",
+        19 => "K",
+        20 => "Ca",
+        26 => "Fe",
+        29 => "Cu",
+        30 => "Zn",
+        47 => "Ag",
+        78 => "Pt",
+        79 => "Au",
+        _ => "X",
+    }
+}
