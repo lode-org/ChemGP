@@ -1,11 +1,13 @@
-/Manifest*.toml
+# Rust build artifacts
+/target
+
+# Generated data
+*.jsonl
+*.pdf
+
 # pixi environments
 .pixi/*
 !.pixi/config.toml
-
-# Documenter.jl build output
-docs/build/
-docs/Manifest.toml
 
 # Temporary/cache
 .cache/
@@ -19,9 +21,8 @@ rgpot/
 results_*/
 scratch/
 
-# Figure script output (generated PDFs, CSVs)
+# Figure script output
 scripts/figures/tutorial/output/
 
-# Debug/scratch scripts (not part of the package)
-debug_gp.jl
-run_hcn_neb.jl
+# Logs
+*.log
