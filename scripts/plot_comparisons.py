@@ -2,57 +2,23 @@
 """Plot comparison figures from JSONL output of chemgp-core examples.
 
 Usage:
-    python plot_comparisons.py
+    python scripts/plot_comparisons.py
 
 Reads: leps_minimize_comparison.jsonl, leps_neb_comparison.jsonl, leps_dimer_comparison.jsonl
-Writes: fig_minimize.pdf, fig_neb.pdf, fig_dimer.pdf
+Writes: leps_minimize_convergence.pdf, leps_neb_convergence.pdf, leps_dimer_convergence.pdf
 """
 
 import json
 import sys
-from pathlib import Path
 from collections import defaultdict
+from pathlib import Path
 
-try:
-    import matplotlib
+# Shared RUHI theme
+sys.path.insert(0, str(Path(__file__).parent))
+from _theme import CORAL, TEAL, YELLOW, HAS_PARSERS, plt
 
-    matplotlib.use("Agg")
-    import matplotlib.pyplot as plt
-    from matplotlib import font_manager
-except ImportError:
-    print("matplotlib required: pip install matplotlib", file=sys.stderr)
-    sys.exit(1)
-
-# Try to use Jost font, fall back to sans-serif
-_FONT_FAMILY = "sans-serif"
-for font in font_manager.findSystemFonts():
-    if "Jost" in font:
-        _FONT_FAMILY = "Jost"
-        break
-
-plt.rcParams.update(
-    {
-        "font.family": _FONT_FAMILY,
-        "font.size": 12,
-        "axes.labelsize": 12,
-        "axes.titlesize": 13,
-        "legend.fontsize": 10,
-        "xtick.labelsize": 10,
-        "ytick.labelsize": 10,
-        "axes.linewidth": 0.8,
-        "lines.linewidth": 1.8,
-        "axes.spines.top": False,
-        "axes.spines.right": False,
-        "figure.dpi": 150,
-        "savefig.dpi": 300,
-        "savefig.bbox": "tight",
-        "savefig.pad_inches": 0.05,
-    }
-)
-
-TEAL = "#004D40"
-CORAL = "#FF655D"
-YELLOW = "#F1DB4B"
+if HAS_PARSERS:
+    from rgpycrumbs.parsers.chemgp import parse_comparison_jsonl
 
 OUTDIR = Path("scripts/figures/tutorial/output")
 
@@ -78,7 +44,6 @@ LABELS = {
     "otgpd": "OTGPD",
 }
 
-# Plot order so GP methods draw on top
 ORDER = {
     "direct_minimize": 0,
     "gp_minimize": 1,
@@ -92,7 +57,7 @@ ORDER = {
 
 
 def load_jsonl(path):
-    """Load JSONL, grouping records by method."""
+    """Load JSONL, grouping records by method (fallback without rgpycrumbs)."""
     groups = defaultdict(list)
     summary = None
     if not Path(path).exists():
@@ -107,26 +72,52 @@ def load_jsonl(path):
     return groups, summary
 
 
-def plot_minimize():
-    groups, summary = load_jsonl("leps_minimize_comparison.jsonl")
-    if not groups:
-        print("No minimize data found", file=sys.stderr)
-        return
-
-    fig, ax = plt.subplots(1, 1, figsize=(4.5, 3.2))
+def _plot_from_groups(groups, ax, x_key, y_key):
+    """Plot traces from grouped records."""
     for method in sorted(groups, key=lambda m: ORDER.get(m, 0)):
         records = groups[method]
-        calls = [r["oracle_calls"] for r in records]
-        energies = [r["energy"] for r in records]
+        xs = [r[x_key] for r in records]
+        ys = [r[y_key] for r in records]
         ax.plot(
-            calls,
-            energies,
+            xs, ys,
             label=LABELS.get(method, method),
             color=PALETTE.get(method, "#333"),
             marker="o" if "gp" in method else None,
             markersize=4 if "gp" in method else 0,
             zorder=ORDER.get(method, 0) + 2,
         )
+
+
+def _plot_from_data(data, ax, y_attr):
+    """Plot traces from parsed ComparisonData."""
+    for method in sorted(data.traces, key=lambda m: ORDER.get(m, 0)):
+        trace = data.traces[method]
+        ys = trace.energies if y_attr == "energies" else trace.forces
+        if ys is None:
+            continue
+        ax.plot(
+            trace.oracle_calls, ys,
+            label=LABELS.get(method, method),
+            color=PALETTE.get(method, "#333"),
+            marker="o" if "gp" in method else None,
+            markersize=4 if "gp" in method else 0,
+            zorder=ORDER.get(method, 0) + 2,
+        )
+
+
+def plot_minimize():
+    path = "leps_minimize_comparison.jsonl"
+    if not Path(path).exists():
+        print("No minimize data found", file=sys.stderr)
+        return
+
+    fig, ax = plt.subplots(1, 1, figsize=(4.5, 3.2))
+    if HAS_PARSERS:
+        data = parse_comparison_jsonl(path)
+        _plot_from_data(data, ax, "energies")
+    else:
+        groups, _ = load_jsonl(path)
+        _plot_from_groups(groups, ax, "oracle_calls", "energy")
 
     ax.set_xlabel("Oracle calls")
     ax.set_ylabel("Energy (eV)")
@@ -140,25 +131,18 @@ def plot_minimize():
 
 
 def plot_neb():
-    groups, summary = load_jsonl("leps_neb_comparison.jsonl")
-    if not groups:
+    path = "leps_neb_comparison.jsonl"
+    if not Path(path).exists():
         print("No NEB data found", file=sys.stderr)
         return
 
     fig, ax = plt.subplots(1, 1, figsize=(4.5, 3.2))
-    for method in sorted(groups, key=lambda m: ORDER.get(m, 0)):
-        records = groups[method]
-        calls = [r["oracle_calls"] for r in records]
-        forces = [r["max_force"] for r in records]
-        lw = 1.5 if method == "neb" else 1.8
-        ax.plot(
-            calls,
-            forces,
-            label=LABELS.get(method, method),
-            color=PALETTE.get(method, "#333"),
-            linewidth=lw,
-            zorder=ORDER.get(method, 0) + 2,
-        )
+    if HAS_PARSERS:
+        data = parse_comparison_jsonl(path)
+        _plot_from_data(data, ax, "forces")
+    else:
+        groups, _ = load_jsonl(path)
+        _plot_from_groups(groups, ax, "oracle_calls", "max_force")
 
     ax.set_xlabel("Oracle calls")
     ax.set_ylabel("max |F| (eV/A)")
@@ -173,25 +157,18 @@ def plot_neb():
 
 
 def plot_dimer():
-    groups, summary = load_jsonl("leps_dimer_comparison.jsonl")
-    if not groups:
+    path = "leps_dimer_comparison.jsonl"
+    if not Path(path).exists():
         print("No dimer data found", file=sys.stderr)
         return
 
     fig, ax = plt.subplots(1, 1, figsize=(4.5, 3.2))
-    for method in sorted(groups, key=lambda m: ORDER.get(m, 0)):
-        records = groups[method]
-        calls = [r["oracle_calls"] for r in records]
-        forces = [r["force"] for r in records]
-        ax.plot(
-            calls,
-            forces,
-            label=LABELS.get(method, method),
-            color=PALETTE.get(method, "#333"),
-            marker="o",
-            markersize=4,
-            zorder=ORDER.get(method, 0) + 2,
-        )
+    if HAS_PARSERS:
+        data = parse_comparison_jsonl(path)
+        _plot_from_data(data, ax, "forces")
+    else:
+        groups, _ = load_jsonl(path)
+        _plot_from_groups(groups, ax, "oracle_calls", "force")
 
     ax.set_xlabel("Oracle calls")
     ax.set_ylabel("|F_trans| (eV/A)")
