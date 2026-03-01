@@ -1,8 +1,12 @@
-# Architecture
+#+TITLE: Architecture
+#+OPTIONS: toc:nil todo:nil num:nil author:nil title:nil
+#+STARTUP: content
 
-## Workspace Layout
+* Architecture
 
-```
+** Workspace Layout
+
+#+begin_example
 ChemGP/
   Cargo.toml              # workspace root
   crates/
@@ -13,7 +17,7 @@ ChemGP/
         kernel.rs         # Kernel enum, MolInvDistSE, CartesianSE
         types.rs          # TrainingData, GPModel, init_kernel
         covariance.rs     # build_full_covariance, robust_cholesky
-        predict.rs        # GP posterior mean + variance, PredModel, build_pred_model
+        predict.rs        # GP posterior, PredModel, build_pred_model
         nll.rs            # MAP NLL + analytical gradient
         scg.rs            # Moller (1993) SCG optimizer
         train.rs          # train_model dispatcher
@@ -23,7 +27,7 @@ ChemGP/
         lbfgs.rs          # L-BFGS two-loop recursion
         optim_step.rs     # FIRE/LBFGS unified step
         trust.rs          # adaptive trust thresholds, EMD-based trust
-        rff.rs            # Random Fourier Features (O(D_rff^3) GP approx)
+        rff.rs            # Random Fourier Features
         minimize.rs       # gp_minimize
         dimer.rs          # gp_dimer, standard_dimer
         neb_path.rs       # NEBConfig, NEBPath, NEB force computation
@@ -43,52 +47,67 @@ ChemGP/
   docs/                   # Sphinx + Shibuya documentation
   scripts/                # figure generation and plotting
   data/                   # test structures (HCN, system100)
-```
+#+end_example
 
-## Four Key Components
+** Four Key Components
 
 Every GP-accelerated optimizer in ChemGP shares four mechanisms:
 
-1. **FPS subset selection** for hyperparameter training
-2. **Trust region clipping** for step proposals (EMD for molecules,
-   Euclidean for Cartesian surfaces)
-3. **RFF approximation** for large training sets
-4. **LCB exploration** adapted per method
+1. *FPS subset selection* for hyperparameter training
+2. *Trust region clipping* for step proposals (EMD for molecules, Euclidean for
+   Cartesian surfaces)
+3. *RFF approximation* for large training sets
+4. *LCB exploration* adapted per method
 
-## Kernel Dispatch
+** Kernel Dispatch
 
-The `Kernel` enum wraps `MolInvDistSE` (molecules) and `CartesianSE`
-(arbitrary surfaces). All code accepts `&Kernel` and dispatches through
-unified methods. See [Kernel Design](kernel_design) for details.
+The =Kernel= enum wraps =MolInvDistSE= (molecules) and =CartesianSE= (arbitrary
+surfaces). All code accepts =&Kernel= and dispatches through unified methods.
+See [[file:kernel_design.org][Kernel Design]] for details.
 
-## PredModel Dispatch
+** PredModel Dispatch
 
-The `PredModel` enum in `predict.rs` dispatches between exact GP and
-RFF for inner-loop predictions:
+The =PredModel= enum in =predict.rs= dispatches between exact GP and RFF for
+inner-loop predictions:
 
-```rust
+#+begin_src rust
 pub enum PredModel {
     Gp(GPModel),
     Rff(RffModel),
 }
-```
+#+end_src
 
-All optimizers (minimize, dimer, otgpd, neb, neb_oie) use
-`build_pred_model()` to construct the appropriate variant based on
-`cfg.rff_features`. Hyperparameters are trained on the FPS subset
-(exact GP via SCG), then the prediction model is built on all training
-data for fast inner-loop evaluation.
+All optimizers (minimize, dimer, otgpd, neb, neb_oie) use =build_pred_model()=
+to construct the appropriate variant based on =cfg.rff_features=.
+Hyperparameters are trained on the FPS subset (exact GP via SCG), then the
+prediction model is built on all training data for fast inner-loop evaluation.
 
-## Outer Loop Pattern
+** Outer Loop Pattern
 
 All GP-accelerated optimizers follow the same pattern:
 
-1. **FPS subset selection**: select the K most informative training
-   points near the current position
-2. **Train GP**: SCG-optimize hyperparameters on the subset
-3. **Build PredModel**: exact GP or RFF on full training data
-4. **Inner optimization**: optimize on the surrogate surface
-   (L-BFGS for minimize/dimer, FIRE/LBFGS for NEB)
-5. **Trust clip**: clip the proposed step to the trust region
-6. **Oracle call**: evaluate the true potential at the new point
-7. **Convergence check**: compare force to tolerance
+1. *FPS subset selection*: select the K most informative training points near
+   the current position.
+2. *Train GP*: SCG-optimize hyperparameters on the subset.
+3. *Build PredModel*: exact GP or RFF on full training data.
+4. *Inner optimization*: optimize on the surrogate surface (L-BFGS for
+   minimize/dimer, FIRE/L-BFGS for NEB).
+5. *Trust clip*: clip the proposed step to the trust region.
+6. *Oracle call*: evaluate the true potential at the new point.
+7. *Convergence check*: compare force to tolerance.
+
+** StopReason
+
+All optimizer result types carry a =StopReason= enum:
+
+#+begin_src rust
+pub enum StopReason {
+    Converged,
+    MaxIterations,
+    OracleCap,
+    ForceStagnation,
+}
+#+end_src
+
+This makes it unambiguous whether the optimization succeeded or hit a resource
+limit.

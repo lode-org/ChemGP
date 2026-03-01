@@ -5,20 +5,12 @@ author = "Rohit Goswami"
 
 # -- General configuration ---------------------------------------------------
 extensions = [
-    "myst_parser",
     "sphinx.ext.intersphinx",
     "sphinx_sitemap",
 ]
 
 templates_path = ["_templates"]
 exclude_patterns = []
-
-myst_enable_extensions = [
-    "colon_fence",
-    "deflist",
-    "fieldlist",
-    "tasklist",
-]
 
 intersphinx_mapping = {
     "python": ("https://docs.python.org/3", None),

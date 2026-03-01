@@ -1,0 +1,109 @@
+#+TITLE: Nudged Elastic Band
+#+OPTIONS: toc:nil todo:nil num:nil author:nil title:nil
+#+STARTUP: content
+
+* Nudged Elastic Band
+
+** Minimum Energy Path
+
+The Nudged Elastic Band (NEB) method finds minimum energy paths (MEPs) between
+two known states (reactant and product). ChemGP provides three variants:
+
+- Standard NEB :: All images evaluated at every iteration. Spring forces keep
+  images distributed along the path while the perpendicular force component
+  drives relaxation.
+
+- GP-NEB AIE (All Image Evaluation) :: Evaluates all images with the oracle
+  each outer iteration, then relaxes on the GP surrogate. Per-bead FPS subset
+  selection ensures each image has local GP coverage.
+
+- GP-NEB OIE (One Image Evaluation) :: Evaluates only one image per outer
+  iteration, selected by LCB scoring (force magnitude + uncertainty). Most
+  oracle-efficient variant.
+
+** How NEB Works
+
+An elastic band of I images is initialized between the reactant and product
+(endpoints are fixed). At each iteration:
+
+1. Compute the path tangent at each image.
+2. Decompose forces into parallel (spring) and perpendicular (potential) components.
+3. The NEB force is: =F_neb = F_spring_parallel + F_potential_perpendicular=.
+4. Relax the band under NEB forces until convergence.
+
+The spring forces prevent images from clustering near minima. Climbing image NEB
+(CI-NEB) modifies the highest-energy image to climb toward the saddle point.
+
+** Path Initialization
+
+Two initialization strategies are available:
+
+- *Linear interpolation*: straight-line interpolation in Cartesian coordinates.
+  Simple but can give poor initial paths for molecular rearrangements.
+
+- *IDPP/sIDPP*: Image Dependent Pair Potential. Optimizes the initial path to
+  match target interatomic distances interpolated between endpoints. Produces
+  physically reasonable starting paths for molecular systems.
+
+** Scalability
+
+For large systems, the GP covariance matrix grows as O((N*(1+D))^2) where N is
+the number of training points and D the dimensionality. Two mechanisms keep this
+tractable:
+
+*** Per-bead FPS subset
+
+For each NEB image, select the K nearest training points (by trust distance).
+Take the union across all images. If the union exceeds =max_gp_points=, trim
+with global FPS.
+
+This ensures each image retains local coverage, unlike global FPS which can
+starve individual beads of nearby training data.
+
+*** Random Fourier Features (RFF)
+
+Approximate the GP with a linear model that has O(D_rff) prediction cost.
+Hyperparameters are trained on the exact GP (via SCG on the FPS subset), then
+the RFF model is built on all training data. The =PredModel= enum dispatches
+between exact GP and RFF transparently.
+
+For NEB OIE, seeded RFF (=seed=42=, 1000 features) is needed for reliable
+convergence. Without seeding, the stochastic RFF approximation can cause the
+image selection to oscillate.
+
+** LCB in OIE
+
+OIE selects which image to evaluate by scoring each with:
+
+#+begin_example
+score = |F_perp| + kappa * sigma_perp
+#+end_example
+
+where =sigma_perp= is the GP gradient variance projected into the plane
+perpendicular to the path tangent. This preferentially evaluates images with
+uncertain NEB forces, which is where the path might not be converged.
+
+Priority cascade: early-stop image > climbing image > LCB score.
+
+** LEPS Example
+
+#+begin_src bash
+cargo run --release --example leps_neb
+#+end_src
+
+On the LEPS surface, OIE converges in ~49 oracle calls, AIE in ~62, and
+standard NEB in ~127.
+
+** Configuration Reference
+
+| Parameter | Default | Description |
+|-----------+---------+-------------|
+| =n_images= | 7 | Number of interior NEB images |
+| =k_spring= | 5.0 | Spring constant |
+| =conv_tol= | 0.05 | Max NEB force norm for convergence |
+| =max_iter= | 200 | Maximum outer iterations |
+| =max_oracle_calls= | 0 (unlimited) | Oracle call budget |
+| =climbing_image= | true | Enable CI-NEB for saddle refinement |
+| =max_gp_points= | 50 | Trigger per-bead subset when N > this |
+| =rff_features= | 0 (exact GP) | RFF feature count (0 = exact GP) |
+| =use_idpp= | true | Use IDPP path initialization |
