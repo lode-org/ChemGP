@@ -530,6 +530,17 @@ pub fn gp_dimer(
     let mut oracle_calls = td.npoints();
     let mut history = DimerHistory::default();
 
+    // Record initial state in history (before any GP-guided steps)
+    {
+        let g_init = &td.gradients[0..d];
+        let f_trans = translational_force(g_init, &state.orient);
+        let f_norm = vec_norm(&f_trans);
+        history.e_true.push(td.energies[0]);
+        history.f_true.push(f_norm);
+        history.curv_true.push(f64::NAN);
+        history.oracle_calls.push(oracle_calls);
+    }
+
     let mut rot_hist: Option<LbfgsHistory> = if cfg.rotation_method == "lbfgs" {
         Some(LbfgsHistory::new(cfg.lbfgs_memory))
     } else {
@@ -584,17 +595,14 @@ pub fn gp_dimer(
             Some(k) => k.clone(),
         };
 
-        let mut gp_sub = GPModel::new(kern, &td_sub, y_sub, 1e-6, 1e-4, 1e-6);
+        let mut gp_sub = GPModel::new(kern, &td_sub, y_sub.clone(), 1e-6, 1e-4, 1e-6);
         train_model(&mut gp_sub, train_iters, cfg.verbose);
         prev_kern = Some(gp_sub.kernel.clone());
 
-        // Rebuild on full data
-        let e_ref = td.energies[0];
-        let mut y_gp: Vec<f64> = td.energies.iter().map(|e| e - e_ref).collect();
-        y_gp.extend_from_slice(&td.gradients);
-        let y_mean = e_ref;
+        // Use trained kernel on subset for prediction (fast, O(K^3) where K = fps_history)
+        let y_mean = e_ref_sub;
         let y_std = 1.0;
-        let model = GPModel::new(gp_sub.kernel.clone(), &td, y_gp, 1e-6, 1e-4, 1e-6);
+        let model = GPModel::new(gp_sub.kernel.clone(), &td_sub, y_sub, 1e-6, 1e-4, 1e-6);
 
         // Reset L-BFGS/CG state for new outer iteration
         if let Some(ref mut rh) = rot_hist {
@@ -798,6 +806,114 @@ pub fn gp_dimer(
 
     DimerResult {
         state,
+        converged: stop_reason == StopReason::Converged,
+        stop_reason,
+        oracle_calls,
+        history,
+    }
+}
+
+/// Standard (non-GP) dimer search using direct oracle calls at every step.
+///
+/// Each iteration: evaluate oracle at midpoint + image1, rotate, translate.
+/// Returns the same DimerResult/DimerHistory for uniform plotting.
+pub fn standard_dimer(
+    oracle: &OracleFn,
+    x_init: &[f64],
+    orient_init: &[f64],
+    config: &DimerConfig,
+    dimer_sep: f64,
+) -> DimerResult {
+    let d = x_init.len();
+    let mut r = x_init.to_vec();
+    let mut orient = normalize_vec(orient_init);
+    let mut oracle_calls = 0;
+    let mut history = DimerHistory::default();
+    let mut stop_reason = StopReason::MaxIterations;
+    let max_step = 0.05;
+    let call_cap = if config.max_oracle_calls > 0 { config.max_oracle_calls } else { 600 };
+
+    loop {
+        if oracle_calls >= call_cap {
+            stop_reason = StopReason::OracleCap;
+            break;
+        }
+        // Evaluate at midpoint
+        let (e0, g0) = oracle(&r);
+        oracle_calls += 1;
+
+        // Evaluate at image 1
+        let r1: Vec<f64> = r.iter().zip(orient.iter())
+            .map(|(r, o)| r + dimer_sep * o).collect();
+        let (_e1, g1) = oracle(&r1);
+        oracle_calls += 1;
+
+        let c = curvature(&g0, &g1, &orient, dimer_sep);
+        let f_trans = translational_force(&g0, &orient);
+        let f_norm = vec_norm(&f_trans);
+
+        history.e_true.push(e0);
+        history.f_true.push(f_norm);
+        history.curv_true.push(c);
+        history.oracle_calls.push(oracle_calls);
+
+        // Convergence check
+        if f_norm < config.t_force_true && c < 0.0 {
+            stop_reason = StopReason::Converged;
+            break;
+        }
+
+        // Rotate: one finite-difference rotation step
+        let f_rot = rotational_force(&g0, &g1, &orient, dimer_sep);
+        let f_rot_norm = vec_norm(&f_rot);
+        if f_rot_norm > 1e-10 {
+            let dtheta = 0.5 * (0.5 * f_rot_norm / (c.abs() + 1e-10)).atan().min(0.3);
+            let orient_rot: Vec<f64> = f_rot.iter().map(|x| x / f_rot_norm).collect();
+
+            // Trial rotation
+            let orient_trial: Vec<f64> = orient.iter().zip(orient_rot.iter())
+                .map(|(o, r)| dtheta.cos() * o + dtheta.sin() * r).collect();
+            let orient_trial = normalize_vec(&orient_trial);
+
+            let r1_trial: Vec<f64> = r.iter().zip(orient_trial.iter())
+                .map(|(r, o)| r + dimer_sep * o).collect();
+            let (_, g1_trial) = oracle(&r1_trial);
+            oracle_calls += 1;
+
+            let f_rot_trial = rotational_force(&g0, &g1_trial, &orient_trial, dimer_sep);
+            let orient_rot_trial: Vec<f64> = orient.iter().zip(orient_rot.iter())
+                .map(|(o, r)| -dtheta.sin() * o + dtheta.cos() * r).collect();
+            let orient_rot_trial = normalize_vec(&orient_rot_trial);
+
+            let f_dtheta = vec_dot(&f_rot_trial, &orient_rot_trial);
+            let f_0 = vec_dot(&f_rot, &orient_rot);
+            let sin2 = (2.0 * dtheta).sin();
+            let cos2 = (2.0 * dtheta).cos();
+
+            if sin2.abs() > 1e-12 {
+                let a1 = (f_dtheta - f_0 * cos2) / sin2;
+                let b1 = -0.5 * f_0;
+                let mut angle_final = 0.5 * (b1 / (a1 + 1e-18)).atan();
+                if a1 * (2.0 * angle_final).cos() + b1 * (2.0 * angle_final).sin() > 0.0 {
+                    angle_final += std::f64::consts::FRAC_PI_2;
+                }
+                let orient_new: Vec<f64> = orient.iter().zip(orient_rot.iter())
+                    .map(|(o, r)| angle_final.cos() * o + angle_final.sin() * r).collect();
+                orient = normalize_vec(&orient_new);
+            } else {
+                orient = orient_trial;
+            }
+        }
+
+        // Translate along modified force
+        let step_size = (max_step / f_norm.max(1e-18)).min(0.01);
+        for j in 0..d {
+            r[j] += step_size * f_trans[j];
+        }
+    }
+
+    DimerResult {
+        state: DimerState { r, orient, dimer_sep },
         converged: stop_reason == StopReason::Converged,
         stop_reason,
         oracle_calls,

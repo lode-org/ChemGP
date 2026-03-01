@@ -69,10 +69,14 @@ impl PredModel {
 }
 
 /// Build a PredModel from trained kernel + full training data.
+///
+/// When `rff_features > 0`, builds an RFF approximation with the given
+/// deterministic `seed` for reproducibility. Otherwise builds exact GP.
 pub fn build_pred_model(
     kernel: &MolInvDistSE,
     td: &TrainingData,
     rff_features: usize,
+    seed: u64,
 ) -> PredModel {
     let e_ref = td.energies[0];
     if rff_features > 0 {
@@ -87,6 +91,7 @@ pub fn build_pred_model(
             rff_features,
             1e-6,
             1e-4,
+            seed,
         );
         PredModel::Rff(rff)
     } else {
@@ -456,7 +461,7 @@ pub fn gp_neb_aie(
 
         // Build prediction model: RFF (fast) or exact GP (small data)
         let e_ref_full = td.energies[0];
-        let pred_model = build_pred_model(&gp_sub.kernel, &td, cfg.rff_features);
+        let pred_model = build_pred_model(&gp_sub.kernel, &td, cfg.rff_features, 42);
 
         // Inner loop: relax on GP/RFF surface
         let gp_tol = (neb_forces.max_f / 10.0)

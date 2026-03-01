@@ -336,7 +336,7 @@ pub fn gp_neb_oie(
     train_model(&mut gp_init, cfg.gp_train_iter, cfg.verbose);
 
     // Build initial prediction model
-    let init_pred_model = build_pred_model(&gp_init.kernel, &td, cfg.rff_features);
+    let init_pred_model = build_pred_model(&gp_init.kernel, &td, cfg.rff_features, 42);
 
     for i in 1..n - 1 {
         let preds = init_pred_model.predict(&images[i]);
@@ -524,7 +524,7 @@ pub fn gp_neb_oie(
 
         // Build prediction model on full data
         let e_ref_full = td.energies[0];
-        let pred_model = build_pred_model(&gp_sub.kernel, &td, cfg.rff_features);
+        let pred_model = build_pred_model(&gp_sub.kernel, &td, cfg.rff_features, 42);
 
         // Predict at unevaluated images
         for i in 1..n - 1 {
