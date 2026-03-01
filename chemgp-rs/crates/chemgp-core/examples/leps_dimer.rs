@@ -1,33 +1,61 @@
-//! GP-Dimer vs OTGPD on LEPS surface.
+//! Standard Dimer vs GP-Dimer vs OTGPD on LEPS surface.
 //!
 //! Outputs JSONL data showing OTGPD finds saddle with fewer oracle calls.
 
-use chemgp_core::dimer::{gp_dimer, DimerConfig};
+use chemgp_core::dimer::{gp_dimer, standard_dimer, DimerConfig};
 use chemgp_core::kernel::MolInvDistSE;
 use chemgp_core::otgpd::{otgpd, OTGPDConfig};
-use chemgp_core::potentials::{leps_energy_gradient, LEPS_REACTANT};
+use chemgp_core::potentials::{leps_energy_gradient, LEPS_PRODUCT, LEPS_REACTANT};
 
 use std::io::Write;
 
 fn main() {
     let oracle = |x: &[f64]| -> (f64, Vec<f64>) { leps_energy_gradient(x) };
-    let x_init = LEPS_REACTANT.to_vec();
 
-    // Orient along the AB bond direction
+    // Orient along the AB bond direction (reaction coordinate)
     let mut orient_init = vec![0.0; 9];
     orient_init[3] = 1.0;
     let on = orient_init.iter().map(|x| x * x).sum::<f64>().sqrt();
     let orient_init: Vec<f64> = orient_init.iter().map(|x| x / on).collect();
 
+    // Start displaced from reactant along the reaction coordinate
+    // (the dimer needs to be in a region with nontrivial translational force)
+    let displace = 0.15;
+    let x_init: Vec<f64> = LEPS_REACTANT
+        .iter()
+        .zip(orient_init.iter())
+        .map(|(r, o)| r + displace * o)
+        .collect();
+
+    let (e_init, g_init) = oracle(&x_init);
+    let gnorm: f64 = g_init.iter().map(|v| v * v).sum::<f64>().sqrt();
+    eprintln!("Initial: E={:.4}, |G|={:.4}", e_init, gnorm);
+
     let kernel = MolInvDistSE::isotropic(1.0, 1.0, vec![]);
 
-    // GP-Dimer
+    // Standard Dimer (direct oracle, no GP)
+    let mut std_cfg = DimerConfig::default();
+    std_cfg.t_force_true = 0.5;
+    std_cfg.max_oracle_calls = 200;
+    std_cfg.verbose = false;
+
+    eprintln!("Running Standard Dimer...");
+    let std_result = standard_dimer(&oracle, &x_init, &orient_init, &std_cfg, 0.01);
+    eprintln!(
+        "  Standard Dimer: {} calls, max|F| = {:.5}, converged = {}",
+        std_result.oracle_calls,
+        std_result.history.f_true.last().unwrap_or(&f64::NAN),
+        std_result.converged
+    );
+
+    // GP-Dimer (with FPS subset)
     let mut dimer_cfg = DimerConfig::default();
-    dimer_cfg.max_outer_iter = 30;
-    dimer_cfg.max_inner_iter = 50;
+    dimer_cfg.max_outer_iter = 15;
+    dimer_cfg.max_inner_iter = 30;
     dimer_cfg.t_force_true = 0.5;
     dimer_cfg.t_force_gp = 0.1;
-    dimer_cfg.gp_train_iter = 100;
+    dimer_cfg.gp_train_iter = 30;
+    dimer_cfg.fps_history = 10;
     dimer_cfg.verbose = false;
 
     eprintln!("Running GP-Dimer...");
@@ -35,30 +63,52 @@ fn main() {
         &oracle, &x_init, &orient_init, &kernel, &dimer_cfg, None, 0.01,
     );
     eprintln!(
-        "  GP-Dimer: {} calls, converged = {}",
-        dimer_result.oracle_calls, dimer_result.converged
+        "  GP-Dimer: {} calls, max|F| = {:.5}, converged = {}",
+        dimer_result.oracle_calls,
+        dimer_result.history.f_true.last().unwrap_or(&f64::NAN),
+        dimer_result.converged
     );
 
-    // OTGPD
+    // OTGPD (with FPS subset)
     let mut otgpd_cfg = OTGPDConfig::default();
-    otgpd_cfg.max_outer_iter = 30;
-    otgpd_cfg.max_inner_iter = 50;
+    otgpd_cfg.max_outer_iter = 15;
+    otgpd_cfg.max_inner_iter = 30;
     otgpd_cfg.t_dimer = 0.5;
     otgpd_cfg.initial_rotation = false;
-    otgpd_cfg.eval_image1 = false;
-    otgpd_cfg.gp_train_iter = 100;
+    otgpd_cfg.eval_image1 = true;
+    otgpd_cfg.gp_train_iter = 30;
     otgpd_cfg.verbose = false;
 
     eprintln!("Running OTGPD...");
     let otgpd_result = otgpd(&oracle, &x_init, &orient_init, &kernel, &otgpd_cfg, None);
     eprintln!(
-        "  OTGPD: {} calls, converged = {}",
-        otgpd_result.oracle_calls, otgpd_result.converged
+        "  OTGPD: {} calls, max|F| = {:.5}, converged = {}",
+        otgpd_result.oracle_calls,
+        otgpd_result.history.f_true.last().unwrap_or(&f64::NAN),
+        otgpd_result.converged
     );
 
     // Write comparison data
     let outfile = "leps_dimer_comparison.jsonl";
     let mut f = std::fs::File::create(outfile).unwrap();
+
+    for (i, (&e, &fv)) in std_result
+        .history
+        .e_true
+        .iter()
+        .zip(std_result.history.f_true.iter())
+        .enumerate()
+    {
+        writeln!(
+            f,
+            r#"{{"method":"standard_dimer","step":{},"energy":{},"force":{},"oracle_calls":{}}}"#,
+            i,
+            e,
+            fv,
+            std_result.history.oracle_calls[i]
+        )
+        .unwrap();
+    }
 
     for (i, (&e, &fv)) in dimer_result
         .history
@@ -98,14 +148,14 @@ fn main() {
 
     writeln!(
         f,
-        r#"{{"summary":true,"dimer_calls":{},"otgpd_calls":{}}}"#,
-        dimer_result.oracle_calls, otgpd_result.oracle_calls
+        r#"{{"summary":true,"standard_calls":{},"dimer_calls":{},"otgpd_calls":{}}}"#,
+        std_result.oracle_calls, dimer_result.oracle_calls, otgpd_result.oracle_calls
     )
     .unwrap();
 
     eprintln!(
-        "\nSummary: GP-Dimer={} calls, OTGPD={} calls",
-        dimer_result.oracle_calls, otgpd_result.oracle_calls
+        "\nSummary: Standard={} calls, GP-Dimer={} calls, OTGPD={} calls",
+        std_result.oracle_calls, dimer_result.oracle_calls, otgpd_result.oracle_calls
     );
     eprintln!("Output: {}", outfile);
 }

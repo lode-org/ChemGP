@@ -26,7 +26,7 @@ fn main() {
     let mut x = x_init.clone();
     let mut direct_energies = Vec::new();
     let mut direct_calls = 0;
-    let step_size = 0.001;
+    let max_step = 0.05;
 
     for _ in 0..200 {
         let (e, g) = oracle(&x);
@@ -38,6 +38,8 @@ fn main() {
             break;
         }
 
+        // Adaptive step: cap displacement at max_step
+        let step_size = (max_step / g_norm).min(0.01);
         for j in 0..x.len() {
             x[j] -= step_size * g[j];
         }
