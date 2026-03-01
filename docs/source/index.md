@@ -12,12 +12,26 @@ The core library (`chemgp-core`) is written in Rust for performance and
 reproducibility. Python bindings (`chemgp`) expose the full API for
 scripting and integration with existing workflows.
 
+### Kernels
+
+Two kernel types cover different use cases, unified under the `Kernel` enum:
+
+`MolInvDistSE`
+: Molecular kernel operating on inverse interatomic distances. Provides
+  rotational and translational invariance by construction, with
+  pair-type-specific length scales. Use for molecular systems (geometry
+  optimization, saddle points, MEPs).
+
+`CartesianSE`
+: Simple squared exponential operating directly on coordinates. Use for
+  arbitrary smooth potentials (analytical surfaces, 2D demonstrations).
+
 ### Methods
 
 Minimization
-: GP-guided local minimization with FPS subset selection, EMD trust
-  regions, and LCB exploration. Converges in ~15 oracle calls where
-  gradient descent needs ~200 on LEPS.
+: GP-guided local minimization with FPS subset selection, trust
+  regions, and LCB exploration. Converges in 7 oracle calls on
+  Muller-Brown (vs 34 direct GD) and 9 calls on LEPS (vs 200).
 
 Dimer (saddle point search)
 : GP-accelerated dimer method with L-BFGS translation. Finds transition
@@ -32,6 +46,16 @@ OTGPD (optimal transport GP dimer)
 : Adaptive threshold GP dimer with HOD training data management.
   Matches GP-Dimer efficiency (~13 calls) with automatic convergence
   threshold adjustment.
+
+### Unified architecture
+
+All methods share four mechanisms, dispatched uniformly through the
+`PredModel` enum (exact GP or RFF approximation):
+
+1. **FPS subset selection** for hyperparameter training
+2. **Trust region clipping** (EMD for molecules, Euclidean for 2D)
+3. **RFF approximation** for scalable inner-loop prediction
+4. **LCB exploration** adapted per method
 
 ## Getting started
 

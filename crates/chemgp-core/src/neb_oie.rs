@@ -6,20 +6,20 @@
 //! Reference: Goswami et al., J. Chem. Theory Comput. (2025).
 
 use crate::distances::euclidean_distance;
-use crate::kernel::MolInvDistSE;
+use crate::kernel::Kernel;
 use crate::neb_path::{
     compute_all_neb_forces, get_hessian_points, linear_interpolation, max_atom_force, path_tangent,
     NEBConfig, NEBPath,
 };
-use crate::neb::{build_pred_model, NEBHistory, NEBResult, OracleFn, PredModel};
+use crate::neb::{NEBHistory, NEBResult, OracleFn};
 use crate::optim_step::OptimState;
-// predict and predict_with_variance are accessed through PredModel
+use crate::predict::{build_pred_model, PredModel};
 use crate::sampling::select_optim_subset;
 use crate::train::train_model;
 use crate::trust::{
     adaptive_trust_threshold, min_distance_to_data, trust_distance, trust_min_distance,
 };
-use crate::types::{init_mol_invdist_se, GPModel, TrainingData};
+use crate::types::{init_kernel, GPModel, TrainingData};
 use crate::StopReason;
 
 use crate::idpp::{idpp_interpolation, sidpp_interpolation};
@@ -283,7 +283,7 @@ pub fn gp_neb_oie(
     oracle: &OracleFn,
     x_start: &[f64],
     x_end: &[f64],
-    kernel: &MolInvDistSE,
+    kernel: &Kernel,
     config: &NEBConfig,
 ) -> NEBResult {
     let cfg = config;
@@ -331,7 +331,7 @@ pub fn gp_neb_oie(
     let e_ref_init = td.energies[0];
     let mut y_init: Vec<f64> = td.energies.iter().map(|e| e - e_ref_init).collect();
     y_init.extend_from_slice(&td.gradients);
-    let kern_init = init_mol_invdist_se(&td, kernel);
+    let kern_init = init_kernel(&td, kernel);
     let mut gp_init = GPModel::new(kern_init, &td, y_init, 1e-6, 1e-4, 1e-6);
     train_model(&mut gp_init, cfg.gp_train_iter, cfg.verbose);
 
@@ -355,7 +355,7 @@ pub fn gp_neb_oie(
     let init_forces = compute_all_neb_forces(&path, cfg, false);
 
     let mut history = NEBHistory::default();
-    let mut prev_kern: Option<MolInvDistSE> = Some(gp_init.kernel.clone());
+    let mut prev_kern: Option<Kernel> = Some(gp_init.kernel.clone());
     let mut stop_reason = StopReason::MaxIterations;
     let mut eval_next_early: usize = 0;
     let mut eval_next_ci = false;
@@ -514,7 +514,7 @@ pub fn gp_neb_oie(
         y_sub.extend_from_slice(&td_use.gradients);
 
         let kern = match &prev_kern {
-            None => init_mol_invdist_se(&td_use, kernel),
+            None => init_kernel(&td_use, kernel),
             Some(k) => k.clone(),
         };
 
@@ -662,7 +662,7 @@ mod tests {
         cfg.climbing_image = false;
         cfg.verbose = false;
 
-        let kernel = MolInvDistSE::isotropic(1.0, 1.0, vec![]);
+        let kernel = Kernel::MolInvDist(crate::kernel::MolInvDistSE::isotropic(1.0, 1.0, vec![]));
 
         let result = gp_neb_oie(&oracle, &x_start, &x_end, &kernel, &cfg);
         assert_eq!(result.path.images.len(), 5);

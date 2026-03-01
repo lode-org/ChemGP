@@ -4,7 +4,7 @@
 //! to demonstrate GP-accelerated dimer convergence with fewer oracle calls.
 
 use chemgp_core::dimer::{gp_dimer, standard_dimer, DimerConfig};
-use chemgp_core::kernel::MolInvDistSE;
+use chemgp_core::kernel::{Kernel, MolInvDistSE};
 use chemgp_core::otgpd::{otgpd, OTGPDConfig};
 use chemgp_core::potentials::{leps_energy_gradient, LEPS_SADDLE};
 
@@ -36,7 +36,7 @@ fn main() {
     let (e_saddle, _) = oracle(&LEPS_SADDLE);
     eprintln!("Target saddle: E={:.4}", e_saddle);
 
-    let kernel = MolInvDistSE::isotropic(1.0, 1.0, vec![]);
+    let kernel = Kernel::MolInvDist(MolInvDistSE::isotropic(1.0, 1.0, vec![]));
     let dimer_sep = 0.005;
     let gp_dimer_sep = 0.005; // same sep; energy-based curvature is robust at any sep
     let t_conv = 0.1; // force convergence: 0.1 eV/A

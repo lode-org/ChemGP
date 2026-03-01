@@ -6,13 +6,13 @@
 //!
 //! Reference: Goswami et al., J. Chem. Theory Comput. (2025).
 
-use crate::kernel::MolInvDistSE;
+use crate::kernel::Kernel;
 use crate::lbfgs::LbfgsHistory;
-use crate::predict::predict;
+use crate::predict::{build_pred_model, PredModel};
 use crate::sampling::{prune_training_data, select_optim_subset};
 use crate::train::train_model;
 use crate::trust::{adaptive_trust_threshold, trust_distance, trust_min_distance, TrustMetric};
-use crate::types::{init_mol_invdist_se, GPModel, TrainingData};
+use crate::types::{init_kernel, GPModel, TrainingData};
 use crate::StopReason;
 use rand::Rng;
 use serde::{Deserialize, Serialize};
@@ -147,8 +147,8 @@ impl HodState {
 
     /// Extract log-space hyperparameters from GP model.
     fn extract_hyperparams(model: &GPModel) -> Vec<f64> {
-        let mut hp = vec![model.kernel.signal_variance.ln()];
-        for &ls in &model.kernel.inv_lengthscales {
+        let mut hp = vec![model.kernel.signal_variance().ln()];
+        for ls in model.kernel.inv_lengthscales() {
             hp.push(ls.ln());
         }
         hp.push(model.noise_var.ln());
@@ -263,11 +263,11 @@ fn translational_force_fn(g0: &[f64], orient: &[f64]) -> Vec<f64> {
 }
 
 fn predict_dimer(
-    r: &[f64], orient: &[f64], sep: f64, model: &GPModel, e_ref: f64,
+    r: &[f64], orient: &[f64], sep: f64, model: &PredModel, e_ref: f64,
 ) -> (Vec<f64>, Vec<f64>, f64) {
     let r1: Vec<f64> = r.iter().zip(orient.iter()).map(|(r, o)| r + sep * o).collect();
-    let pred0 = predict(model, r, 1);
-    let pred1 = predict(model, &r1, 1);
+    let pred0 = model.predict(r);
+    let pred1 = model.predict(&r1);
     let g0: Vec<f64> = pred0[1..].to_vec();
     let g1: Vec<f64> = pred1[1..].to_vec();
     let e0 = pred0[0] + e_ref;
@@ -279,7 +279,7 @@ fn rotate_on_gp(
     r: &[f64],
     orient: &mut Vec<f64>,
     sep: f64,
-    model: &GPModel,
+    model: &PredModel,
     e_ref: f64,
     cfg: &OTGPDConfig,
 ) -> f64 {
@@ -311,7 +311,7 @@ fn rotate_on_gp(
 
         let r1_trial: Vec<f64> = r.iter().zip(orient_trial.iter())
             .map(|(r, o)| r + sep * o).collect();
-        let pred1_trial = predict(model, &r1_trial, 1);
+        let pred1_trial = model.predict(&r1_trial);
         let g1_trial: Vec<f64> = pred1_trial[1..].to_vec();
 
         let f_rot_trial = rotational_force_fn(&g0, &g1_trial, &orient_trial, sep);
@@ -364,7 +364,7 @@ pub fn otgpd(
     oracle: &OracleFn,
     x_init: &[f64],
     orient_init: &[f64],
-    kernel: &MolInvDistSE,
+    kernel: &Kernel,
     config: &OTGPDConfig,
     training_data: Option<TrainingData>,
 ) -> OTGPDResult {
@@ -503,7 +503,7 @@ pub fn otgpd(
     }
 
     // Phase 2: GP-accelerated loop
-    let mut prev_kern: Option<MolInvDistSE> = None;
+    let mut prev_kern: Option<Kernel> = None;
     let mut stop_reason = StopReason::MaxIterations;
     let mut hod_state = HodState::new(cfg.fps_history);
     let n_atoms = d / 3;
@@ -540,7 +540,7 @@ pub fn otgpd(
         y_sub.extend_from_slice(&td_sub.gradients);
 
         let kern = match &prev_kern {
-            None => init_mol_invdist_se(&td_sub, kernel),
+            None => init_kernel(&td_sub, kernel),
             Some(k) => k.clone(),
         };
 
@@ -553,9 +553,9 @@ pub fn otgpd(
             hod_state.check(&gp_sub, cfg);
         }
 
-        // Use trained kernel on subset for prediction (fast, O(K^3))
-        let model = GPModel::new(gp_sub.kernel.clone(), &td_sub, y_sub, 1e-6, 1e-4, 1e-6);
-        let e_ref = e_ref_sub;
+        // Build prediction model on full data (RFF if configured, else exact GP)
+        let model = build_pred_model(&gp_sub.kernel, &td, cfg.rff_features, 42);
+        let e_ref = td.energies[0];
 
         // Adaptive GP threshold
         let t_gp = if cfg.divisor_t_dimer_gp > 0.0 && !history.f_true.is_empty() {
@@ -718,7 +718,7 @@ mod tests {
         cfg.eval_image1 = false;
         cfg.verbose = false;
 
-        let kernel = MolInvDistSE::isotropic(1.0, 1.0, vec![]);
+        let kernel = Kernel::MolInvDist(crate::kernel::MolInvDistSE::isotropic(1.0, 1.0, vec![]));
 
         let result = otgpd(&oracle, &x_init, &orient_init, &kernel, &cfg, None);
         assert!(result.oracle_calls > 2);

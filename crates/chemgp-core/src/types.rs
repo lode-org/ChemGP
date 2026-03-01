@@ -2,7 +2,7 @@
 //!
 //! Ports `types.jl`.
 
-use crate::kernel::MolInvDistSE;
+use crate::kernel::Kernel;
 
 /// Container for the growing dataset of oracle evaluations.
 ///
@@ -93,7 +93,7 @@ impl TrainingData {
 /// Gaussian process model with derivative observations.
 #[derive(Debug, Clone)]
 pub struct GPModel {
-    pub kernel: MolInvDistSE,
+    pub kernel: Kernel,
     /// Training inputs stored column-major: D*N flat.
     pub x_data: Vec<f64>,
     pub dim: usize,
@@ -107,7 +107,7 @@ pub struct GPModel {
 
 impl GPModel {
     pub fn new(
-        kernel: MolInvDistSE,
+        kernel: Kernel,
         td: &TrainingData,
         y: Vec<f64>,
         noise_var: f64,
@@ -140,7 +140,10 @@ pub const NORMINV_075: f64 = 0.6744897501960817;
 
 /// Data-dependent initialization of MolInvDistSE hyperparameters.
 /// Matches MATLAB GPstuff initialization.
-pub fn init_mol_invdist_se(td: &TrainingData, kernel: &MolInvDistSE) -> MolInvDistSE {
+pub fn init_mol_invdist_se(
+    td: &TrainingData,
+    kernel: &crate::kernel::MolInvDistSE,
+) -> crate::kernel::MolInvDistSE {
     let n = td.npoints();
     let frozen = &kernel.frozen_coords;
 
@@ -184,6 +187,57 @@ pub fn init_mol_invdist_se(td: &TrainingData, kernel: &MolInvDistSE) -> MolInvDi
 
     let n_ls = kernel.inv_lengthscales.len();
     kernel.with_params(sigma2, vec![inv_ell; n_ls])
+}
+
+/// Data-dependent initialization for CartesianSE.
+///
+/// Same approach as MolInvDistSE but features = coordinates directly.
+pub fn init_cartesian_se(
+    td: &TrainingData,
+    kernel: &crate::kernel::CartesianSE,
+) -> crate::kernel::CartesianSE {
+    let n = td.npoints();
+
+    // Max pairwise distance in coordinate space
+    let mut max_dist = 0.0f64;
+    for i in 0..n {
+        for j in (i + 1)..n {
+            let d: f64 = td.col(i)
+                .iter()
+                .zip(td.col(j).iter())
+                .map(|(a, b)| (a - b).powi(2))
+                .sum::<f64>()
+                .sqrt();
+            max_dist = max_dist.max(d);
+        }
+    }
+
+    let range_y = td
+        .energies
+        .iter()
+        .cloned()
+        .fold(f64::NEG_INFINITY, f64::max)
+        - td.energies
+            .iter()
+            .cloned()
+            .fold(f64::INFINITY, f64::min);
+    let range_y = range_y.max(1e-10);
+
+    let range_x = (2.0f64).sqrt() * max_dist.max(1e-10);
+
+    let sigma2 = (NORMINV_075 * range_y / 3.0).powi(2);
+    let ell = NORMINV_075 * range_x / 3.0;
+    let inv_ell = 1.0 / ell.max(1e-10);
+
+    kernel.with_params(sigma2, inv_ell)
+}
+
+/// Data-dependent initialization dispatching on Kernel variant.
+pub fn init_kernel(td: &TrainingData, kernel: &Kernel) -> Kernel {
+    match kernel {
+        Kernel::MolInvDist(k) => Kernel::MolInvDist(init_mol_invdist_se(td, k)),
+        Kernel::Cartesian(k) => Kernel::Cartesian(init_cartesian_se(td, k)),
+    }
 }
 
 #[cfg(test)]

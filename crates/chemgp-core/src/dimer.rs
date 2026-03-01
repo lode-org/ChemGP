@@ -6,13 +6,13 @@
 //! Reference: Henkelman & Jonsson, J. Chem. Phys. 111, 7010 (1999).
 //! GP-Dimer: Koistinen et al., J. Chem. Theory Comput. 16, 499 (2020).
 
-use crate::kernel::MolInvDistSE;
+use crate::kernel::Kernel;
 use crate::lbfgs::LbfgsHistory;
-use crate::predict::predict;
+use crate::predict::{build_pred_model, PredModel};
 use crate::sampling::select_optim_subset;
 use crate::train::train_model;
 use crate::trust::{adaptive_trust_threshold, trust_distance, trust_min_distance, TrustMetric};
-use crate::types::{init_mol_invdist_se, GPModel, TrainingData};
+use crate::types::{init_kernel, GPModel, TrainingData};
 use crate::StopReason;
 use rand::Rng;
 use serde::{Deserialize, Serialize};
@@ -212,12 +212,12 @@ fn normalize_vec(v: &[f64]) -> Vec<f64> {
 
 fn predict_dimer_gradients(
     state: &DimerState,
-    model: &GPModel,
+    model: &PredModel,
     y_std: f64,
 ) -> (Vec<f64>, Vec<f64>, f64) {
     let (r1, _) = dimer_images(state);
-    let pred0 = predict(model, &state.r, 1);
-    let pred1 = predict(model, &r1, 1);
+    let pred0 = model.predict(&state.r);
+    let pred1 = model.predict(&r1);
 
     let g0: Vec<f64> = pred0[1..].iter().map(|v| v * y_std).collect();
     let g1: Vec<f64> = pred1[1..].iter().map(|v| v * y_std).collect();
@@ -233,7 +233,7 @@ fn predict_dimer_gradients(
 
 fn rotate_dimer_newton(
     state: &mut DimerState,
-    model: &GPModel,
+    model: &PredModel,
     f_rot_direction: &[f64],
     config: &DimerConfig,
     y_std: f64,
@@ -270,7 +270,7 @@ fn rotate_dimer_newton(
         .zip(orient_trial.iter())
         .map(|(r, o)| r + state.dimer_sep * o)
         .collect();
-    let pred1_trial = predict(model, &r1_trial, 1);
+    let pred1_trial = model.predict(&r1_trial);
     let g1_trial: Vec<f64> = pred1_trial[1..].iter().map(|v| v * y_std).collect();
 
     let f_rot_trial = rotational_force(&g0, &g1_trial, &orient_trial, state.dimer_sep);
@@ -331,7 +331,7 @@ fn rotate_dimer_newton(
 
 fn rotate_dimer_simple(
     state: &mut DimerState,
-    model: &GPModel,
+    model: &PredModel,
     config: &DimerConfig,
     y_std: f64,
 ) {
@@ -364,7 +364,7 @@ fn rotate_dimer_simple(
 
 fn rotate_dimer_lbfgs(
     state: &mut DimerState,
-    model: &GPModel,
+    model: &PredModel,
     config: &DimerConfig,
     rot_hist: &mut LbfgsHistory,
     y_std: f64,
@@ -437,7 +437,7 @@ fn rotate_dimer_lbfgs(
 
 fn rotate_dimer(
     state: &mut DimerState,
-    model: &GPModel,
+    model: &PredModel,
     config: &DimerConfig,
     rot_hist: &mut Option<LbfgsHistory>,
     y_std: f64,
@@ -516,7 +516,7 @@ pub fn gp_dimer(
     oracle: &OracleFn,
     x_init: &[f64],
     orient_init: &[f64],
-    kernel: &MolInvDistSE,
+    kernel: &Kernel,
     config: &DimerConfig,
     training_data: Option<TrainingData>,
     dimer_sep: f64,
@@ -582,7 +582,7 @@ pub fn gp_dimer(
     let mut stop_reason = StopReason::MaxIterations;
     let mut stagnation_count = 0;
     let mut prev_f_true = f64::NEG_INFINITY;
-    let mut prev_kern: Option<MolInvDistSE> = None;
+    let mut prev_kern: Option<Kernel> = None;
     let n_atoms = d / 3;
 
     for _outer_iter in 0..cfg.max_outer_iter {
@@ -621,7 +621,7 @@ pub fn gp_dimer(
         y_sub.extend_from_slice(&td_sub.gradients);
 
         let kern = match &prev_kern {
-            None => init_mol_invdist_se(&td_sub, kernel),
+            None => init_kernel(&td_sub, kernel),
             Some(k) => k.clone(),
         };
 
@@ -629,10 +629,10 @@ pub fn gp_dimer(
         train_model(&mut gp_sub, train_iters, cfg.verbose);
         prev_kern = Some(gp_sub.kernel.clone());
 
-        // Use trained kernel on subset for prediction (fast, O(K^3) where K = fps_history)
-        let y_mean = e_ref_sub;
+        // Build prediction model on full data (RFF if configured, else exact GP)
+        let y_mean = td.energies[0];
         let y_std = 1.0;
-        let model = GPModel::new(gp_sub.kernel.clone(), &td_sub, y_sub, 1e-6, 1e-4, 1e-6);
+        let model = build_pred_model(&gp_sub.kernel, &td, cfg.rff_features, 42);
 
         // Reset L-BFGS/CG state for new outer iteration
         if let Some(ref mut rh) = rot_hist {

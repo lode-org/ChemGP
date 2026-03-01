@@ -5,18 +5,17 @@
 //! Reference: Goswami et al., J. Chem. Theory Comput. (2025).
 
 use crate::idpp::{idpp_interpolation, sidpp_interpolation};
-use crate::kernel::MolInvDistSE;
+use crate::kernel::Kernel;
 use crate::neb_path::{
     compute_all_neb_forces, get_hessian_points, linear_interpolation, NEBConfig, NEBPath,
 };
 use crate::optim_step::OptimState;
-use crate::predict::predict;
-use crate::rff::{build_rff, rff_predict, RffModel};
+use crate::predict::{build_pred_model, PredModel};
 use crate::train::train_model;
 use crate::trust::{
     adaptive_trust_threshold, min_distance_to_data, trust_distance, trust_min_distance, TrustMetric,
 };
-use crate::types::{init_mol_invdist_se, GPModel, TrainingData};
+use crate::types::{init_kernel, GPModel, TrainingData};
 use crate::StopReason;
 
 /// Result of NEB optimization.
@@ -41,66 +40,6 @@ pub struct NEBHistory {
 
 /// Oracle function type.
 pub type OracleFn = dyn Fn(&[f64]) -> (f64, Vec<f64>);
-
-/// Prediction model: either exact GP or RFF approximation.
-pub enum PredModel {
-    Gp(GPModel),
-    Rff(RffModel),
-}
-
-impl PredModel {
-    pub fn predict(&self, x: &[f64]) -> Vec<f64> {
-        match self {
-            PredModel::Gp(m) => predict(m, x, 1),
-            PredModel::Rff(m) => rff_predict(m, x, 1),
-        }
-    }
-
-    pub fn predict_with_variance(&self, x: &[f64]) -> (Vec<f64>, Vec<f64>) {
-        match self {
-            PredModel::Gp(m) => {
-                crate::predict::predict_with_variance(m, x, 1)
-            }
-            PredModel::Rff(m) => {
-                crate::rff::rff_predict_with_variance(m, x, 1)
-            }
-        }
-    }
-}
-
-/// Build a PredModel from trained kernel + full training data.
-///
-/// When `rff_features > 0`, builds an RFF approximation with the given
-/// deterministic `seed` for reproducibility. Otherwise builds exact GP.
-pub fn build_pred_model(
-    kernel: &MolInvDistSE,
-    td: &TrainingData,
-    rff_features: usize,
-    seed: u64,
-) -> PredModel {
-    let e_ref = td.energies[0];
-    if rff_features > 0 {
-        let mut y_rff: Vec<f64> = td.energies.iter().map(|e| e - e_ref).collect();
-        y_rff.extend_from_slice(&td.gradients);
-        let rff = build_rff(
-            kernel,
-            &td.data,
-            td.dim,
-            td.npoints(),
-            &y_rff,
-            rff_features,
-            1e-6,
-            1e-4,
-            seed,
-        );
-        PredModel::Rff(rff)
-    } else {
-        let mut y_gp: Vec<f64> = td.energies.iter().map(|e| e - e_ref).collect();
-        y_gp.extend_from_slice(&td.gradients);
-        let gp_model = GPModel::new(kernel.clone(), td, y_gp, 1e-6, 1e-4, 1e-6);
-        PredModel::Gp(gp_model)
-    }
-}
 
 /// Initialize NEB path images.
 fn init_neb_images(cfg: &NEBConfig, x_start: &[f64], x_end: &[f64]) -> Vec<Vec<f64>> {
@@ -300,7 +239,7 @@ pub fn gp_neb_aie(
     oracle: &OracleFn,
     x_start: &[f64],
     x_end: &[f64],
-    kernel: &MolInvDistSE,
+    kernel: &Kernel,
     config: &NEBConfig,
 ) -> NEBResult {
     let cfg = config;
@@ -362,7 +301,7 @@ pub fn gp_neb_aie(
     let mut history = NEBHistory::default();
     let mut ci_on = false;
     let mut stop_reason = StopReason::MaxIterations;
-    let mut prev_kern: Option<MolInvDistSE> = None;
+    let mut prev_kern: Option<Kernel> = None;
     let mut baseline_force = 0.0;
     let mut stagnation_count = 0;
     let mut prev_max_f = f64::NEG_INFINITY;
@@ -451,7 +390,7 @@ pub fn gp_neb_aie(
         y_sub.extend_from_slice(&td_use.gradients);
 
         let kern = match &prev_kern {
-            None => init_mol_invdist_se(&td_use, kernel),
+            None => init_kernel(&td_use, kernel),
             Some(k) => k.clone(),
         };
 

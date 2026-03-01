@@ -3,7 +3,7 @@
 //! Outputs JSONL data showing oracle call efficiency:
 //! GP OIE > GP AIE > standard NEB.
 
-use chemgp_core::kernel::MolInvDistSE;
+use chemgp_core::kernel::{Kernel, MolInvDistSE};
 use chemgp_core::neb::gp_neb_aie;
 use chemgp_core::neb::neb_optimize;
 use chemgp_core::neb_oie::gp_neb_oie;
@@ -17,7 +17,7 @@ fn main() {
     let x_start = LEPS_REACTANT.to_vec();
     let x_end = LEPS_PRODUCT.to_vec();
 
-    let kernel = MolInvDistSE::isotropic(1.0, 1.0, vec![]);
+    let kernel = Kernel::MolInvDist(MolInvDistSE::isotropic(1.0, 1.0, vec![]));
 
     // Standard NEB
     let mut neb_cfg = NEBConfig::default();

@@ -45,6 +45,9 @@ npx html-minifier-terser \
 [feature.dev.dependencies]
 rust = ">=1.75"
 
+[feature.dev.pypi-dependencies]
+matplotlib = ">=3.8, <4"
+
 [feature.dev.tasks.test]
 cmd = "cargo test -p chemgp-core"
 
@@ -57,6 +60,10 @@ cargo run --release --example leps_minimize && \
 cargo run --release --example leps_dimer && \
 cargo run --release --example leps_neb
 """
+
+[feature.dev.tasks.figures]
+cmd = "python scripts/plot_comparisons.py"
+depends-on = ["examples"]
 
 [environments]
 docs = ["docs"]

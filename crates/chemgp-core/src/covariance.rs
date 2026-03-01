@@ -2,7 +2,7 @@
 //!
 //! Ports `build_full_covariance` from `functions.jl`.
 
-use crate::kernel::{kernel_blocks, MolInvDistSE};
+use crate::kernel::Kernel;
 use faer::linalg::solvers::Llt;
 use faer::{Mat, Side};
 
@@ -12,7 +12,7 @@ use faer::{Mat, Side};
 ///   [ K_EE + noise_e*I    K_EG          ]
 ///   [ K_GE                K_GG + noise_g*I ]
 pub fn build_full_covariance(
-    kernel: &MolInvDistSE,
+    kernel: &Kernel,
     x_data: &[f64],
     dim: usize,
     n: usize,
@@ -27,7 +27,7 @@ pub fn build_full_covariance(
         let xi = &x_data[i * dim..(i + 1) * dim];
 
         // Diagonal blocks
-        let b = kernel_blocks(kernel, xi, xi);
+        let b = kernel.kernel_blocks(xi, xi);
 
         // Energy index
         k_mat[(i, i)] = b.k_ee + noise_e + jitter;
@@ -48,7 +48,7 @@ pub fn build_full_covariance(
         // Off-diagonal interactions
         for j in (i + 1)..n {
             let xj = &x_data[j * dim..(j + 1) * dim];
-            let b = kernel_blocks(kernel, xi, xj);
+            let b = kernel.kernel_blocks(xi, xj);
 
             let j_s = n + j * dim;
 
@@ -73,7 +73,6 @@ pub fn build_full_covariance(
 
     // Truncate near-zero entries (matching MATLAB GPstuff: C(C<eps)=0)
     let eps = f64::EPSILON;
-    let total2 = total * total;
     for r in 0..total {
         for c in 0..total {
             if k_mat[(r, c)].abs() < eps {
@@ -81,7 +80,6 @@ pub fn build_full_covariance(
             }
         }
     }
-    let _ = total2; // suppress
 
     k_mat
 }

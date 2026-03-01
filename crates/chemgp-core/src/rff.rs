@@ -1,21 +1,30 @@
-//! Random Fourier Features for MolInvDistSE.
+//! Random Fourier Features for GP kernels.
 //!
 //! Ports `rff.jl`. Approximates the GP with O(N*D*D_rff + D_rff^3) cost.
 
 use crate::invdist::compute_inverse_distances;
-use crate::kernel::MolInvDistSE;
+use crate::kernel::Kernel;
 use faer::linalg::solvers::Solve;
 use faer::{Mat, Side};
 use rand::rngs::StdRng;
 use rand::{Rng, SeedableRng};
 use rand_distr::StandardNormal;
 
+/// How RFF features are computed from raw coordinates.
+#[derive(Debug, Clone)]
+pub enum FeatureMode {
+    /// Inverse interatomic distances (molecular kernel).
+    InverseDistances { frozen: Vec<f64> },
+    /// Raw coordinates (Cartesian kernel, identity Jacobian).
+    Cartesian,
+}
+
 /// RFF model for fast GP prediction.
 pub struct RffModel {
     pub w: Mat<f64>,      // (d_rff, d_feat)
     pub b: Vec<f64>,      // (d_rff,)
     pub c: f64,           // sigma * sqrt(2/d_rff)
-    pub frozen: Vec<f64>,
+    pub feature_mode: FeatureMode,
     pub alpha: Vec<f64>,  // (d_rff,)
     pub a_chol: Mat<f64>, // Lower-triangular Cholesky factor of regularized Gram
     pub dim: usize,       // Coordinate dimension D
@@ -24,10 +33,40 @@ pub struct RffModel {
 impl RffModel {
     /// Compute RFF features z(x) and Jacobian J_z = dz/dx.
     fn features(&self, x: &[f64]) -> (Vec<f64>, Mat<f64>) {
-        let phi = compute_inverse_distances(x, &self.frozen);
-        let d_feat = phi.len();
-        let d_rff = self.w.nrows();
         let d = x.len();
+        let d_rff = self.w.nrows();
+
+        let (phi, j_phi) = match &self.feature_mode {
+            FeatureMode::InverseDistances { frozen } => {
+                let phi = compute_inverse_distances(x, frozen);
+                let d_feat = phi.len();
+
+                // Numerical Jacobian of phi w.r.t. x (finite difference)
+                let eps = 1e-7;
+                let mut j_phi = Mat::<f64>::zeros(d_feat, d);
+                for dd in 0..d {
+                    let mut x_plus = x.to_vec();
+                    x_plus[dd] += eps;
+                    let phi_plus = compute_inverse_distances(&x_plus, frozen);
+                    for f in 0..d_feat {
+                        j_phi[(f, dd)] = (phi_plus[f] - phi[f]) / eps;
+                    }
+                }
+                (phi, j_phi)
+            }
+            FeatureMode::Cartesian => {
+                // Features = coordinates, Jacobian = identity
+                let phi = x.to_vec();
+                let d_feat = d;
+                let mut j_phi = Mat::<f64>::zeros(d_feat, d);
+                for i in 0..d_feat {
+                    j_phi[(i, i)] = 1.0;
+                }
+                (phi, j_phi)
+            }
+        };
+
+        let d_feat = phi.len();
 
         // u = W * phi + b
         let mut u = vec![0.0; d_rff];
@@ -40,18 +79,6 @@ impl RffModel {
         }
 
         let z: Vec<f64> = u.iter().map(|&v| self.c * v.cos()).collect();
-
-        // Numerical Jacobian of phi w.r.t. x (finite difference)
-        let eps = 1e-7;
-        let mut j_phi = Mat::<f64>::zeros(d_feat, d);
-        for dd in 0..d {
-            let mut x_plus = x.to_vec();
-            x_plus[dd] += eps;
-            let phi_plus = compute_inverse_distances(&x_plus, &self.frozen);
-            for f in 0..d_feat {
-                j_phi[(f, dd)] = (phi_plus[f] - phi[f]) / eps;
-            }
-        }
 
         // w_jphi = W * J_phi (d_rff x d)
         let mut w_jphi = Mat::<f64>::zeros(d_rff, d);
@@ -80,7 +107,7 @@ impl RffModel {
 
 /// Build an RFF model from a trained kernel and all training data.
 pub fn build_rff(
-    kernel: &MolInvDistSE,
+    kernel: &Kernel,
     x_train: &[f64],
     dim: usize,
     n: usize,
@@ -90,18 +117,23 @@ pub fn build_rff(
     grad_noise_var: f64,
     seed: u64,
 ) -> RffModel {
-    let frozen = kernel.frozen_coords.clone();
-    let n_atoms = dim / 3;
-    let n_frozen = frozen.len() / 3;
-    let d_feat = n_atoms * (n_atoms - 1) / 2 + n_atoms * n_frozen;
+    let inv_ls = kernel.inv_lengthscales();
+    let d_feat = kernel.n_features(dim);
+
+    let feature_mode = match kernel {
+        Kernel::MolInvDist(k) => FeatureMode::InverseDistances {
+            frozen: k.frozen_coords.clone(),
+        },
+        Kernel::Cartesian(_) => FeatureMode::Cartesian,
+    };
 
     let mut rng = StdRng::seed_from_u64(seed);
 
     // Sample frequencies from N(0, 2*theta^2 * I)
-    let theta = &kernel.inv_lengthscales;
+    let feat_map = kernel.feature_params_map();
     let mut w = Mat::<f64>::zeros(d_rff, d_feat);
-    if kernel.feature_params_map.is_empty() && theta.len() == 1 {
-        let scale = (2.0f64).sqrt() * theta[0];
+    if feat_map.is_empty() && inv_ls.len() == 1 {
+        let scale = (2.0f64).sqrt() * inv_ls[0];
         for i in 0..d_rff {
             for f in 0..d_feat {
                 w[(i, f)] = rng.sample::<f64, _>(StandardNormal) * scale;
@@ -109,12 +141,8 @@ pub fn build_rff(
         }
     } else {
         for f in 0..d_feat {
-            let idx = if kernel.feature_params_map.is_empty() {
-                0
-            } else {
-                kernel.feature_params_map[f]
-            };
-            let scale = (2.0f64).sqrt() * theta[idx];
+            let idx = if feat_map.is_empty() { 0 } else { feat_map[f] };
+            let scale = (2.0f64).sqrt() * inv_ls[idx];
             for i in 0..d_rff {
                 w[(i, f)] = rng.sample::<f64, _>(StandardNormal) * scale;
             }
@@ -126,7 +154,7 @@ pub fn build_rff(
         b[i] = rng.random::<f64>() * 2.0 * std::f64::consts::PI;
     }
 
-    let sigma = kernel.signal_variance.sqrt();
+    let sigma = kernel.signal_variance().sqrt();
     let c = sigma * (2.0 / d_rff as f64).sqrt();
 
     // Build design matrix Z: [energy rows; gradient rows]
@@ -137,7 +165,7 @@ pub fn build_rff(
         w: w.clone(),
         b: b.clone(),
         c,
-        frozen: frozen.clone(),
+        feature_mode: feature_mode.clone(),
         alpha: vec![0.0; d_rff],
         a_chol: Mat::<f64>::zeros(d_rff, d_rff),
         dim,
@@ -220,7 +248,7 @@ pub fn build_rff(
         w,
         b,
         c,
-        frozen,
+        feature_mode,
         alpha,
         a_chol: a_chol_l,
         dim,

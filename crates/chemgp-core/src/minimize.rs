@@ -3,15 +3,15 @@
 //! Ports `minimize.jl`: the main outer loop.
 
 use crate::distances::euclidean_distance;
-use crate::kernel::MolInvDistSE;
+use crate::kernel::Kernel;
 use crate::optim_step::clip_to_max_move;
-use crate::predict::predict;
+use crate::predict::build_pred_model;
 use crate::sampling::{prune_training_data, select_optim_subset};
 use crate::train::train_model;
 use crate::trust::{
     adaptive_trust_threshold, min_distance_to_data, trust_distance, trust_min_distance, TrustMetric,
 };
-use crate::types::{init_mol_invdist_se, GPModel, TrainingData};
+use crate::types::{init_kernel, GPModel, TrainingData};
 use crate::StopReason;
 use rand::Rng;
 use serde::{Deserialize, Serialize};
@@ -96,7 +96,7 @@ pub type OracleFn = dyn Fn(&[f64]) -> (f64, Vec<f64>);
 pub fn gp_minimize(
     oracle: &OracleFn,
     x_init: &[f64],
-    kernel: &MolInvDistSE,
+    kernel: &Kernel,
     config: &MinimizationConfig,
     training_data: Option<TrainingData>,
 ) -> MinimizationResult {
@@ -135,7 +135,7 @@ pub fn gp_minimize(
 
     let mut x_curr = x_init.to_vec();
     let mut oracle_calls = td.npoints();
-    let mut prev_kern: Option<MolInvDistSE> = None;
+    let mut prev_kern: Option<Kernel> = None;
     let eff_dedup = if cfg.dedup_tol > 0.0 {
         cfg.dedup_tol
     } else {
@@ -177,13 +177,13 @@ pub fn gp_minimize(
         y_sub.extend_from_slice(&td_sub.gradients);
 
         let kern = match &prev_kern {
-            None => init_mol_invdist_se(&td_sub, kernel),
+            None => init_kernel(&td_sub, kernel),
             Some(k) => k.clone(),
         };
 
         // Clamp hyperparams
         let clamped_ls: Vec<f64> = kern
-            .inv_lengthscales
+            .inv_lengthscales()
             .iter()
             .map(|&x| {
                 if x.is_finite() {
@@ -193,8 +193,8 @@ pub fn gp_minimize(
                 }
             })
             .collect();
-        let clamped_sv = if kern.signal_variance.is_finite() {
-            kern.signal_variance.clamp(1e-6, 1e10)
+        let clamped_sv = if kern.signal_variance().is_finite() {
+            kern.signal_variance().clamp(1e-6, 1e10)
         } else {
             1e10
         };
@@ -204,17 +204,10 @@ pub fn gp_minimize(
         train_model(&mut gp_sub, train_iters, cfg.verbose);
         prev_kern = Some(gp_sub.kernel.clone());
 
-        // Rebuild on full data
-        let e_ref = td.energies[0];
-        let mut y_gp: Vec<f64> = td.energies.iter().map(|e| e - e_ref).collect();
-        y_gp.extend_from_slice(&td.gradients);
-        let _y_mean = e_ref;
-        let y_std = 1.0;
+        // Build prediction model on full data (RFF if configured, else exact GP)
+        let pred_model = build_pred_model(&gp_sub.kernel, &td, cfg.rff_features, 42);
 
-        let gp_model = GPModel::new(gp_sub.kernel.clone(), &td, y_gp, 1e-6, 1e-4, 1e-6);
-
-        // Step 3: Optimize on GP surface via simple gradient descent
-        // (Using gradient descent instead of Optim.jl L-BFGS for simplicity)
+        // Step 3: Optimize on GP surface via L-BFGS
         let best_idx = td
             .energies
             .iter()
@@ -230,14 +223,18 @@ pub fn gp_minimize(
 
         let x_prev = x_curr.clone();
 
-        // Simple L-BFGS on GP surface
+        // L-BFGS on GP/RFF surface
         let mut x_opt = x_start;
         let mut lbfgs = crate::lbfgs::LbfgsHistory::new(10);
         let mut prev_grad: Option<Vec<f64>> = None;
+        let mut x_inner_prev = x_opt.clone();
+
+        let e_ref = td.energies[0];
 
         for inner in 0..100 {
-            let preds = predict(&gp_model, &x_opt, 1);
-            let g_pred: Vec<f64> = preds[1..].iter().map(|v| v * y_std).collect();
+            let preds = pred_model.predict(&x_opt);
+            let e_pred = preds[0] + e_ref;
+            let g_pred: Vec<f64> = preds[1..].to_vec();
 
             // Trust penalty gradient
             let (min_dist, nearest_idx) = {
@@ -275,26 +272,42 @@ pub fn gp_minimize(
                 break;
             }
 
-            // L-BFGS direction
+            // L-BFGS direction (track inner iterates, not outer x_prev)
             if let Some(ref pg) = prev_grad {
-                let s: Vec<f64> = x_opt.iter().zip(x_prev.iter()).map(|(a, b)| a - b).collect();
+                let s: Vec<f64> = x_opt
+                    .iter()
+                    .zip(x_inner_prev.iter())
+                    .map(|(a, b)| a - b)
+                    .collect();
                 let y: Vec<f64> = grad.iter().zip(pg.iter()).map(|(a, b)| a - b).collect();
                 lbfgs.push_pair(s, y);
             }
             prev_grad = Some(grad.clone());
+            x_inner_prev = x_opt.clone();
 
             let dir = lbfgs.compute_direction(&grad);
-            let step_size = 0.01f64.min(0.1 / g_norm);
+
+            // Step size: L-BFGS direction is curvature-scaled, so use
+            // alpha=1.0 by default, clamp displacement to trust_radius.
+            // For steepest descent (no pairs), cap step to avoid overshoot.
+            let dir_norm: f64 = dir.iter().map(|x| x * x).sum::<f64>().sqrt();
+            let step_size = if lbfgs.count > 0 {
+                // L-BFGS: trust the direction, clip by trust radius
+                (1.0f64).min(cfg.trust_radius / (dir_norm + 1e-30))
+            } else {
+                // Steepest descent: step = trust_radius / (2 * |dir|)
+                (cfg.trust_radius * 0.5 / (dir_norm + 1e-30)).min(0.1 / g_norm)
+            };
             for j in 0..d {
                 x_opt[j] += step_size * dir[j];
             }
 
-            let _ = inner; // suppress warning
+            let _ = (inner, e_pred); // suppress warnings
         }
 
         x_curr = x_opt;
 
-        // Per-atom max-move clip
+        // Per-atom max-move clip (only for 3D molecular coordinates)
         let n_at = d / 3;
         if n_at >= 2 && d == 3 * n_at {
             let disp: Vec<f64> = x_curr
@@ -359,7 +372,7 @@ pub fn gp_minimize(
         let (e_true, g_true) = oracle(&x_curr);
         oracle_calls += 1;
 
-        // Per-atom max force
+        // Per-atom max force (only for 3D molecules, otherwise L2 norm)
         let g_norm = if n_atoms >= 1 && d == 3 * n_atoms {
             (0..n_atoms)
                 .map(|a| {
