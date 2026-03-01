@@ -231,6 +231,20 @@ fn normalize_vec(v: &[f64]) -> Vec<f64> {
     if n > 1e-18 { v.iter().map(|x| x / n).collect() } else { v.to_vec() }
 }
 
+/// Project out translational components from a 3N vector.
+fn project_out_translations(v: &mut [f64]) {
+    let n = v.len() / 3;
+    if n == 0 {
+        return;
+    }
+    for d in 0..3 {
+        let avg: f64 = (0..n).map(|i| v[3 * i + d]).sum::<f64>() / n as f64;
+        for i in 0..n {
+            v[3 * i + d] -= avg;
+        }
+    }
+}
+
 fn curvature_fn(g0: &[f64], g1: &[f64], orient: &[f64], sep: f64) -> f64 {
     let dot: f64 = g1.iter().zip(g0.iter()).zip(orient.iter())
         .map(|((g1, g0), o)| (g1 - g0) * o).sum();
@@ -319,17 +333,28 @@ fn rotate_on_gp(
 
         let a1 = (f_dtheta - f_0 * cos2) / sin2;
         let b1 = -0.5 * f_0;
-        let mut angle_final = 0.5 * (b1 / (a1 + 1e-18)).atan();
+        let angle_rot = 0.5 * (b1 / (a1 + 1e-18)).atan();
 
-        if a1 * (2.0 * angle_final).cos() + b1 * (2.0 * angle_final).sin() > 0.0 {
+        // EON-style curvature improvement check
+        let mut angle_final = angle_rot;
+        let mut c_est = c0 + a1 * ((2.0 * angle_final).cos() - 1.0) + b1 * (2.0 * angle_final).sin();
+        if c_est > c0 {
             angle_final += std::f64::consts::FRAC_PI_2;
+            c_est = c0 + a1 * ((2.0 * angle_final).cos() - 1.0) + b1 * (2.0 * angle_final).sin();
+        }
+
+        // If rotation still worsens curvature, don't rotate
+        if c_est > c0 {
+            break;
         }
 
         let orient_new: Vec<f64> = orient.iter().zip(orient_rot.iter())
             .map(|(o, r)| angle_final.cos() * o + angle_final.sin() * r).collect();
-        *orient = normalize_vec(&orient_new);
+        let mut new_orient = normalize_vec(&orient_new);
+        project_out_translations(&mut new_orient);
+        *orient = normalize_vec(&new_orient);
 
-        best_c = c0 + a1 * ((2.0 * angle_final).cos() - 1.0) + b1 * (2.0 * angle_final).sin();
+        best_c = c_est;
     }
     best_c
 }
@@ -347,6 +372,8 @@ pub fn otgpd(
     let d = x_init.len();
 
     let mut orient = normalize_vec(orient_init);
+    project_out_translations(&mut orient);
+    orient = normalize_vec(&orient);
     let mut r = x_init.to_vec();
 
     let mut td = training_data.unwrap_or_else(|| TrainingData::new(d));
@@ -388,13 +415,13 @@ pub fn otgpd(
     // Phase 1: Initial rotation on true potential
     if cfg.initial_rotation && cfg.max_initial_rot > 0 {
         for _ in 0..cfg.max_initial_rot {
-            let (_, g0) = oracle(&r);
+            let (e0_rot, g0) = oracle(&r);
             let r1_cur: Vec<f64> = r.iter().zip(orient.iter())
                 .map(|(r, o)| r + cfg.dimer_sep * o).collect();
-            let (_, g1) = oracle(&r1_cur);
+            let (e1_rot, g1) = oracle(&r1_cur);
             oracle_calls += 2;
-            td.add_point(&r, g0[0], &g0); // Note: using gradient as is
-            td.add_point(&r1_cur, g1[0], &g1);
+            td.add_point(&r, e0_rot, &g0);
+            td.add_point(&r1_cur, e1_rot, &g1);
 
             let f_rot = rotational_force_fn(&g0, &g1, &orient, cfg.dimer_sep);
             let f_rot_norm = vec_norm(&f_rot);
@@ -410,41 +437,56 @@ pub fn otgpd(
                 .map(|(o, r)| dtheta.cos() * o + dtheta.sin() * r).collect();
             let orient_trial = normalize_vec(&orient_trial);
 
-            // Trial evaluation
+            // Check if trial rotation improves curvature
             let r1_trial: Vec<f64> = r.iter().zip(orient_trial.iter())
                 .map(|(r, o)| r + cfg.dimer_sep * o).collect();
-            let (_, g1_trial) = oracle(&r1_trial);
+            let (e1_trial, g1_trial) = oracle(&r1_trial);
             oracle_calls += 1;
-            td.add_point(&r1_trial, 0.0, &g1_trial);
+            td.add_point(&r1_trial, e1_trial, &g1_trial);
 
-            let f_rot_trial = rotational_force_fn(&g0, &g1_trial, &orient_trial, cfg.dimer_sep);
+            let c_trial = curvature_fn(&g0, &g1_trial, &orient_trial, cfg.dimer_sep);
 
-            let orient_rot_trial: Vec<f64> = orient.iter().zip(orient_rot.iter())
-                .map(|(o, r)| -dtheta.sin() * o + dtheta.cos() * r).collect();
-            let orient_rot_trial = normalize_vec(&orient_rot_trial);
+            if c_trial < c0 {
+                // Trial improved curvature: try parabolic refinement
+                let f_rot_trial = rotational_force_fn(&g0, &g1_trial, &orient_trial, cfg.dimer_sep);
+                let orient_rot_trial: Vec<f64> = orient.iter().zip(orient_rot.iter())
+                    .map(|(o, r)| -dtheta.sin() * o + dtheta.cos() * r).collect();
+                let orient_rot_trial = normalize_vec(&orient_rot_trial);
 
-            let f_dtheta = vec_dot(&f_rot_trial, &orient_rot_trial);
-            let f_0 = vec_dot(&f_rot, &orient_rot);
+                let f_dtheta = vec_dot(&f_rot_trial, &orient_rot_trial);
+                let f_0 = vec_dot(&f_rot, &orient_rot);
+                let sin2 = (2.0 * dtheta).sin();
+                let cos2 = (2.0 * dtheta).cos();
 
-            let sin2 = (2.0 * dtheta).sin();
-            let cos2 = (2.0 * dtheta).cos();
+                if sin2.abs() > 1e-12 {
+                    let a1 = (f_dtheta - f_0 * cos2) / sin2;
+                    let b1 = -0.5 * f_0;
+                    let angle_rot = 0.5 * (b1 / (a1 + 1e-18)).atan();
 
-            if sin2.abs() < 1e-12 {
-                orient = orient_trial;
-                continue;
+                    let mut angle_final = angle_rot;
+                    let mut c_est = c0 + a1 * ((2.0 * angle_final).cos() - 1.0)
+                        + b1 * (2.0 * angle_final).sin();
+                    if c_est > c0 {
+                        angle_final += std::f64::consts::FRAC_PI_2;
+                        c_est = c0 + a1 * ((2.0 * angle_final).cos() - 1.0)
+                            + b1 * (2.0 * angle_final).sin();
+                    }
+
+                    if c_est < c0 {
+                        let orient_new: Vec<f64> = orient.iter().zip(orient_rot.iter())
+                            .map(|(o, r)| angle_final.cos() * o + angle_final.sin() * r).collect();
+                        orient = normalize_vec(&orient_new);
+                    } else {
+                        // Parabolic failed: use trial angle
+                        orient = orient_trial;
+                    }
+                } else {
+                    orient = orient_trial;
+                }
+                project_out_translations(&mut orient);
+                orient = normalize_vec(&orient);
             }
-
-            let a1 = (f_dtheta - f_0 * cos2) / sin2;
-            let b1 = -0.5 * f_0;
-            let mut angle_final = 0.5 * (b1 / (a1 + 1e-18)).atan();
-
-            if a1 * (2.0 * angle_final).cos() + b1 * (2.0 * angle_final).sin() > 0.0 {
-                angle_final += std::f64::consts::FRAC_PI_2;
-            }
-
-            let orient_new: Vec<f64> = orient.iter().zip(orient_rot.iter())
-                .map(|(o, r)| angle_final.cos() * o + angle_final.sin() * r).collect();
-            orient = normalize_vec(&orient_new);
+            // else: trial worsened curvature, keep current orient
         }
     }
 
@@ -528,13 +570,16 @@ pub fn otgpd(
         let _r_before = r.clone();
 
         for _inner_iter in 0..cfg.max_inner_iter {
-            // Rotate
+            // Rotate (then project out translations)
             let _c = rotate_on_gp(&r, &mut orient, cfg.dimer_sep, &model, e_ref, cfg);
+            project_out_translations(&mut orient);
+            orient = normalize_vec(&orient);
 
             // Predict
             let (g0, g1, _e0) = predict_dimer(&r, &orient, cfg.dimer_sep, &model, e_ref);
             let c = curvature_fn(&g0, &g1, &orient, cfg.dimer_sep);
-            let f_trans = translational_force_fn(&g0, &orient);
+            let mut f_trans = translational_force_fn(&g0, &orient);
+            project_out_translations(&mut f_trans);
             let f_norm = vec_norm(&f_trans);
 
             if f_norm < t_gp {
@@ -543,8 +588,9 @@ pub fn otgpd(
 
             // Translate
             let step = if c < 0.0 {
-                // Negative curvature: L-BFGS
-                let dir = trans_hist.compute_direction(&f_trans);
+                // Negative curvature: L-BFGS (pass -f_trans as gradient to minimize)
+                let neg_f: Vec<f64> = f_trans.iter().map(|x| -x).collect();
+                let dir = trans_hist.compute_direction(&neg_f);
                 let step_size = (cfg.max_step / vec_norm(&dir).max(1e-18)).min(0.01 / f_norm);
                 dir.iter().map(|d| step_size * d).collect::<Vec<f64>>()
             } else {
@@ -588,12 +634,12 @@ pub fn otgpd(
                 break;
             }
 
-            // Update L-BFGS history
+            // Update L-BFGS history (y = change in -f_trans, i.e., gradient of minimized quantity)
             if c < 0.0 {
                 let s: Vec<f64> = r_new.iter().zip(r.iter()).map(|(a, b)| a - b).collect();
                 let (g0_new, _g1_new, _) = predict_dimer(&r_new, &orient, cfg.dimer_sep, &model, e_ref);
                 let f_trans_new = translational_force_fn(&g0_new, &orient);
-                let y: Vec<f64> = f_trans.iter().zip(f_trans_new.iter()).map(|(a, b)| a - b).collect();
+                let y: Vec<f64> = f_trans.iter().zip(f_trans_new.iter()).map(|(a, b)| -(a - b)).collect();
                 trans_hist.push_pair(s, y);
             }
 
@@ -615,7 +661,8 @@ pub fn otgpd(
             c_true = curvature_fn(&g_true, &g_r1, &orient, cfg.dimer_sep);
         }
 
-        let f_trans_true = translational_force_fn(&g_true, &orient);
+        let mut f_trans_true = translational_force_fn(&g_true, &orient);
+        project_out_translations(&mut f_trans_true);
         let f_norm_true = vec_norm(&f_trans_true);
 
         history.e_true.push(e_true);

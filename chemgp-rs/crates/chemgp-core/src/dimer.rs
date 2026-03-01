@@ -171,6 +171,24 @@ fn translational_force(g0: &[f64], orient: &[f64]) -> Vec<f64> {
         .collect()
 }
 
+/// Project out translational components from a 3N vector.
+///
+/// For N atoms in 3D, removes the 3 rigid translation modes so the
+/// dimer operates only in the internal coordinate subspace.
+fn project_out_translations(v: &mut [f64]) {
+    let n = v.len() / 3;
+    if n == 0 {
+        return;
+    }
+    // For each Cartesian direction, remove the uniform translation component
+    for d in 0..3 {
+        let avg: f64 = (0..n).map(|i| v[3 * i + d]).sum::<f64>() / n as f64;
+        for i in 0..n {
+            v[3 * i + d] -= avg;
+        }
+    }
+}
+
 fn vec_norm(v: &[f64]) -> f64 {
     v.iter().map(|x| x * x).sum::<f64>().sqrt()
 }
@@ -207,6 +225,7 @@ fn predict_dimer_gradients(
 
     (g0, g1, e0)
 }
+
 
 // ============================================================================
 // Rotation with modified Newton (parabolic fit)
@@ -280,10 +299,18 @@ fn rotate_dimer_newton(
 
     let angle_rot = 0.5 * (b1 / (a1 + 1e-18)).atan();
 
-    // Ensure minimum, not maximum
+    // Ensure minimum, not maximum (EON ImprovedDimer logic)
     let mut angle_final = angle_rot;
-    if a1 * (2.0 * angle_rot).cos() + b1 * (2.0 * angle_rot).sin() > 0.0 {
+    let mut c_est = c0 + a1 * ((2.0 * angle_final).cos() - 1.0) + b1 * (2.0 * angle_final).sin();
+    if c_est > c0 {
+        // Curvature got worse: try pi/2 shift
         angle_final += std::f64::consts::FRAC_PI_2;
+        c_est = c0 + a1 * ((2.0 * angle_final).cos() - 1.0) + b1 * (2.0 * angle_final).sin();
+    }
+
+    // If rotation still makes curvature worse, don't rotate
+    if c_est > c0 {
+        return Some(c0);
     }
 
     let orient_new: Vec<f64> = orient
@@ -291,9 +318,10 @@ fn rotate_dimer_newton(
         .zip(orient_rot.iter())
         .map(|(o, r)| angle_final.cos() * o + angle_final.sin() * r)
         .collect();
-    state.orient = normalize_vec(&orient_new);
+    let mut new_orient = normalize_vec(&orient_new);
+    project_out_translations(&mut new_orient);
+    state.orient = normalize_vec(&new_orient);
 
-    let c_est = c0 + a1 * ((2.0 * angle_final).cos() - 1.0) + b1 * (2.0 * angle_final).sin();
     Some(c_est)
 }
 
@@ -496,7 +524,9 @@ pub fn gp_dimer(
     let d = x_init.len();
     let cfg = config;
 
-    let orient = normalize_vec(orient_init);
+    let mut orient = normalize_vec(orient_init);
+    project_out_translations(&mut orient);
+    orient = normalize_vec(&orient);
     let mut state = DimerState {
         r: x_init.to_vec(),
         orient,
@@ -615,8 +645,10 @@ pub fn gp_dimer(
         let _r_prev_outer = state.r.clone();
 
         for inner_iter in 0..cfg.max_inner_iter {
-            // Rotate dimer
+            // Rotate dimer (then project out translations from orient)
             rotate_dimer(&mut state, &model, cfg, &mut rot_hist, y_std);
+            project_out_translations(&mut state.orient);
+            state.orient = normalize_vec(&state.orient);
 
             // Predict at current position
             let (g0, g1, e0) = predict_dimer_gradients(&state, &model, y_std);
@@ -750,12 +782,12 @@ pub fn gp_dimer(
                 .collect();
         }
 
-        // Call oracle
+        // Call oracle at midpoint and image 1
         let (e_true, g_true) = oracle(&state.r);
         oracle_calls += 1;
 
         let (r1, _) = dimer_images(&state);
-        let (_, g1_true) = oracle(&r1);
+        let (e1_true, g1_true) = oracle(&r1);
         oracle_calls += 1;
 
         let c_true = curvature(&g_true, &g1_true, &state.orient, state.dimer_sep);
@@ -788,7 +820,7 @@ pub fn gp_dimer(
         history.oracle_calls.push(oracle_calls);
 
         td.add_point(&state.r, e_true, &g_true);
-        td.add_point(&r1, oracle(&r1).0, &g1_true);
+        td.add_point(&r1, e1_true, &g1_true);
 
         // Convergence check
         if f_norm_true < cfg.t_force_true && c_true < 0.0 {
@@ -827,8 +859,11 @@ pub fn standard_dimer(
     let d = x_init.len();
     let mut r = x_init.to_vec();
     let mut orient = normalize_vec(orient_init);
+    project_out_translations(&mut orient);
+    orient = normalize_vec(&orient);
     let mut oracle_calls = 0;
     let mut history = DimerHistory::default();
+    #[allow(unused_assignments)]
     let mut stop_reason = StopReason::MaxIterations;
     let max_step = 0.05;
     let call_cap = if config.max_oracle_calls > 0 { config.max_oracle_calls } else { 600 };
@@ -842,15 +877,100 @@ pub fn standard_dimer(
         let (e0, g0) = oracle(&r);
         oracle_calls += 1;
 
-        // Evaluate at image 1
+        // Evaluate at image 1 (along current orient)
         let r1: Vec<f64> = r.iter().zip(orient.iter())
             .map(|(r, o)| r + dimer_sep * o).collect();
         let (_e1, g1) = oracle(&r1);
         oracle_calls += 1;
 
-        let c = curvature(&g0, &g1, &orient, dimer_sep);
+        let c0 = curvature(&g0, &g1, &orient, dimer_sep);
+
+        // Rotate: parabolic fit rotation step (Henkelman & Jonsson 1999)
+        let f_rot = rotational_force(&g0, &g1, &orient, dimer_sep);
+        let f_rot_norm = vec_norm(&f_rot);
+        let mut g1_final = g1.clone();
+        if f_rot_norm > 1e-10 {
+            let dtheta = 0.5 * (0.5 * f_rot_norm / (c0.abs() + 1e-10)).atan().min(0.3);
+            let orient_rot: Vec<f64> = f_rot.iter().map(|x| x / f_rot_norm).collect();
+
+            // Trial rotation at dtheta
+            let orient_trial: Vec<f64> = orient.iter().zip(orient_rot.iter())
+                .map(|(o, r)| dtheta.cos() * o + dtheta.sin() * r).collect();
+            let orient_trial = normalize_vec(&orient_trial);
+
+            let r1_trial: Vec<f64> = r.iter().zip(orient_trial.iter())
+                .map(|(r, o)| r + dimer_sep * o).collect();
+            let (_, g1_trial) = oracle(&r1_trial);
+            oracle_calls += 1;
+
+            // Parabolic fit for optimal angle
+            let f_rot_trial = rotational_force(&g0, &g1_trial, &orient_trial, dimer_sep);
+            let orient_rot_trial: Vec<f64> = orient.iter().zip(orient_rot.iter())
+                .map(|(o, r)| -dtheta.sin() * o + dtheta.cos() * r).collect();
+            let orient_rot_trial = normalize_vec(&orient_rot_trial);
+
+            let f_dtheta = vec_dot(&f_rot_trial, &orient_rot_trial);
+            let f_0 = vec_dot(&f_rot, &orient_rot);
+            let sin2 = (2.0 * dtheta).sin();
+            let cos2 = (2.0 * dtheta).cos();
+
+            // Check if trial rotation improves curvature
+            let c_trial = curvature(&g0, &g1_trial, &orient_trial, dimer_sep);
+
+            if c_trial < c0 {
+                // Trial rotation improved curvature: accept and try parabolic refinement
+                if sin2.abs() > 1e-12 {
+                    let a1 = (f_dtheta - f_0 * cos2) / sin2;
+                    let b1 = -0.5 * f_0;
+                    let mut angle_final = 0.5 * (b1 / (a1 + 1e-18)).atan();
+                    let mut c_est = c0 + a1 * ((2.0 * angle_final).cos() - 1.0)
+                        + b1 * (2.0 * angle_final).sin();
+                    if c_est > c0 {
+                        angle_final += std::f64::consts::FRAC_PI_2;
+                        c_est = c0 + a1 * ((2.0 * angle_final).cos() - 1.0)
+                            + b1 * (2.0 * angle_final).sin();
+                    }
+
+                    if c_est < c0 {
+                        // Parabolic fit improvement: use fitted angle
+                        let orient_new: Vec<f64> = orient.iter().zip(orient_rot.iter())
+                            .map(|(o, r)| angle_final.cos() * o + angle_final.sin() * r).collect();
+                        orient = normalize_vec(&orient_new);
+
+                        // Interpolate g1 at fitted angle
+                        if dtheta.abs() > 1e-15 {
+                            let sin_ratio_1 = (dtheta - angle_final).sin() / dtheta.sin();
+                            let sin_ratio_2 = angle_final.sin() / dtheta.sin();
+                            let cos_correction = 1.0 - angle_final.cos()
+                                - angle_final.sin() * (dtheta * 0.5).tan();
+                            g1_final = g1.iter()
+                                .zip(g1_trial.iter())
+                                .zip(g0.iter())
+                                .map(|((a, b), c)| sin_ratio_1 * a + sin_ratio_2 * b + cos_correction * c)
+                                .collect();
+                        }
+                    } else {
+                        // Parabolic fit failed: use trial angle
+                        orient = orient_trial.clone();
+                        g1_final = g1_trial.clone();
+                    }
+                } else {
+                    // sin2 too small: use trial angle directly
+                    orient = orient_trial.clone();
+                    g1_final = g1_trial.clone();
+                }
+                project_out_translations(&mut orient);
+                orient = normalize_vec(&orient);
+            }
+            // else: rotation made curvature worse, keep original orient
+        }
+
+        // Curvature and translational force with the ROTATED orient and matching g1
+        let c = curvature(&g0, &g1_final, &orient, dimer_sep);
         let f_trans = translational_force(&g0, &orient);
-        let f_norm = vec_norm(&f_trans);
+        let mut f_trans_proj = f_trans;
+        project_out_translations(&mut f_trans_proj);
+        let f_norm = vec_norm(&f_trans_proj);
 
         history.e_true.push(e0);
         history.f_true.push(f_norm);
@@ -863,52 +983,24 @@ pub fn standard_dimer(
             break;
         }
 
-        // Rotate: one finite-difference rotation step
-        let f_rot = rotational_force(&g0, &g1, &orient, dimer_sep);
-        let f_rot_norm = vec_norm(&f_rot);
-        if f_rot_norm > 1e-10 {
-            let dtheta = 0.5 * (0.5 * f_rot_norm / (c.abs() + 1e-10)).atan().min(0.3);
-            let orient_rot: Vec<f64> = f_rot.iter().map(|x| x / f_rot_norm).collect();
-
-            // Trial rotation
-            let orient_trial: Vec<f64> = orient.iter().zip(orient_rot.iter())
-                .map(|(o, r)| dtheta.cos() * o + dtheta.sin() * r).collect();
-            let orient_trial = normalize_vec(&orient_trial);
-
-            let r1_trial: Vec<f64> = r.iter().zip(orient_trial.iter())
-                .map(|(r, o)| r + dimer_sep * o).collect();
-            let (_, g1_trial) = oracle(&r1_trial);
-            oracle_calls += 1;
-
-            let f_rot_trial = rotational_force(&g0, &g1_trial, &orient_trial, dimer_sep);
-            let orient_rot_trial: Vec<f64> = orient.iter().zip(orient_rot.iter())
-                .map(|(o, r)| -dtheta.sin() * o + dtheta.cos() * r).collect();
-            let orient_rot_trial = normalize_vec(&orient_rot_trial);
-
-            let f_dtheta = vec_dot(&f_rot_trial, &orient_rot_trial);
-            let f_0 = vec_dot(&f_rot, &orient_rot);
-            let sin2 = (2.0 * dtheta).sin();
-            let cos2 = (2.0 * dtheta).cos();
-
-            if sin2.abs() > 1e-12 {
-                let a1 = (f_dtheta - f_0 * cos2) / sin2;
-                let b1 = -0.5 * f_0;
-                let mut angle_final = 0.5 * (b1 / (a1 + 1e-18)).atan();
-                if a1 * (2.0 * angle_final).cos() + b1 * (2.0 * angle_final).sin() > 0.0 {
-                    angle_final += std::f64::consts::FRAC_PI_2;
-                }
-                let orient_new: Vec<f64> = orient.iter().zip(orient_rot.iter())
-                    .map(|(o, r)| angle_final.cos() * o + angle_final.sin() * r).collect();
-                orient = normalize_vec(&orient_new);
-            } else {
-                orient = orient_trial;
+        // Translate: for negative curvature, use modified force; for positive, step along orient
+        if c < 0.0 {
+            let step_size = (max_step / f_norm.max(1e-18)).min(0.01);
+            for j in 0..d {
+                r[j] += step_size * f_trans_proj[j];
             }
-        }
-
-        // Translate along modified force
-        let step_size = (max_step / f_norm.max(1e-18)).min(0.01);
-        for j in 0..d {
-            r[j] += step_size * f_trans[j];
+        } else {
+            // Convex region: step along negative gradient projected onto orient (uphill)
+            let g_par: f64 = g0.iter().zip(orient.iter()).map(|(g, o)| g * o).sum();
+            let mut step: Vec<f64> = orient.iter().map(|o| -g_par * o).collect();
+            project_out_translations(&mut step);
+            let sn = vec_norm(&step);
+            if sn > 1e-18 {
+                let scale = max_step.min(sn) / sn;
+                for j in 0..d {
+                    r[j] += scale * config.step_convex * step[j];
+                }
+            }
         }
     }
 
