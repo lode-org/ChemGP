@@ -2,9 +2,9 @@
 """Plot GP quality figures from mb_gp_quality.jsonl.
 
 Generates:
-    mb_gp_progression.pdf  - 2x2 panel: GP mean at N=5,15,21,30
-    mb_variance.pdf        - GP variance overlay with crosshatching
-    mb_gp_error.pdf        - GP prediction error (mean - true)
+    mb_gp_progression.pdf  2x2 panel: GP mean at N=5,15,21,30
+    mb_variance.pdf        GP variance overlay with crosshatching
+    mb_gp_error.pdf        GP prediction error (mean - true)
 
 Usage:
     cargo run --release --example mb_gp_quality
@@ -18,50 +18,12 @@ from pathlib import Path
 
 import numpy as np
 
-try:
-    import matplotlib
+sys.path.insert(0, str(Path(__file__).parent))
+from _theme import CORAL, MAGENTA, SKY, TEAL, YELLOW, HAS_PARSERS, plt
+from matplotlib.patches import Patch
 
-    matplotlib.use("Agg")
-    import matplotlib.pyplot as plt
-    from matplotlib import font_manager
-    from matplotlib.patches import Patch
-except ImportError:
-    print("matplotlib required: pip install matplotlib", file=sys.stderr)
-    sys.exit(1)
-
-# -- Theme ------------------------------------------------------------------
-
-_FONT_FAMILY = "sans-serif"
-for font in font_manager.findSystemFonts():
-    if "Jost" in font:
-        _FONT_FAMILY = "Jost"
-        break
-
-plt.rcParams.update(
-    {
-        "font.family": _FONT_FAMILY,
-        "font.size": 11,
-        "axes.labelsize": 11,
-        "axes.titlesize": 12,
-        "legend.fontsize": 9,
-        "xtick.labelsize": 9,
-        "ytick.labelsize": 9,
-        "axes.linewidth": 0.8,
-        "lines.linewidth": 1.5,
-        "axes.spines.top": False,
-        "axes.spines.right": False,
-        "figure.dpi": 150,
-        "savefig.dpi": 300,
-        "savefig.bbox": "tight",
-        "savefig.pad_inches": 0.05,
-    }
-)
-
-TEAL = "#004D40"
-CORAL = "#FF655D"
-YELLOW = "#F1DB4B"
-SKY = "#1E88E5"
-MAGENTA = "#D81B60"
+if HAS_PARSERS:
+    from rgpycrumbs.parsers.chemgp import parse_gp_quality_jsonl
 
 OUTDIR = Path("scripts/figures/tutorial/output")
 
@@ -71,8 +33,8 @@ def load_data(path="mb_gp_quality.jsonl"):
     meta = None
     minima = []
     saddles = []
-    train_points = defaultdict(list)  # n_train -> [(x, y, e)]
-    grids = defaultdict(list)  # n_train -> [(ix, iy, x, y, true_e, gp_e, gp_var)]
+    train_points = defaultdict(list)
+    grids = defaultdict(list)
 
     with open(path) as f:
         for line in f:
@@ -129,7 +91,6 @@ def plot_gp_progression(meta, minima, saddles, train_points, grids):
         ax.contour(X, Y, gp_e, levels=levels, colors="k", linewidths=0.2,
                    alpha=0.3)
 
-        # Training points
         pts = train_points[n]
         tx = [p["x"] for p in pts]
         ty = [p["y"] for p in pts]
@@ -156,7 +117,7 @@ def plot_gp_progression(meta, minima, saddles, train_points, grids):
 
 def plot_variance(meta, minima, saddles, train_points, grids):
     """GP variance overlay with diagonal crosshatching on MB surface."""
-    n = 21  # use the medium training set
+    n = 21
     if n not in grids:
         print(f"No grid data for N={n}", file=sys.stderr)
         return
@@ -165,41 +126,33 @@ def plot_variance(meta, minima, saddles, train_points, grids):
 
     fig, ax = plt.subplots(1, 1, figsize=(6, 4.5))
 
-    # Background: true PES contour
     levels = np.linspace(-200, 50, 30)
     ax.contourf(X, Y, true_e, levels=levels, cmap="RdYlGn_r", extend="both",
                 alpha=0.7)
     ax.contour(X, Y, true_e, levels=levels, colors="k", linewidths=0.2,
                alpha=0.3)
 
-    # Variance overlay: semi-transparent blue fill
     var_clip = np.clip(gp_var, 0, np.percentile(gp_var, 95))
-    var_norm = var_clip / var_clip.max()
 
-    # Low/medium/high variance thresholds
     med_thresh = np.percentile(gp_var, 50)
     high_thresh = np.percentile(gp_var, 75)
 
-    # Medium variance: light crosshatching
     ax.contourf(X, Y, gp_var, levels=[med_thresh, high_thresh],
                 colors="none", hatches=["//"], alpha=0.0)
     ax.contour(X, Y, gp_var, levels=[med_thresh], colors=[SKY],
                linewidths=1.0, linestyles="dashed")
 
-    # High variance: dense crosshatching
     ax.contourf(X, Y, gp_var, levels=[high_thresh, gp_var.max() * 1.1],
                 colors="none", hatches=["xxxx"], alpha=0.0)
     ax.contour(X, Y, gp_var, levels=[high_thresh], colors=[MAGENTA],
                linewidths=1.2, linestyles="solid")
 
-    # Training points
     pts = train_points[n]
     tx = [p["x"] for p in pts]
     ty = [p["y"] for p in pts]
     ax.scatter(tx, ty, c="white", edgecolors=TEAL, s=35, linewidths=1.0,
                zorder=5, label="Training points")
 
-    # Stationary points
     for m in minima:
         ax.plot(m["x"], m["y"], "*", color=YELLOW, markersize=12,
                 markeredgecolor="k", markeredgewidth=0.5, zorder=6)
@@ -207,12 +160,10 @@ def plot_variance(meta, minima, saddles, train_points, grids):
         ax.plot(s["x"], s["y"], "D", color=CORAL, markersize=7,
                 markeredgecolor="k", markeredgewidth=0.5, zorder=6)
 
-    # Max variance point
     max_idx = np.unravel_index(np.argmax(gp_var), gp_var.shape)
     ax.plot(X[max_idx], Y[max_idx], "v", color=MAGENTA, markersize=10,
             markeredgecolor="k", markeredgewidth=0.5, zorder=6)
 
-    # Legend
     legend_elements = [
         Patch(facecolor="none", edgecolor=SKY, linestyle="dashed",
               label=f"Medium variance (>{med_thresh:.0f})"),
@@ -252,14 +203,12 @@ def plot_gp_error(meta, minima, saddles, train_points, grids):
 
     fig, ax = plt.subplots(1, 1, figsize=(6, 4.5))
 
-    # Diverging colormap centered at zero
     vmax = np.percentile(np.abs(error), 95)
     cs = ax.contourf(X, Y, error, levels=np.linspace(-vmax, vmax, 25),
                      cmap="RdBu_r", extend="both")
     ax.contour(X, Y, error, levels=[0], colors="k", linewidths=1.0)
     fig.colorbar(cs, ax=ax, label="GP error (predicted - true)", shrink=0.85)
 
-    # Training points
     pts = train_points[n]
     tx = [p["x"] for p in pts]
     ty = [p["y"] for p in pts]

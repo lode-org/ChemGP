@@ -19,6 +19,16 @@ oracle calls to recover.
 Trust regions prevent this by constraining steps to regions where the GP has
 data coverage.
 
+#+begin_export rst
+.. figure:: /_static/figures/mb_trust_illustration.pdf
+   :width: 90%
+
+   Trust region on a 1D slice of the Muller-Brown surface. Inside the trust
+   region (teal), the GP prediction tracks the true surface closely. Outside
+   (coral shading), the GP extrapolates and diverges. The dashed lines mark
+   the trust boundary at distance 0.4 from the nearest training point.
+#+end_export
+
 ** Distance metrics
 
 ChemGP supports two trust distance metrics via =TrustMetric=:

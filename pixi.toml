@@ -81,7 +81,8 @@ cmd = """
 python scripts/plot_comparisons.py && \
 python scripts/plot_surfaces.py && \
 python scripts/plot_gp_quality.py && \
-python scripts/plot_rff_quality.py
+python scripts/plot_rff_quality.py && \
+python scripts/plot_trust_illustration.py
 """
 depends-on = ["examples"]
 
