@@ -1,0 +1,13 @@
+[package]
+name = "chemgp-py"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[lib]
+name = "chemgp"
+crate-type = ["cdylib"]
+
+[dependencies]
+chemgp-core = { path = "../chemgp-core" }
+pyo3 = { version = "0.23", features = ["extension-module"] }

@@ -1,0 +1,19 @@
+[workspace]
+resolver = "2"
+members = ["crates/chemgp-core", "crates/chemgp-py"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+
+[workspace.dependencies]
+faer = "0.24"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+rand = "0.9"
+rand_distr = "0.5"
+chemfiles = "0.10"
+readcon-core = "0.4"
+approx = "0.5"
+rgpot-core = { path = "/home/rgoswami/Git/Github/OmniPotentRPC/rgpot/rgpot-core" }
