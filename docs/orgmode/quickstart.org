@@ -4,8 +4,7 @@
 
 * Quickstart
 
-This page covers running the included examples to verify the setup and see
-GP-accelerated optimization in action.
+This page covers running the included examples and interpreting their output.
 
 ** From Rust
 
@@ -22,14 +21,111 @@ Run the Muller-Brown minimization example (2D, =CartesianSE= kernel):
 cargo run --release --example mb_minimize
 #+end_src
 
-Or the LEPS minimization example (molecular, =MolInvDistSE= kernel):
+Expected output:
+
+#+begin_example
+GP minimize: 7 oracle calls, final E = -108.1667, converged = true
+Direct minimize: 34 oracle calls, final E = -108.1667
+Output: mb_minimize_comparison.jsonl
+#+end_example
+
+The GP minimizer found the same minimum in 7 oracle calls that gradient descent
+needed 34 for. The =.jsonl= file contains per-step convergence data.
+
+** Examples
+
+Four self-contained examples demonstrate the core methods. Each produces a
+=.jsonl= file with per-step data:
+
+*** mb_minimize (2D, CartesianSE)
+
+GP-guided minimization on the Muller-Brown 2D surface. Demonstrates the
+=CartesianSE= kernel and the importance of =dedup_tol= for non-molecular
+surfaces. GP: 7 calls, direct GD: 34 calls.
+
+#+begin_src bash
+cargo run --release --example mb_minimize
+#+end_src
+
+*** leps_minimize (molecular, MolInvDistSE)
+
+GP-guided minimization on the LEPS surface (collinear H + H2). Demonstrates the
+=MolInvDistSE= kernel with molecular invariances. GP: 9 calls, direct GD: 200+
+calls (still not converged).
 
 #+begin_src bash
 cargo run --release --example leps_minimize
 #+end_src
 
-Both produce =.jsonl= files with convergence data for GP-guided vs direct
-gradient descent minimization.
+*** leps_dimer (saddle point search)
+
+Standard dimer vs GP-Dimer vs OTGPD for transition state search. Demonstrates
+how the GP surrogate reduces saddle point search cost by ~3.5x.
+
+#+begin_src bash
+cargo run --release --example leps_dimer
+#+end_src
+
+*** leps_neb (minimum energy path)
+
+Standard NEB vs GP-NEB AIE vs GP-NEB OIE for finding the minimum energy path.
+Demonstrates per-bead FPS and LCB image selection. OIE: 49 calls, standard: 127
+calls.
+
+#+begin_src bash
+cargo run --release --example leps_neb
+#+end_src
+
+** Interpreting JSONL output
+
+Each example writes a =.jsonl= file (one JSON object per line). The fields vary
+by method:
+
+*** Minimize JSONL
+
+#+begin_example
+{"method":"gp_minimize","step":0,"energy":-45.123,"oracle_calls":1}
+{"method":"gp_minimize","step":1,"energy":-87.456,"oracle_calls":2}
+...
+{"method":"direct_minimize","step":0,"energy":-45.123,"oracle_calls":1}
+#+end_example
+
+- =method=: "gp_minimize" or "direct_minimize"
+- =step=: iteration index
+- =energy=: energy at this step
+- =oracle_calls=: cumulative oracle call count
+
+Plot =energy= vs =oracle_calls= to compare GP efficiency against direct GD.
+
+*** Dimer JSONL
+
+#+begin_example
+{"method":"gp_dimer","step":5,"energy":-0.012,"force":0.045,"oracle_calls":8}
+#+end_example
+
+- =force=: gradient norm (should decrease toward convergence)
+
+Plot =force= vs =oracle_calls= on a log scale to compare convergence rates.
+
+*** NEB JSONL
+
+#+begin_example
+{"method":"gp_neb_oie","step":10,"max_force":0.078,"oracle_calls":30}
+#+end_example
+
+- =max_force=: maximum NEB force across all images
+
+Plot =max_force= vs =oracle_calls= on a log scale.
+
+** Plotting
+
+Generate comparison plots from the JSONL data:
+
+#+begin_src bash
+pixi run -e dev figures
+#+end_src
+
+This runs all examples and produces PDF figures in =scripts/figures/tutorial/output/=.
 
 ** From Python
 
@@ -43,31 +139,8 @@ Python API documentation will be added as the =chemgp-py= bindings are expanded.
 The bindings use [[https://pyo3.rs/][pyo3]] and expose the same core algorithms
 available in Rust.
 
-** Examples
+** Next steps
 
-Four self-contained examples demonstrate the core methods:
-
-- =mb_minimize= :: GP-guided minimization on the Muller-Brown 2D surface using
-  the =CartesianSE= kernel. GP converges in 7 oracle calls; direct GD needs 34.
-
-- =leps_minimize= :: GP-guided minimization on the LEPS surface (collinear H +
-  H2) using the =MolInvDistSE= kernel. GP converges in 9 oracle calls; direct
-  GD needs 200+.
-
-- =leps_dimer= :: Standard dimer vs GP-Dimer vs OTGPD for saddle point search.
-  GP methods converge in ~13 calls; standard dimer needs ~45.
-
-- =leps_neb= :: Standard NEB vs GP-NEB AIE vs GP-NEB OIE for minimum energy
-  path. OIE converges in ~49 calls; standard NEB needs ~127.
-
-Run all examples:
-
-#+begin_src bash
-cargo run --release --example mb_minimize
-cargo run --release --example leps_minimize
-cargo run --release --example leps_dimer
-cargo run --release --example leps_neb
-#+end_src
-
-Each writes a =.jsonl= file with per-step convergence data suitable for
-plotting.
+- [[file:tutorials/gp_basics.org][GP Basics]]: understand the GP model underlying all methods
+- [[file:tutorials/minimization.org][Minimization]]: detailed tutorial on GP-guided minimization
+- [[file:reference/architecture.org][Architecture]]: how the four shared components work together

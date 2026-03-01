@@ -10,43 +10,79 @@ The GP minimizer (=gp_minimize=) replaces most oracle calls with GP predictions,
 querying the true potential only when the GP uncertainty is high or when the
 predicted step leaves the trust region.
 
-*** Algorithm outline
+The basic idea: instead of calling the oracle at every gradient descent step,
+train a GP on the oracle results so far, optimize on the GP surrogate (which is
+free), then call the oracle only at the proposed minimum. Each oracle call is
+expensive (minutes for DFT); each GP prediction is cheap (microseconds). The
+savings compound: an optimization that needs 200 gradient descent steps needs
+only ~10 outer iterations, each with one oracle call.
 
-1. *Initialization*: Evaluate the oracle at the starting point and several small
-   perturbations (controlled by =n_initial_perturb= and =perturb_scale=). These
-   bootstrap the GP with enough data to start predicting.
+** Algorithm
 
-2. *GP training*: Select an FPS subset of the training data near the current
-   point. Train hyperparameters on this subset via SCG (MAP-NLL). Build a
-   =PredModel= (exact GP or RFF) on the full training set.
+Each outer iteration proceeds as follows:
 
-3. *Inner optimization*: Minimize the GP surrogate using L-BFGS within the trust
-   region. The trust region penalty prevents stepping into regions where the GP
-   has no data.
+*** 1. FPS subset selection
 
-4. *Oracle call*: Evaluate the true potential at the proposed minimum. Compare
-   the GP prediction with the oracle result.
+Select the K most informative training points near the current position. /Why/:
+the full training set may contain points far from the current region that
+contribute little to local prediction accuracy but dominate Cholesky cost.
+Farthest Point Sampling (FPS) keeps points that are spread out and cover the
+local neighborhood.
 
-5. *Convergence check*: If the true gradient norm is below =conv_tol=, stop.
-   Otherwise, add the new point to training data and repeat from step 2.
+*** 2. Train GP hyperparameters
 
-*** Key components
+Run SCG (Scaled Conjugate Gradient) on the MAP-NLL objective using the FPS
+subset. /Why/: hyperparameters (signal variance, length scales) must adapt as
+the optimizer explores different regions of the PES. Training on the subset
+instead of full data keeps the cost manageable (O(K^3*(1+D)^3) instead of
+O(N^3*(1+D)^3)).
 
-- *FPS subset selection* limits the GP training set to the most informative
-  points, keeping Cholesky cost manageable.
+*** 3. Build PredModel
 
-- *Trust regions* clip proposed steps to regions where the GP has sufficient
-  training data coverage. EMD distance for molecules, Euclidean distance for
-  Cartesian surfaces.
+Construct a prediction model on the /full/ training data, using hyperparameters
+from step 2. If =rff_features > 0=, this builds an RFF model; otherwise an
+exact GP. /Why train on subset but predict on full data/: the FPS subset is
+chosen for efficient training (avoiding large Cholesky factorizations). But for
+prediction, we want the GP to use all available information, especially points
+near the proposed next step that may not be in the training subset.
 
-- *LCB exploration* adds a variance penalty to the predicted energy, encouraging
-  sampling of uncertain regions.
+*** 4. Inner L-BFGS optimization
 
-- *Energy regression gate* rejects steps where the GP predicts implausibly low
-  energies (extrapolation artifacts).
+Minimize the GP surrogate surface using L-BFGS within the trust region. The
+objective includes a soft penalty for leaving the trust region:
 
-- *PredModel dispatch* uses RFF approximation for scalable prediction when
-  =rff_features > 0=, otherwise exact GP.
+#+begin_example
+objective(x) = GP_energy(x) + penalty_coeff * max(0, dist(x) - trust_radius)^2
+#+end_example
+
+/Why L-BFGS/: it uses curvature information from gradient history, converging
+much faster than steepest descent on the smooth GP surface. /Why soft penalty
+instead of hard clipping/: L-BFGS needs smooth gradients; a hard trust boundary
+would create discontinuities that break the L-BFGS curvature model.
+
+The L-BFGS direction is already curvature-scaled, so the step size is 1.0
+(clamped by trust_radius). Before L-BFGS has accumulated curvature history, the
+step is =trust_radius * 0.5 / ||d||= (conservative steepest descent).
+
+*** 5. LCB exploration
+
+If the GP variance at the proposed minimum is high (sigma > 1e-4), add a
+variance penalty to the energy: E_lcb = E_gp + kappa * sigma. /Why/: the GP
+might predict a low energy in a region where it has no data. LCB penalizes such
+overconfident extrapolation, steering the optimizer toward points where the GP
+has support.
+
+The energy regression gate provides an additional safety check: if the predicted
+energy is implausibly low (more than 3 standard deviations below the observed
+range), the step is rejected. /Why/: far from training data, the GP posterior
+mean can extrapolate to arbitrary values. The gate catches these before they
+corrupt the optimization trajectory.
+
+*** 6. Oracle call and convergence check
+
+Evaluate the true potential at the proposed point. If the gradient norm is below
+=conv_tol=, declare convergence. Otherwise, add the new point to the training
+data and return to step 1.
 
 ** Muller-Brown Example
 
@@ -57,20 +93,21 @@ two saddle points. Using the =CartesianSE= kernel:
 cargo run --release --example mb_minimize
 #+end_src
 
-GP minimization converges to the nearest local minimum in 7 oracle calls. Direct
-gradient descent with the same convergence tolerance needs 34 calls, a 4.9x
-improvement.
+GP minimization converges to the nearest local minimum in 7-8 oracle calls.
+Direct gradient descent with the same convergence tolerance needs 34 calls, a
+~5x improvement.
 
-*** Configuration notes for non-molecular surfaces
+*** Configuration for non-molecular surfaces
 
-Non-molecular surfaces require explicit =dedup_tol= configuration. The default
-(=conv_tol * 0.1=) can be too large relative to the coordinate space. For
-Muller-Brown, the coordinate space spans roughly 3 units, but a =conv_tol= of
-10 gives =dedup_tol = 1.0=, which rejects almost all new training points and
-causes the GP to stagnate.
+Non-molecular surfaces need explicit =dedup_tol=. The default (=conv_tol * 0.1=)
+is designed for molecular systems where coordinate ranges and convergence
+tolerances are similar in scale. For Muller-Brown, the coordinate space spans ~3
+units, but a =conv_tol= of 10 (appropriate for the large MB gradients) gives
+=dedup_tol = 1.0=, which rejects almost all new training points. Setting
+=dedup_tol = 0.001= explicitly fixes this.
 
-Use =TrustMetric::Euclidean= instead of the default EMD metric, since there are
-no interatomic distances to compute.
+Use =TrustMetric::Euclidean= for Cartesian surfaces (there are no interatomic
+distances for EMD to operate on).
 
 #+begin_src rust
 use chemgp_core::kernel::{Kernel, CartesianSE};
@@ -80,7 +117,7 @@ use chemgp_core::trust::TrustMetric;
 let kernel = Kernel::Cartesian(CartesianSE::new(100.0, 2.0));
 let mut cfg = MinimizationConfig::default();
 cfg.conv_tol = 1.0;
-cfg.dedup_tol = 0.001;    // explicit, not derived from conv_tol
+cfg.dedup_tol = 0.001;    // MB coordinates span ~3 units
 cfg.n_initial_perturb = 3;
 cfg.perturb_scale = 0.15;
 cfg.trust_radius = 0.3;
@@ -101,8 +138,11 @@ GP minimization converges in 9 oracle calls to the reactant minimum (E =
 -4.515). Direct gradient descent needs 200 calls and still has not converged to
 the same precision.
 
-The =MolInvDistSE= kernel handles the molecular invariances automatically. EMD
-trust distance is the appropriate metric here.
+The improvement is larger here than for Muller-Brown because:
+- The MolInvDistSE kernel captures the molecular invariances, giving the GP
+  better generalization from fewer points
+- The LEPS surface has a narrow reaction valley where gradient descent takes many
+  small steps, but the GP learns the valley shape and jumps to the minimum
 
 #+begin_src rust
 use chemgp_core::kernel::{Kernel, MolInvDistSE};
@@ -120,25 +160,40 @@ let cfg = MinimizationConfig::default();
 | Parameter | Default | Description |
 |-----------+---------+-------------|
 | =conv_tol= | 5e-3 | Gradient norm convergence threshold |
-| =trust_radius= | 0.1 | Max distance from training data |
+| =trust_radius= | 0.1 | Max distance from training data for trust |
 | =max_oracle_calls= | 0 (unlimited) | Oracle call budget |
-| =n_initial_perturb= | 4 | Bootstrap perturbation points |
-| =perturb_scale= | 0.1 | Perturbation radius |
+| =n_initial_perturb= | 4 | Number of bootstrap perturbation points |
+| =perturb_scale= | 0.1 | Radius of bootstrap perturbations |
 | =penalty_coeff= | 1e3 | Trust region penalty in inner L-BFGS |
-| =rff_features= | 0 (exact GP) | RFF feature count |
-| =fps_history= | 0 (use all) | FPS subset size |
-| =trust_metric= | Emd | Distance metric for trust region |
-| =dedup_tol= | 0 (auto) | Minimum distance between training points |
+| =rff_features= | 0 (exact GP) | RFF feature count (0 = exact GP) |
+| =fps_history= | 0 (use all) | FPS subset size (0 = no FPS) |
+| =trust_metric= | Emd | Distance metric: Emd or Euclidean |
+| =dedup_tol= | 0 (auto) | Min distance between training points |
 | =max_move= | 0.1 | Maximum step size per outer iteration |
 | =energy_regression_tol= | 0 (auto) | Gate for implausible energy predictions |
 
-** Inner L-BFGS details
+** Troubleshooting
 
-The inner optimization uses L-BFGS with trust region penalty. The L-BFGS
-direction is already curvature-scaled, so the step size is 1.0 (clamped by
-=trust_radius=). For the initial steepest descent steps (before L-BFGS has
-curvature history), the step size is =trust_radius * 0.5 / ||d||=.
+*** GP not converging (force stagnation)
 
-The penalty term =penalty_coeff * max(0, dist - trust_radius)^2= softly
-constrains the inner optimization to stay within the trust region, where =dist=
-is the Euclidean or EMD distance from the nearest training point.
+If the optimizer reports =ForceStagnation=, the GP predictions are not improving
+between iterations. Common causes:
+
+- =dedup_tol= too large: new points are being rejected as duplicates. Check that
+  =dedup_tol= is small relative to your coordinate space.
+- =trust_radius= too small: the inner optimizer cannot reach better points. Try
+  increasing it.
+- Poor hyperparameter initialization: the GP is too stiff or too smooth. Check
+  that =init_kernel= is being called (it is, by default).
+
+*** Too many oracle calls
+
+If convergence takes more oracle calls than expected:
+
+- =n_initial_perturb= too large: wastes oracle calls on bootstrap. For molecular
+  systems with good starting geometry, 2-3 perturbations suffice.
+- =trust_radius= too large: the inner optimizer proposes points too far from
+  training data, where the GP is unreliable. The oracle confirms bad predictions,
+  wasting a call.
+- No RFF: for large training sets (>30 points), switch to RFF to keep inner
+  optimization fast.

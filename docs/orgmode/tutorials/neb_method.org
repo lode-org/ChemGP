@@ -4,52 +4,113 @@
 
 * Nudged Elastic Band
 
-** Minimum Energy Path
+** Why minimum energy paths?
 
-The Nudged Elastic Band (NEB) method finds minimum energy paths (MEPs) between
-two known states (reactant and product). ChemGP provides three variants:
+A minimum energy path (MEP) between two states (reactant and product) reveals
+the reaction mechanism: the sequence of structural changes the molecule undergoes,
+the transition state geometry, and the energy barrier that controls the rate.
 
-- Standard NEB :: All images evaluated at every iteration. Spring forces keep
-  images distributed along the path while the perpendicular force component
-  drives relaxation.
+Unlike saddle point search (dimer), which finds a single transition state, NEB
+maps the /entire/ pathway. This is essential when the reaction involves multiple
+intermediate states, or when the connectivity between reactant and product is
+unknown.
 
-- GP-NEB AIE (All Image Evaluation) :: Evaluates all images with the oracle
-  each outer iteration, then relaxes on the GP surrogate. Per-bead FPS subset
-  selection ensures each image has local GP coverage.
+** How NEB works
 
-- GP-NEB OIE (One Image Evaluation) :: Evaluates only one image per outer
-  iteration, selected by LCB scoring (force magnitude + uncertainty). Most
-  oracle-efficient variant.
+An elastic band of I images (geometries) is initialized between fixed endpoints
+(reactant and product). At each iteration:
 
-** How NEB Works
+1. *Tangent*: compute the path tangent at each image from its neighbors.
 
-An elastic band of I images is initialized between the reactant and product
-(endpoints are fixed). At each iteration:
+2. *Force decomposition*: the true force at each image is decomposed into:
+   - Perpendicular component (drives relaxation toward the MEP)
+   - Parallel component (removed, replaced by spring force)
 
-1. Compute the path tangent at each image.
-2. Decompose forces into parallel (spring) and perpendicular (potential) components.
-3. The NEB force is: =F_neb = F_spring_parallel + F_potential_perpendicular=.
-4. Relax the band under NEB forces until convergence.
+3. *Spring force*: artificial springs between adjacent images keep them
+   distributed along the path: =F_spring = k * (||x_{i+1} - x_i|| - ||x_i -
+   x_{i-1}||) * tangent=.
 
-The spring forces prevent images from clustering near minima. Climbing image NEB
-(CI-NEB) modifies the highest-energy image to climb toward the saddle point.
+4. *NEB force*: the total force on each image is =F_neb = F_perp + F_spring=.
+   This nudges images toward the MEP while keeping them evenly spaced.
 
-** Path Initialization
+5. *Relaxation*: images are moved under NEB forces until convergence.
 
-Two initialization strategies are available:
+*** Climbing image
 
-- *Linear interpolation*: straight-line interpolation in Cartesian coordinates.
-  Simple but can give poor initial paths for molecular rearrangements.
+Once the band is partially converged, the highest-energy image is modified: its
+NEB force is replaced by the full force with the parallel component /reversed/.
+This drives the highest image uphill along the path, refining the saddle point
+estimate. CI-NEB gives a better saddle energy than plain NEB.
 
-- *IDPP/sIDPP*: Image Dependent Pair Potential. Optimizes the initial path to
-  match target interatomic distances interpolated between endpoints. Produces
-  physically reasonable starting paths for molecular systems.
+** Path initialization
+
+The initial path matters: a poor initial guess requires many more iterations.
+
+- *Linear interpolation*: straight-line in Cartesian coordinates. Simple, fast,
+  but can produce unphysical geometries (atoms passing through each other).
+
+- *IDPP (Image Dependent Pair Potential)*: optimizes the initial path so that
+  interatomic distances are interpolated smoothly between endpoints. Produces
+  physically reasonable starting paths for molecular rearrangements. Recommended
+  for molecular systems.
+
+** GP-NEB: AIE and OIE
+
+The standard NEB evaluates the oracle at every image at every iteration. For I
+images and M iterations, that is I*M oracle calls. GP-NEB reduces this by
+training a GP surrogate and relaxing on it.
+
+*** AIE (All Image Evaluation)
+
+Each outer iteration evaluates /all/ images with the oracle, then relaxes the
+band on the GP surrogate for several inner iterations.
+
+- Cost: I oracle calls per outer iteration
+- Advantage: every image has fresh oracle data, so the GP is well-trained
+- On LEPS: ~62 total oracle calls (vs 127 standard)
+
+*** OIE (One Image Evaluation)
+
+Each outer iteration evaluates /one/ image, selected by an LCB criterion. The
+other images are predicted by the GP.
+
+- Cost: 1 oracle call per outer iteration
+- Advantage: maximally oracle-efficient
+- Challenge: must choose /which/ image to evaluate wisely
+- On LEPS: ~49 total oracle calls
+
+OIE is the most oracle-efficient variant, but requires good image selection.
+
+** LCB scoring in OIE
+
+OIE selects the image to evaluate by scoring each with:
+
+#+begin_example
+score = |F_perp| + kappa * sigma_perp
+#+end_example
+
+where:
+- =|F_perp|= is the magnitude of the NEB force perpendicular to the path. A
+  large perpendicular force means the image is far from the MEP.
+- =sigma_perp= is the GP gradient variance projected perpendicular to the path.
+  High variance means the GP is uncertain about the perpendicular force.
+
+The combination prioritizes images that are both far from the MEP /and/
+uncertain. This is more effective than either criterion alone: force magnitude
+catches images the GP thinks are wrong; variance catches images where the GP does
+not know.
+
+Priority cascade: before LCB scoring, two special cases take precedence:
+1. *Early-stop image*: if an image's force increased after the last oracle call,
+   it is re-evaluated immediately (the GP went wrong there).
+2. *Climbing image*: the saddle-point image gets priority to ensure the barrier
+   estimate is accurate.
 
 ** Scalability
 
-For large systems, the GP covariance matrix grows as O((N*(1+D))^2) where N is
-the number of training points and D the dimensionality. Two mechanisms keep this
-tractable:
+For N training points in D dimensions, the GP covariance matrix is N*(1+D) x
+N*(1+D). In the NEB inner loop with I images and M relaxation steps, each image
+calls predict, for I*M predict calls. This is untenable with large N.
 
 *** Per-bead FPS subset
 
@@ -57,53 +118,43 @@ For each NEB image, select the K nearest training points (by trust distance).
 Take the union across all images. If the union exceeds =max_gp_points=, trim
 with global FPS.
 
-This ensures each image retains local coverage, unlike global FPS which can
-starve individual beads of nearby training data.
+/Why per-bead instead of global FPS/: global FPS selects points spread across
+the entire training set. This can leave individual images without nearby training
+data (all K selected points might cluster near one end of the path). Per-bead FPS
+ensures each image retains local coverage, then the global union merges them.
 
-*** Random Fourier Features (RFF)
+*** RFF for inner-loop prediction
 
-Approximate the GP with a linear model that has O(D_rff) prediction cost.
-Hyperparameters are trained on the exact GP (via SCG on the FPS subset), then
-the RFF model is built on all training data. The =PredModel= enum dispatches
-between exact GP and RFF transparently.
+Train hyperparameters on the FPS subset (exact GP via SCG), then build an RFF
+model on ALL training data. The RFF model has O(D_rff) prediction cost vs
+O(N*(1+D)) for exact GP.
 
-For NEB OIE, seeded RFF (=seed=42=, 1000 features) is needed for reliable
-convergence. Without seeding, the stochastic RFF approximation can cause the
-image selection to oscillate.
+/Why seeded RFF for OIE/: RFF sampling is stochastic (random frequency matrix).
+With different random seeds, the same GP gives slightly different predictions.
+In OIE, this stochasticity causes the LCB scoring to oscillate: different images
+are selected each iteration, and the path never settles. Seeding the RFF
+(=seed=42=, 1000 features) eliminates this source of non-determinism. AIE is
+less sensitive because all images get oracle data anyway.
 
-** LCB in OIE
-
-OIE selects which image to evaluate by scoring each with:
-
-#+begin_example
-score = |F_perp| + kappa * sigma_perp
-#+end_example
-
-where =sigma_perp= is the GP gradient variance projected into the plane
-perpendicular to the path tangent. This preferentially evaluates images with
-uncertain NEB forces, which is where the path might not be converged.
-
-Priority cascade: early-stop image > climbing image > LCB score.
-
-** LEPS Example
+** LEPS example
 
 #+begin_src bash
 cargo run --release --example leps_neb
 #+end_src
 
-On the LEPS surface, OIE converges in ~49 oracle calls, AIE in ~62, and
-standard NEB in ~127.
+On the LEPS surface: OIE converges in ~49 oracle calls, AIE in ~62, standard NEB
+in ~127.
 
 ** Configuration Reference
 
 | Parameter | Default | Description |
 |-----------+---------+-------------|
 | =n_images= | 7 | Number of interior NEB images |
-| =k_spring= | 5.0 | Spring constant |
-| =conv_tol= | 0.05 | Max NEB force norm for convergence |
+| =k_spring= | 5.0 | Spring constant for image spacing |
+| =conv_tol= | 0.05 | Max perpendicular NEB force for convergence |
 | =max_iter= | 200 | Maximum outer iterations |
 | =max_oracle_calls= | 0 (unlimited) | Oracle call budget |
 | =climbing_image= | true | Enable CI-NEB for saddle refinement |
 | =max_gp_points= | 50 | Trigger per-bead subset when N > this |
 | =rff_features= | 0 (exact GP) | RFF feature count (0 = exact GP) |
-| =use_idpp= | true | Use IDPP path initialization |
+| =use_idpp= | true | IDPP path initialization |

@@ -4,67 +4,115 @@
 
 * Trust Regions
 
-Trust regions constrain GP-guided steps to regions where the surrogate has
-reliable predictions. Without trust constraints, the optimizer can step into
-regions far from any training data, where GP predictions are unreliable and can
-produce arbitrarily wrong energies and gradients.
+** Why trust regions are necessary
 
-** Distance Metrics
+A Gaussian Process is a local model: its predictions are reliable near training
+data and degrade with distance. Far from any training point, the posterior mean
+reverts to the prior mean (typically zero) and the variance grows without bound.
 
-ChemGP supports two trust distance metrics, selected via =TrustMetric=:
+Without trust constraints, an optimizer can step to a point where the GP predicts
+a very low energy (an extrapolation artifact), call the oracle there, discover
+the energy is actually high, and waste an oracle call. Worse, the bad prediction
+can send the optimizer in entirely the wrong direction, requiring many more
+oracle calls to recover.
+
+Trust regions prevent this by constraining steps to regions where the GP has
+data coverage.
+
+** Distance metrics
+
+ChemGP supports two trust distance metrics via =TrustMetric=:
 
 *** EMD (Earth Mover's Distance)
 
-The Earth Mover's Distance between the inverse-distance features of a proposed
-point and the nearest training point. This is the natural metric for molecular
-systems because it operates in the invariant feature space. A large EMD means
-the molecular geometry is structurally different from anything in the training
-set.
+For molecular systems, the relevant distance between two geometries is not how
+far atoms moved in Cartesian space, but how different the molecular structure is.
+A rigid rotation moves every atom but changes no bond lengths. A small shift of
+one atom in a floppy molecule barely changes the energy.
 
-Implementation: brute-force assignment over sorted feature vectors. Exact for
-1D feature comparisons (which is the case for comparing individual pair-type
-distance vectors).
+EMD operates on the inverse-distance features: it computes the minimum-cost
+assignment between the sorted feature vectors of two geometries. This gives a
+structural distance that is:
+
+- Invariant under rotation and translation (by construction of the features)
+- Sensitive to bond-length changes (which dominate the energy landscape)
+- Cheap to compute (O(n_pairs * log(n_pairs)) for sorting + O(n_pairs) for the
+  1D assignment)
+
+Use EMD for all molecular systems.
 
 *** Euclidean
 
-Simple Euclidean distance in coordinate space. Use for non-molecular surfaces
-(Muller-Brown, analytical potentials) where there are no interatomic distances
-to compute.
+For non-molecular surfaces (Muller-Brown, analytical potentials), coordinates
+have direct physical meaning and there are no interatomic distances. Euclidean
+distance is the natural metric.
 
-** Trust Clipping
+Use Euclidean for analytical test surfaces and systems where coordinates directly
+parameterize the PES.
 
-When the proposed step would place the new point beyond =trust_radius= from the
-nearest training point (measured by the chosen metric), the step is clipped to
-stay within the trust region. The direction is preserved; only the magnitude is
-reduced.
+** Trust clipping
+
+When the proposed step places the new point beyond =trust_radius= from the
+nearest training point:
+
+#+begin_example
+if dist(x_proposed, nearest_train) > trust_radius:
+    x_clipped = x_current + (x_proposed - x_current) * trust_radius / dist
+#+end_example
+
+The direction is preserved; only the magnitude is reduced. /Why preserve
+direction/: the GP's gradient prediction is most reliable near training data, so
+the direction (determined by the GP gradient) is more trustworthy than the
+magnitude (determined by the GP curvature, which degrades faster with distance).
+
+*** Trust radius tuning
+
+- *Too large*: the optimizer steps into extrapolation territory. Oracle calls are
+  wasted validating bad GP predictions. The trajectory oscillates.
+- *Too small*: the optimizer takes tiny steps, needing many iterations (and
+  oracle calls) to reach the minimum. The GP is overly conservative.
+- *Rule of thumb*: start with 0.1 for molecular systems (inverse distance units)
+  and 0.3 for Cartesian surfaces.
 
 ** 1D Max-Log Distance
 
 A faster alternative to full EMD: computes the maximum absolute difference in
-log-space features across all dimensions. Used for FPS subset selection and
-coarse trust screening, where the exact distance is less critical than ranking.
-
-** Adaptive Trust Threshold (OTGPD)
-
-The OTGPD method uses an adaptive GP trust threshold instead of a fixed trust
-radius:
+log-space features across all dimensions:
 
 #+begin_example
-T_gp = max(min(F_true) / divisor, T_dimer / 10)
+d(x, y) = max_i |log(f_i(x)) - log(f_i(y))|
 #+end_example
 
-This tightens as the optimizer approaches convergence, trusting the GP more when
-forces are already small. When the GP-predicted force is below =T_gp=, the GP is
-trusted and no oracle call is made.
+Used for FPS subset selection and coarse trust screening, where ranking
+(which point is nearest?) matters more than the exact distance value.
 
-** Trust Region Penalty (Minimization)
+** Soft penalty (minimization)
 
-The inner L-BFGS for minimization uses a soft penalty rather than hard clipping:
+The inner L-BFGS for minimization uses a soft quadratic penalty instead of hard
+clipping:
 
 #+begin_example
 penalty = penalty_coeff * max(0, dist - trust_radius)^2
 #+end_example
 
-This adds a quadratic penalty to the objective when the optimizer ventures
-outside the trust region, gently steering it back without introducing
-discontinuities in the gradient.
+/Why soft instead of hard/: L-BFGS builds a curvature model from gradient
+history. Hard clipping introduces gradient discontinuities at the trust boundary,
+corrupting the curvature model. The soft penalty provides smooth gradients
+everywhere, letting L-BFGS work correctly. The penalty_coeff controls stiffness:
+larger values keep the optimizer closer to the trust region but may slow
+convergence.
+
+** Adaptive threshold (OTGPD)
+
+OTGPD replaces the geometric trust region with a force-based decision:
+
+#+begin_example
+T_gp = max(min(F_true) / divisor, T_dimer / 10)
+#+end_example
+
+When the GP-predicted force is below T_gp, trust the GP and skip the oracle.
+This is not a spatial trust region but a prediction-quality threshold: it asks
+"is the GP good enough?" rather than "is the point close enough?"
+
+The threshold tightens as the search progresses (forces decrease toward
+convergence), providing automatic adaptation without manual tuning.

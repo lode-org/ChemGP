@@ -22,46 +22,117 @@ The core library (~chemgp-core~) is written in Rust for performance and
 reproducibility. Python bindings (~chemgp~) expose the full API for
 scripting and integration with existing workflows.
 
+** Why GP acceleration?
+
+In computational chemistry, evaluating a potential energy surface (PES) through
+density functional theory or coupled cluster methods is the dominant cost. A
+single DFT gradient evaluation on a 50-atom system takes minutes; a NEB
+calculation with 7 images and 100 iterations needs 700 such evaluations.
+
+A Gaussian Process learns a surrogate of the PES from a handful of true
+evaluations. The surrogate is cheap to query (microseconds vs minutes), so the
+optimizer runs mostly on the surrogate and calls the true oracle only when the GP
+uncertainty is high. The result: the same geometry optimization that took 200
+oracle calls with gradient descent takes 9 with a GP surrogate.
+
+This works because PES are smooth (the Born-Oppenheimer approximation guarantees
+this) and because each oracle call returns both the energy /and/ its gradient.
+For a system with D Cartesian degrees of freedom, each call provides 1 + D
+observations (one scalar energy plus D gradient components), giving the GP an
+information-dense training signal.
+
+** When GP acceleration helps (and when it does not)
+
+GP surrogate methods are most effective when:
+
+- The oracle is expensive (DFT, coupled cluster, ML potentials with large models)
+- The PES is smooth (typical of ground-state electronic structure)
+- Gradients are available (the 1 + D information density is essential)
+
+GP methods are /not/ helpful when:
+
+- The oracle is cheap (empirical force fields, simple pair potentials) since GP
+  training and prediction overhead may exceed the oracle cost
+- The PES has discontinuities or sharp features (phase transitions, level
+  crossings)
+- Gradients are unavailable (energy-only GPs converge much more slowly)
+
 ** Kernels
 
 Two kernel types cover different use cases, unified under the =Kernel= enum:
 
 - =MolInvDistSE= :: Molecular kernel operating on inverse interatomic distances.
   Provides rotational and translational invariance by construction, with
-  pair-type-specific length scales. Use for molecular systems (geometry
-  optimization, saddle points, MEPs).
+  pair-type-specific length scales. Use for molecular systems where invariance
+  under rigid-body motion matters.
 
-- =CartesianSE= :: Simple squared exponential operating directly on coordinates.
-  Use for arbitrary smooth potentials (analytical surfaces, 2D demonstrations).
+- =CartesianSE= :: Squared exponential operating directly on coordinates. Use
+  for analytical test surfaces (Muller-Brown, model potentials) or when
+  rotational invariance is not needed.
+
+Choosing: for real molecules, always use =MolInvDistSE=. The =CartesianSE=
+kernel is for 2D/3D test surfaces where coordinates have direct physical meaning
+and there is no concept of interatomic distances.
 
 ** Methods
 
-- Minimization :: GP-guided local minimization with FPS subset selection, trust
-  regions, and LCB exploration. Converges in 7 oracle calls on Muller-Brown (vs
-  34 direct GD) and 9 calls on LEPS (vs 200).
+ChemGP provides four GP-accelerated optimization methods. Each targets a
+different problem in computational chemistry:
 
-- Dimer (saddle point search) :: GP-accelerated dimer method with L-BFGS
-  translation. Finds transition states in ~13 oracle calls vs ~45 for the
-  standard dimer.
+- *Minimization* :: Find a local minimum of the PES (equilibrium geometry). Use
+  when you know the system is near a minimum and want to relax it. Converges in
+  7 oracle calls on Muller-Brown (vs 34 direct GD) and 9 on LEPS (vs 200).
 
-- NEB (minimum energy path) :: All-image evaluation (AIE) and one-image
-  evaluation (OIE) variants with per-bead FPS subset selection and RFF
-  approximation for scalable inner relaxation. OIE converges in ~49 oracle calls
-  vs ~127 standard.
+- *Dimer* :: Find a first-order saddle point (transition state) by following the
+  lowest curvature mode uphill. Use when you have an approximate transition state
+  geometry and want to refine it. Converges in ~13 oracle calls vs ~45 standard.
 
-- OTGPD (optimal transport GP dimer) :: Adaptive threshold GP dimer with HOD
-  training data management. Matches GP-Dimer efficiency (~13 calls) with
-  automatic convergence threshold adjustment.
+- *NEB* :: Find the minimum energy path between two known states (reactant and
+  product). Use when you know both endpoints and want the reaction pathway and
+  barrier height. OIE variant converges in ~49 oracle calls vs ~127 standard.
+
+- *OTGPD* :: Adaptive variant of the GP-Dimer that automatically adjusts
+  the GP trust threshold. Matches GP-Dimer efficiency with less manual tuning.
+
+*** Which method should I use?
+
+| I want to... | Use | Tutorial |
+|--------------+-----+----------|
+| Relax a geometry to a minimum | Minimization | [[file:tutorials/minimization.org][Minimization]] |
+| Find a transition state | Dimer or OTGPD | [[file:tutorials/dimer_method.org][Dimer]], [[file:tutorials/otgpd.org][OTGPD]] |
+| Find a reaction pathway | NEB | [[file:tutorials/neb_method.org][NEB]] |
+| Refine a saddle from NEB | Dimer (with NEB orient) | [[file:tutorials/dimer_method.org][Dimer]] |
 
 ** Unified architecture
 
-All methods share four mechanisms, dispatched uniformly through the =PredModel=
-enum (exact GP or RFF approximation):
+All methods share four mechanisms that together make GP acceleration practical.
+Each solves a specific problem:
 
-1. *FPS subset selection* for hyperparameter training
-2. *Trust region clipping* (EMD for molecules, Euclidean for 2D)
-3. *RFF approximation* for scalable inner-loop prediction
-4. *LCB exploration* adapted per method
+1. *FPS subset selection* :: The GP covariance matrix is N*(1+D) x N*(1+D) for N
+   training points in D dimensions. Cholesky factorization costs O(N^3*(1+D)^3).
+   FPS selects the K most informative points, keeping K small enough for fast
+   training while covering the region of interest.
+
+2. *Trust region clipping* :: A GP extrapolating far from its training data can
+   predict arbitrary nonsense. Trust regions (EMD for molecules, Euclidean for
+   Cartesian surfaces) clip proposed steps to regions where the GP has data
+   coverage.
+
+3. *RFF approximation* :: Random Fourier Features replace the O(N^3) exact GP
+   with an O(D_rff^3) linear model for inner-loop predictions. Hyperparameters
+   are still trained exactly on the FPS subset; only the prediction model uses
+   the approximation.
+
+4. *LCB exploration* :: Lower Confidence Bound adds a variance penalty to
+   prevent the optimizer from getting stuck in regions where the GP is confident
+   but wrong. Adapted per method: standard for minimization, perpendicular-force
+   variance for NEB OIE, not applicable for dimer (always evaluates midpoint).
+
+** Learning path
+
+- New to GPs? Start with [[file:tutorials/gp_basics.org][GP Basics]].
+- Want to see it work? Start with [[file:quickstart.org][Quickstart]].
+- Building on ChemGP? See [[file:reference/architecture.org][Architecture]] and [[file:reference/kernel_design.org][Kernel Design]].
 
 * Getting started
 

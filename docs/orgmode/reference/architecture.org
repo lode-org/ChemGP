@@ -44,31 +44,105 @@ ChemGP/
         leps_neb.rs       # NEB vs AIE vs OIE
         leps_dimer.rs     # GP-Dimer vs OTGPD
     chemgp-py/            # pyo3 bindings
-  docs/                   # Sphinx + Shibuya documentation
+  docs/
+    export.el             # ox-rst batch export
+    orgmode/              # org source files (single source of truth)
+    source/               # generated RST (gitignored)
   scripts/                # figure generation and plotting
   data/                   # test structures (HCN, system100)
 #+end_example
 
-** Four Key Components
+** The four shared components
 
-Every GP-accelerated optimizer in ChemGP shares four mechanisms:
+Every GP-accelerated optimizer in ChemGP shares four mechanisms. Each exists
+because the naive approach (exact GP on all data, no trust, no exploration)
+fails for practical problem sizes.
 
-1. *FPS subset selection* for hyperparameter training
-2. *Trust region clipping* for step proposals (EMD for molecules, Euclidean for
-   Cartesian surfaces)
-3. *RFF approximation* for large training sets
-4. *LCB exploration* adapted per method
+*** FPS subset selection
 
-** Kernel Dispatch
+*Problem*: the GP covariance matrix for N training points with D-dimensional
+gradients is N*(1+D) x N*(1+D). Cholesky factorization costs O(N^3*(1+D)^3).
+With 50 training points and D=9 (LEPS), the matrix is 500x500. With D=150 (50
+atoms), it is 7550x7550. Training with SCG calls Cholesky at every iteration
+(~50 iterations), making the cost prohibitive.
+
+*Solution*: Farthest Point Sampling selects K << N points that are spread out
+and cover the local neighborhood. Training happens on the K-point subset, keeping
+Cholesky cost at O(K^3*(1+D)^3).
+
+*Tradeoff*: fewer training points means less information for hyperparameter
+optimization. The =fps_latest_points= parameter always includes the most recent
+points (which are near the current position) to avoid losing critical local data.
+
+*** Trust region clipping
+
+*Problem*: a GP extrapolating far from its training data produces arbitrary
+predictions. The posterior mean reverts to the prior (zero mean), and the
+optimizer can chase phantom minima or saddle points that do not exist on the true
+PES.
+
+*Solution*: measure the distance between a proposed point and the nearest
+training data. If this distance exceeds =trust_radius=, clip the step. For
+molecular systems, the distance is measured in the invariant feature space (Earth
+Mover's Distance on inverse distances). For Cartesian surfaces, plain Euclidean
+distance suffices.
+
+*Why EMD for molecules*: Euclidean distance in Cartesian coordinates is sensitive
+to rotation and translation. Two geometries that differ only by a rigid-body
+motion have large Euclidean distance but zero EMD (their interatomic distances
+are identical). EMD provides a meaningful measure of structural similarity.
+
+*** RFF approximation
+
+*Problem*: even with FPS keeping the training set small, inner optimization loops
+call =predict= hundreds of times. Each exact GP prediction costs O(N*(1+D)),
+and each =predict_with_variance= needs the Cholesky solve.
+
+*Solution*: Random Fourier Features approximate the kernel with a finite-rank
+feature map. The resulting linear model has O(D_rff) prediction cost, independent
+of N. Hyperparameters are trained exactly (SCG on the FPS subset), then the RFF
+model is built on the full training data.
+
+*Why not Nystrom*: the alternative sparse GP approximation (Nystrom) uses a
+Woodbury matrix inversion that amplifies noise. For gradient observations with
+small noise variance (1e-4), this causes instability. RFF avoids the Woodbury
+identity entirely.
+
+*Tradeoff*: RFF introduces approximation error. With D_rff = 500 features, the
+approximation is excellent for LEPS (3 atoms). Larger systems may need more
+features, but the O(D_rff^3) cost is always independent of N and D.
+
+*** LCB exploration
+
+*Problem*: the optimizer can get trapped in regions where the GP is confident
+but wrong. This happens when training data covers a local area well but the true
+PES has features (a lower minimum, a pass through a barrier) just outside the
+data region.
+
+*Solution*: Lower Confidence Bound penalizes low-variance regions:
+=E_lcb = E_gp + kappa * sigma=. Points with high variance become more
+attractive, encouraging the optimizer to sample uncertain regions before
+committing to a direction.
+
+*Adaptation per method*:
+- *Minimization*: standard LCB on the energy. Encourages exploring uncertain
+  regions around the predicted minimum.
+- *NEB OIE*: LCB on the perpendicular force variance. Selects the image where
+  the NEB force is most uncertain, which is where the path might not be converged.
+- *Dimer/OTGPD*: no LCB for point selection (always evaluates the midpoint).
+  Instead, the GP uncertainty feeds into the adaptive trust threshold.
+- *NEB AIE*: no LCB (all images are evaluated at every outer iteration).
+
+** Kernel dispatch
 
 The =Kernel= enum wraps =MolInvDistSE= (molecules) and =CartesianSE= (arbitrary
 surfaces). All code accepts =&Kernel= and dispatches through unified methods.
-See [[file:kernel_design.org][Kernel Design]] for details.
+This avoids trait objects and monomorphization bloat while supporting both kernel
+types with zero runtime overhead. See [[file:kernel_design.org][Kernel Design]] for details.
 
-** PredModel Dispatch
+** PredModel dispatch
 
-The =PredModel= enum in =predict.rs= dispatches between exact GP and RFF for
-inner-loop predictions:
+The =PredModel= enum in =predict.rs= dispatches between exact GP and RFF:
 
 #+begin_src rust
 pub enum PredModel {
@@ -77,24 +151,43 @@ pub enum PredModel {
 }
 #+end_src
 
+The asymmetry is deliberate: hyperparameters are always trained on the /exact/ GP
+(SCG needs exact NLL gradients), but the prediction model can be approximate.
+This means RFF inherits well-tuned hyperparameters without paying the exact GP
+prediction cost.
+
 All optimizers (minimize, dimer, otgpd, neb, neb_oie) use =build_pred_model()=
-to construct the appropriate variant based on =cfg.rff_features=.
-Hyperparameters are trained on the FPS subset (exact GP via SCG), then the
-prediction model is built on all training data for fast inner-loop evaluation.
+to construct the appropriate variant.
 
-** Outer Loop Pattern
+** Outer loop pattern
 
-All GP-accelerated optimizers follow the same pattern:
+All GP-accelerated optimizers follow the same outer loop:
 
-1. *FPS subset selection*: select the K most informative training points near
-   the current position.
+1. *FPS subset selection*: select the K most informative training points.
+   /Why/: keeps Cholesky cost manageable.
+
 2. *Train GP*: SCG-optimize hyperparameters on the subset.
-3. *Build PredModel*: exact GP or RFF on full training data.
-4. *Inner optimization*: optimize on the surrogate surface (L-BFGS for
-   minimize/dimer, FIRE/L-BFGS for NEB).
+   /Why/: hyperparameters must adapt as the optimizer explores new regions.
+
+3. *Build PredModel*: construct exact GP or RFF on full training data.
+   /Why/: prediction should use all available data, even points not in the
+   training subset.
+
+4. *Inner optimization*: optimize on the surrogate (L-BFGS for minimize/dimer,
+   FIRE/L-BFGS for NEB).
+   /Why/: the GP surrogate is cheap to evaluate, so aggressive optimization
+   is free.
+
 5. *Trust clip*: clip the proposed step to the trust region.
+   /Why/: prevents stepping into extrapolation territory.
+
 6. *Oracle call*: evaluate the true potential at the new point.
+   /Why/: the GP prediction must be validated; the new data improves the GP.
+
 7. *Convergence check*: compare force to tolerance.
+
+The method-specific differences (translation force for dimer, perpendicular force
+for NEB, adaptive threshold for OTGPD) happen within steps 4-6.
 
 ** StopReason
 
@@ -109,5 +202,6 @@ pub enum StopReason {
 }
 #+end_src
 
-This makes it unambiguous whether the optimization succeeded or hit a resource
-limit.
+=ForceStagnation= triggers when the force norm changes by less than 1e-10 for 3
+consecutive steps. This catches situations where the GP is stuck (e.g., due to
+dedup_tol rejecting all new training points).
