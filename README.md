@@ -2,9 +2,13 @@
 [![Documentation](https://github.com/HaoZeke/ChemGP/actions/workflows/Documentation.yml/badge.svg)](https://chemgp.rgoswami.me)
 
 Gaussian Process accelerated optimization for computational chemistry.
-ChemGP provides GP surrogate models with molecular kernels for energy
-surface exploration, reducing expensive oracle (electronic structure)
-evaluations by 3-13x.
+ChemGP provides GP surrogate models for energy surface exploration,
+reducing expensive oracle (electronic structure) evaluations by 3-22x.
+
+Two kernel types are provided: `MolInvDistSE` for molecular systems
+(operates on inverse interatomic distances, providing rotational and
+translational invariance) and `CartesianSE` for arbitrary smooth
+surfaces (operates directly on coordinates).
 
 # Methods
 
@@ -15,15 +19,21 @@ evaluations by 3-13x.
   FPS and RFF approximation
 - **OTGPD**: Adaptive threshold GP dimer with HOD training data management
 
-# LEPS Benchmark Results
+All methods share four mechanisms: FPS subset selection, EMD/Euclidean
+trust regions, RFF approximation for scalable prediction, and
+method-adapted LCB exploration. The `PredModel` enum dispatches between
+exact GP and RFF uniformly across all optimizers.
 
-| Method | Oracle calls | Speedup |
-|---|---|---|
-| GP minimize | 15 | 13x vs direct GD |
-| GP-Dimer | 13 | 3.5x vs standard |
-| OTGPD | 13 | 3.5x vs standard |
-| GP-NEB AIE | 62 | 2x vs standard |
-| GP-NEB OIE | 49 | 2.6x vs standard |
+# Benchmark Results
+
+| Surface | Method | Oracle calls | Speedup |
+|---|---|---|---|
+| Muller-Brown | GP minimize | 7 | 4.9x vs direct GD |
+| LEPS | GP minimize | 9 | 22x vs direct GD |
+| LEPS | GP-Dimer | 13 | 3.5x vs standard |
+| LEPS | OTGPD | 13 | 3.5x vs standard |
+| LEPS | GP-NEB AIE | 62 | 2x vs standard |
+| LEPS | GP-NEB OIE | 49 | 2.6x vs standard |
 
 # Building
 
@@ -35,6 +45,10 @@ cargo test -p chemgp-core
 # Examples
 
 ```shell
+# 2D analytical surface (CartesianSE kernel)
+cargo run --release --example mb_minimize
+
+# Collinear H + H2 reaction (MolInvDistSE kernel)
 cargo run --release --example leps_minimize
 cargo run --release --example leps_dimer
 cargo run --release --example leps_neb

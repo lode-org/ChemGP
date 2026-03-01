@@ -3,7 +3,7 @@
 //! Ports `nll_and_grad` from `functions.jl`.
 
 use crate::covariance::robust_cholesky;
-use crate::kernel::{kernel_blocks_and_hypergrads, MolInvDistSE};
+use crate::kernel::Kernel;
 use faer::linalg::solvers::{DenseSolveCore, Solve};
 use faer::Mat;
 use std::f64::consts::PI;
@@ -12,6 +12,7 @@ use std::f64::consts::PI;
 ///
 /// w = [log(sigma2), log(theta_1), ..., log(theta_P)]
 ///
+/// Uses `template` kernel to reconstruct the kernel with new hyperparameters.
 /// Returns (nll, gradient). Returns (Inf, zeros) on Cholesky failure.
 pub fn nll_and_grad(
     w: &[f64],
@@ -19,8 +20,7 @@ pub fn nll_and_grad(
     dim: usize,
     n: usize,
     y: &[f64],
-    frozen: &[f64],
-    feat_map: &[usize],
+    template: &Kernel,
     noise_e: f64,
     noise_g: f64,
     jitter: f64,
@@ -31,12 +31,7 @@ pub fn nll_and_grad(
     let inv_ls: Vec<f64> = w[1..].iter().map(|v| v.exp()).collect();
     let n_params = w.len();
 
-    let kern = MolInvDistSE {
-        signal_variance: sigma2,
-        inv_lengthscales: inv_ls,
-        frozen_coords: frozen.to_vec(),
-        feature_params_map: feat_map.to_vec(),
-    };
+    let kern = template.with_params(sigma2, inv_ls);
 
     let total_dim = n * (1 + dim);
     let mut k_mat = Mat::<f64>::zeros(total_dim, total_dim);
@@ -49,7 +44,7 @@ pub fn nll_and_grad(
         let s_gi = n + i * dim;
 
         // Diagonal
-        let bg = kernel_blocks_and_hypergrads(&kern, xi, xi);
+        let bg = kern.kernel_blocks_and_hypergrads(xi, xi);
         let b = &bg.blocks;
 
         k_mat[(i, i)] = b.k_ee + noise_e + jitter;
@@ -83,7 +78,7 @@ pub fn nll_and_grad(
             let xj = &x_data[j * dim..(j + 1) * dim];
             let s_gj = n + j * dim;
 
-            let bg = kernel_blocks_and_hypergrads(&kern, xi, xj);
+            let bg = kern.kernel_blocks_and_hypergrads(xi, xj);
             let b = &bg.blocks;
 
             k_mat[(i, j)] = b.k_ee;

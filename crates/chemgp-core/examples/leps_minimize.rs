@@ -2,7 +2,7 @@
 //!
 //! Outputs JSONL data for plotting: GP should converge in fewer oracle calls.
 
-use chemgp_core::kernel::MolInvDistSE;
+use chemgp_core::kernel::{Kernel, MolInvDistSE};
 use chemgp_core::minimize::{gp_minimize, MinimizationConfig};
 use chemgp_core::potentials::{leps_energy_gradient, LEPS_REACTANT};
 
@@ -13,7 +13,7 @@ fn main() {
     let x_init = LEPS_REACTANT.to_vec();
 
     // GP minimize
-    let kernel = MolInvDistSE::isotropic(1.0, 1.0, vec![]);
+    let kernel = Kernel::MolInvDist(MolInvDistSE::isotropic(1.0, 1.0, vec![]));
     let mut gp_cfg = MinimizationConfig::default();
     gp_cfg.max_iter = 100;
     gp_cfg.max_oracle_calls = 50;

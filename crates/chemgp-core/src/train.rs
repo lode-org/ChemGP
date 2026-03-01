@@ -1,6 +1,6 @@
 //! GP hyperparameter training via SCG MAP NLL.
 //!
-//! Ports `train_model!` from `functions.jl` (MolInvDistSE + fix_noise path).
+//! Ports `train_model!` from `functions.jl` (Kernel + fix_noise path).
 
 use crate::nll::nll_and_grad;
 use crate::scg::{scg_optimize, ScgConfig};
@@ -11,14 +11,14 @@ use crate::types::GPModel;
 /// Optimizes signal_variance and inv_lengthscales in log-space,
 /// keeping noise fixed. Matches C++ gpr_optim / MATLAB gpstuff.
 pub fn train_model(model: &mut GPModel, iterations: usize, verbose: bool) {
-    let frozen = model.kernel.frozen_coords.clone();
-    let feat_map = model.kernel.feature_params_map.clone();
-    let n_ls = model.kernel.inv_lengthscales.len();
+    let n_ls = model.kernel.n_ls_params();
+    let feat_map = model.kernel.feature_params_map().to_vec();
 
     // Pack to log-space
+    let inv_ls = model.kernel.inv_lengthscales();
     let mut w0 = Vec::with_capacity(1 + n_ls);
-    w0.push(model.kernel.signal_variance.max(1e-30).ln());
-    for &l in &model.kernel.inv_lengthscales {
+    w0.push(model.kernel.signal_variance().max(1e-30).ln());
+    for &l in &inv_ls {
         w0.push(l.max(1e-30).ln());
     }
     let w_prior = w0.clone();
@@ -47,10 +47,11 @@ pub fn train_model(model: &mut GPModel, iterations: usize, verbose: bool) {
     let dim = model.dim;
     let n = model.n_train;
     let y = model.y.clone();
+    let template = model.kernel.clone();
 
     let mut fg = |w: &[f64]| -> (f64, Vec<f64>) {
         nll_and_grad(
-            w, &x_data, dim, n, &y, &frozen, &feat_map, noise_e, noise_g, jit, &w_prior,
+            w, &x_data, dim, n, &y, &template, noise_e, noise_g, jit, &w_prior,
             &prior_var,
         )
     };

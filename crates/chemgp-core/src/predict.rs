@@ -1,12 +1,70 @@
 //! GP prediction: mean and variance.
 //!
 //! Ports `predict` and `predict_with_variance` from `functions.jl`.
+//! Also provides `PredModel` enum for unified exact-GP / RFF prediction.
 
 use crate::covariance::{build_full_covariance, robust_cholesky};
-use crate::kernel::kernel_blocks;
-use crate::types::GPModel;
+use crate::kernel::Kernel;
+use crate::rff::{build_rff, rff_predict, rff_predict_with_variance, RffModel};
+use crate::types::{GPModel, TrainingData};
 use faer::linalg::solvers::Solve;
 use faer::Mat;
+
+/// Prediction model: either exact GP or RFF approximation.
+pub enum PredModel {
+    Gp(GPModel),
+    Rff(RffModel),
+}
+
+impl PredModel {
+    pub fn predict(&self, x: &[f64]) -> Vec<f64> {
+        match self {
+            PredModel::Gp(m) => predict(m, x, 1),
+            PredModel::Rff(m) => rff_predict(m, x, 1),
+        }
+    }
+
+    pub fn predict_with_variance(&self, x: &[f64]) -> (Vec<f64>, Vec<f64>) {
+        match self {
+            PredModel::Gp(m) => predict_with_variance(m, x, 1),
+            PredModel::Rff(m) => rff_predict_with_variance(m, x, 1),
+        }
+    }
+}
+
+/// Build a PredModel from trained kernel + full training data.
+///
+/// When `rff_features > 0`, builds an RFF approximation with the given
+/// deterministic `seed` for reproducibility. Otherwise builds exact GP.
+pub fn build_pred_model(
+    kernel: &Kernel,
+    td: &TrainingData,
+    rff_features: usize,
+    seed: u64,
+) -> PredModel {
+    let e_ref = td.energies[0];
+    if rff_features > 0 {
+        let mut y_rff: Vec<f64> = td.energies.iter().map(|e| e - e_ref).collect();
+        y_rff.extend_from_slice(&td.gradients);
+        let rff = build_rff(
+            kernel,
+            &td.data,
+            td.dim,
+            td.npoints(),
+            &y_rff,
+            rff_features,
+            1e-6,
+            1e-4,
+            seed,
+        );
+        PredModel::Rff(rff)
+    } else {
+        let mut y_gp: Vec<f64> = td.energies.iter().map(|e| e - e_ref).collect();
+        y_gp.extend_from_slice(&td.gradients);
+        let gp_model = GPModel::new(kernel.clone(), td, y_gp, 1e-6, 1e-4, 1e-6);
+        PredModel::Gp(gp_model)
+    }
+}
 
 /// Convert a Vec<f64> to an (n, 1) column Mat.
 fn vec_to_col(v: &[f64]) -> Mat<f64> {
@@ -45,7 +103,7 @@ pub fn predict(model: &GPModel, x_test: &[f64], n_test: usize) -> Vec<f64> {
 
         for j in 0..n_train {
             let xtrain = model.train_col(j);
-            let b = kernel_blocks(&model.kernel, xt, xtrain);
+            let b = model.kernel.kernel_blocks(xt, xtrain);
 
             let c_e = j;
             let c_g_start = n_train + j * d;
@@ -112,7 +170,7 @@ pub fn predict_with_variance(
 
         for j in 0..n_train {
             let xtrain = model.train_col(j);
-            let b = kernel_blocks(&model.kernel, xt, xtrain);
+            let b = model.kernel.kernel_blocks(xt, xtrain);
 
             let c_e = j;
             let c_g_start = n_train + j * d;
@@ -156,7 +214,7 @@ pub fn predict_with_variance(
     // Prior variance (diagonal of K_**)
     for i in 0..n_test {
         let xt = &x_test[i * d..(i + 1) * d];
-        let b = kernel_blocks(&model.kernel, xt, xt);
+        let b = model.kernel.kernel_blocks(xt, xt);
         let r_e = i * dim_test_block;
         variance[r_e] = b.k_ee;
         for dd in 0..d {

@@ -9,14 +9,20 @@ Add `chemgp-core` to your `Cargo.toml`:
 chemgp-core = "0.1"
 ```
 
-Run the LEPS minimization example:
+Run the Muller-Brown minimization example (2D, CartesianSE kernel):
+
+```shell
+cargo run --release --example mb_minimize
+```
+
+Or the LEPS minimization example (molecular, MolInvDistSE kernel):
 
 ```shell
 cargo run --release --example leps_minimize
 ```
 
-This produces `leps_minimize_comparison.jsonl` with convergence data
-for GP-guided vs direct gradient descent minimization.
+Both produce `.jsonl` files with convergence data for GP-guided vs
+direct gradient descent minimization.
 
 ## From Python
 
@@ -32,12 +38,17 @@ core algorithms available in Rust.
 
 ## Examples
 
-Three self-contained examples demonstrate the core methods on the LEPS
-potential energy surface (collinear H + H2 reaction):
+Four self-contained examples demonstrate the core methods:
+
+`mb_minimize`
+: GP-guided minimization on the Muller-Brown 2D surface using the
+  `CartesianSE` kernel. GP converges in 7 oracle calls; direct GD
+  needs 34.
 
 `leps_minimize`
-: GP-guided minimization vs direct gradient descent.
-  GP converges in ~15 oracle calls; direct GD needs 200+.
+: GP-guided minimization on the LEPS surface (collinear H + H2) using
+  the `MolInvDistSE` kernel. GP converges in 9 oracle calls; direct
+  GD needs 200+.
 
 `leps_dimer`
 : Standard dimer vs GP-Dimer vs OTGPD for saddle point search.
@@ -50,6 +61,7 @@ potential energy surface (collinear H + H2 reaction):
 Run all examples:
 
 ```shell
+cargo run --release --example mb_minimize
 cargo run --release --example leps_minimize
 cargo run --release --example leps_dimer
 cargo run --release --example leps_neb
