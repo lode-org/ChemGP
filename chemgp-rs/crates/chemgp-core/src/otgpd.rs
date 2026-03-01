@@ -448,6 +448,18 @@ pub fn otgpd(
         }
     }
 
+    // Record initial state in history (before GP loop)
+    {
+        let f_trans_init = translational_force_fn(&g_r, &orient);
+        let f_norm_init = vec_norm(&f_trans_init);
+        let c_init = curvature_fn(&g_r, &g_r1, &orient, cfg.dimer_sep);
+        history.e_true.push(e_r);
+        history.f_true.push(f_norm_init);
+        history.curv_true.push(c_init);
+        history.oracle_calls.push(oracle_calls);
+        history.t_gp.push(f64::NAN);
+    }
+
     // Phase 2: GP-accelerated loop
     let mut prev_kern: Option<MolInvDistSE> = None;
     let mut stop_reason = StopReason::MaxIterations;
@@ -490,7 +502,7 @@ pub fn otgpd(
             Some(k) => k.clone(),
         };
 
-        let mut gp_sub = GPModel::new(kern, &td_sub, y_sub, 1e-6, 1e-4, 1e-6);
+        let mut gp_sub = GPModel::new(kern, &td_sub, y_sub.clone(), 1e-6, 1e-4, 1e-6);
         train_model(&mut gp_sub, train_iters, cfg.verbose);
         prev_kern = Some(gp_sub.kernel.clone());
 
@@ -499,11 +511,9 @@ pub fn otgpd(
             hod_state.check(&gp_sub, cfg);
         }
 
-        // Rebuild on full data
-        let e_ref = td.energies[0];
-        let mut y_gp: Vec<f64> = td.energies.iter().map(|e| e - e_ref).collect();
-        y_gp.extend_from_slice(&td.gradients);
-        let model = GPModel::new(gp_sub.kernel.clone(), &td, y_gp, 1e-6, 1e-4, 1e-6);
+        // Use trained kernel on subset for prediction (fast, O(K^3))
+        let model = GPModel::new(gp_sub.kernel.clone(), &td_sub, y_sub, 1e-6, 1e-4, 1e-6);
+        let e_ref = e_ref_sub;
 
         // Adaptive GP threshold
         let t_gp = if cfg.divisor_t_dimer_gp > 0.0 && !history.f_true.is_empty() {

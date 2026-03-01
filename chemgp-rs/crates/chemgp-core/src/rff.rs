@@ -6,7 +6,8 @@ use crate::invdist::compute_inverse_distances;
 use crate::kernel::MolInvDistSE;
 use faer::linalg::solvers::Solve;
 use faer::{Mat, Side};
-use rand::Rng;
+use rand::rngs::StdRng;
+use rand::{Rng, SeedableRng};
 use rand_distr::StandardNormal;
 
 /// RFF model for fast GP prediction.
@@ -87,13 +88,14 @@ pub fn build_rff(
     d_rff: usize,
     noise_var: f64,
     grad_noise_var: f64,
+    seed: u64,
 ) -> RffModel {
     let frozen = kernel.frozen_coords.clone();
     let n_atoms = dim / 3;
     let n_frozen = frozen.len() / 3;
     let d_feat = n_atoms * (n_atoms - 1) / 2 + n_atoms * n_frozen;
 
-    let mut rng = rand::rng();
+    let mut rng = StdRng::seed_from_u64(seed);
 
     // Sample frequencies from N(0, 2*theta^2 * I)
     let theta = &kernel.inv_lengthscales;
