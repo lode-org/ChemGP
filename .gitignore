@@ -24,5 +24,9 @@ scratch/
 # Figure script output
 scripts/figures/tutorial/output/
 
+# Sphinx build output
+docs/build/
+docs/Manifest.toml
+
 # Logs
 *.log

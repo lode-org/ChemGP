@@ -1,0 +1,41 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Build
+        run: cargo build -p chemgp-core
+
+      - name: Test
+        run: cargo test -p chemgp-core
+
+      - name: Clippy
+        run: cargo clippy -p chemgp-core -- -D warnings
+
+  examples:
+    runs-on: ubuntu-latest
+    needs: test
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Run examples
+        run: |
+          cargo run --release --example leps_minimize
+          cargo run --release --example leps_dimer
+          cargo run --release --example leps_neb

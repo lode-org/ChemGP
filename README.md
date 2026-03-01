@@ -1,135 +1,62 @@
-[![CI](https://github.com/lode-org/ChemGP.jl/actions/workflows/CI.yml/badge.svg?branch=main)](https://github.com/lode-org/ChemGP.jl/actions/workflows/CI.yml?query=branch%3Amain)
-[![Documentation](https://github.com/lode-org/ChemGP.jl/actions/workflows/Documentation.yml/badge.svg)](https://lode-org.github.io/ChemGP.jl/dev/)
-[![Pre-commit](https://github.com/lode-org/ChemGP.jl/actions/workflows/pre_commit.yml/badge.svg)](https://github.com/lode-org/ChemGP.jl/actions/workflows/pre_commit.yml)
+[![CI](https://github.com/HaoZeke/ChemGP/actions/workflows/CI.yml/badge.svg?branch=main)](https://github.com/HaoZeke/ChemGP/actions/workflows/CI.yml?query=branch%3Amain)
+[![Documentation](https://github.com/HaoZeke/ChemGP/actions/workflows/Documentation.yml/badge.svg)](https://chemgp.rgoswami.me)
 
-A Julia package for Gaussian Process (GP) guided molecular geometry
-optimization. ChemGP provides GP surrogate models with molecular kernels for
-energy surface exploration, including minimization, saddle-point search (dimer
-method), nudged elastic band (NEB) path optimization, and optimal transport GP
-dimer (OTGPD).
+Gaussian Process accelerated optimization for computational chemistry.
+ChemGP provides GP surrogate models with molecular kernels for energy
+surface exploration, reducing expensive oracle (electronic structure)
+evaluations by 3-13x.
 
+# Methods
 
-# Features
+- **Minimization**: GP-guided local optimization with FPS subset
+  selection, EMD trust regions, and LCB exploration
+- **Dimer**: GP-accelerated saddle point search with L-BFGS translation
+- **NEB**: All-image (AIE) and one-image (OIE) evaluation with per-bead
+  FPS and RFF approximation
+- **OTGPD**: Adaptive threshold GP dimer with HOD training data management
 
--   **Molecular kernels**: Inverse-distance based SE, Matern 5/2, and Matern 3/2
-    kernels with kernel composition (sum, product, constant offset)
--   **GP surrogate**: Full covariance with energy+gradient observations, SCG
-    hyperparameter optimization with analytical MAP NLL gradients
--   **Minimization**: Trust-region GP-guided geometry optimization with JSONL
-    machine-readable output (file or TCP socket)
--   **Dimer method**: GP-accelerated saddle point search
--   **NEB**: Standard NEB, GP-NEB with all-image evaluation (AIE) and
-    outer-image-only evaluation (OIE)
--   **OTGPD**: Optimal Transport GP Dimer for transition state search
--   **Oracles**: Built-in Lennard-Jones, Muller-Brown, and LEPS potentials; RPC
-    oracle for remote potential evaluation via [rgpot](https://github.com/OmniPotentRPC/rgpot)
--   **AtomsBase integration**: Optional package extension for loading structures
-    from standard file formats (extxyz, POSCAR, etc.) via AtomsBase/AtomsIO
+# LEPS Benchmark Results
 
+| Method | Oracle calls | Speedup |
+|---|---|---|
+| GP minimize | 15 | 13x vs direct GD |
+| GP-Dimer | 13 | 3.5x vs standard |
+| OTGPD | 13 | 3.5x vs standard |
+| GP-NEB AIE | 62 | 2x vs standard |
+| GP-NEB OIE | 49 | 2.6x vs standard |
 
-# Installation
+# Building
 
-ChemGP.jl is not yet registered. Install directly from GitHub:
+```shell
+cargo build --release
+cargo test -p chemgp-core
+```
 
-    using Pkg
-    Pkg.add(url="https://github.com/lode-org/ChemGP.jl")
+# Examples
 
+```shell
+cargo run --release --example leps_minimize
+cargo run --release --example leps_dimer
+cargo run --release --example leps_neb
+```
 
-# Quick Start
+Each writes a `.jsonl` file with per-step convergence data.
 
-    using ChemGP
+# Python Bindings
 
-    # Create a GP model with a molecular kernel
-    kernel = MolInvDistSE(1.0, 1.0)
-    model = GPModel(kernel; noise=1e-6)
+```shell
+pip install maturin
+cd crates/chemgp-py
+maturin develop --release
+```
 
-    # Set up training data for a 3-atom system
-    td = TrainingData(3)
+# Documentation
 
-    # Evaluate oracle and add point
-    coords = random_cluster(3, 2.0)
-    E, G = lj_energy_gradient(coords)
-    add_point!(td, coords, E, G)
+```shell
+pixi run -e docs docbld
+```
 
-    # Train and predict
-    train_model!(model, td)
-    E_pred, G_pred = predict(model, td, coords)
-
-See the [Quick Start tutorial](https://lode-org.github.io/ChemGP.jl/dev/tutorials/quickstart/) for a complete walkthrough.
-
-
-# Development Setup
-
-ChemGP uses [pixi](https://pixi.sh) for environment management:
-
-    pixi install
-    pixi r instantiate
-
-
-## Available Tasks
-
-| Task | Command | Description |
-|------|---------|-------------|
-| Instantiate | `pixi r instantiate` | Install Julia project dependencies |
-| Test | `pixi r test` | Run the Julia test suite |
-| Format | `pixi r fmt` | Format all Julia files |
-| Lint | `pixi r lint` | Check formatting and run all pre-commit hooks |
-| Pre-commit | `pixi r pre-commit` | Run all pre-commit hooks |
-| Generate README | `pixi r -e docs gen-readme` | Export `readme_src.org` to `README.md` |
-| Install docs deps | `pixi r -e docs docinstall` | Install documentation dependencies |
-| Build docs | `pixi r -e docs docbld` | Build documentation locally |
-| Clean docs | `pixi r -e docs docdel` | Remove documentation build artifacts |
-| Diagrams | `pixi r -e docs diagrams` | Regenerate architecture diagrams from `.dot` sources |
-
-
-## Running Tests
-
-    pixi r test
-
-
-## Building Documentation
-
-    pixi r -e docs docinstall
-    pixi r -e docs docbld
-
-The built documentation will be in `docs/build/`.
-
-
-## Pre-commit Hooks
-
-Install pre-commit hooks for automatic formatting and linting:
-
-    uvx pre-commit install
-
-Run all hooks manually:
-
-    pixi r pre-commit
-
-
-# Contributing
-
-1.  Clone and set up the environment:
-
-        git clone https://github.com/lode-org/ChemGP.jl.git
-        cd ChemGP.jl
-        pixi install
-        pixi r instantiate
-
-2.  Install pre-commit hooks:
-
-        uvx pre-commit install
-
-3.  Make your changes, then verify:
-
-        pixi r test
-        pixi r lint
-
-4.  Code style is enforced by [JuliaFormatter](https://domluna.github.io/JuliaFormatter.jl/stable/) (Blue style,
-    4-space indent). Run `pixi r fmt` to auto-format before committing.
-
-5.  Architecture diagrams live in `docs/src/assets/diagrams/` as Graphviz
-    `.dot` files. After editing, regenerate with `pixi r -e docs diagrams`.
-
+Or visit [chemgp.rgoswami.me](https://chemgp.rgoswami.me).
 
 # License
 
