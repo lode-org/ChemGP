@@ -1,0 +1,113 @@
+#+TITLE: Constant Kernel
+#+OPTIONS: toc:nil todo:nil num:nil author:nil title:nil
+#+STARTUP: content
+
+* Constant Kernel
+
+This tutorial explains the constant kernel sigma_c^2 introduced for
+molecular systems, following Koistinen et al. (JCTC).
+
+** Motivation
+
+For molecular systems with many degrees of freedom, the energy-energy
+correlations between distant geometries can approach zero under a pure SE
+kernel. Adding a constant kernel term ensures a baseline correlation:
+all geometries share a common energy offset.
+
+The combined kernel:
+
+#+begin_example
+k_total(x,y) = sigma_c^2 + sigma_m^2 * exp(-sum_p theta_p^2 * r_p^2)
+#+end_example
+
+The constant term sigma_c^2 acts as a prior on the energy mean function.
+Without it, the GP posterior mean reverts to zero far from training data.
+With it, the posterior mean reverts to a value informed by the overall
+energy scale.
+
+** Derivative structure
+
+The constant kernel has zero derivatives with respect to coordinates:
+
+#+begin_example
+dk_c/dx = 0        (energy-force: zero)
+dk_c/dy = 0        (force-energy: zero)
+d^2k_c/dxdy = 0   (force-force: zero)
+#+end_example
+
+This means sigma_c^2 affects only the energy-energy (EE) block of the
+covariance matrix. Force predictions depend entirely on the SE kernel
+sigma_m^2.
+
+This property is physically intuitive: a constant energy offset does not
+generate forces.
+
+See =scripts/sympy/t8_constant_kernel.py= for the full derivation.
+
+** Implementation
+
+sigma_c^2 enters the covariance matrix at two points:
+
+1. *Diagonal*: =K[i,i] += sigma_c^2= (along with noise and jitter)
+2. *Off-diagonal*: =K[i,j] += sigma_c^2= (all EE entries)
+
+In the NLL computation, sigma_c^2 is added to the kernel matrix but /not/
+to the hyperparameter gradient (sigma_c^2 is fixed, not optimized by SCG).
+
+** RFF treatment
+
+Random Fourier Features approximate the SE kernel but not the constant
+term. To include sigma_c^2 in RFF predictions, an extra basis function
+is appended:
+
+#+begin_example
+phi_c = sqrt(sigma_c^2)
+#+end_example
+
+with zero Jacobian (no coordinate dependence). The extended RFF feature
+vector is:
+
+#+begin_example
+z_ext(x) = [z_1(x), ..., z_{D_rff}(x), phi_c]
+#+end_example
+
+The inner product z_ext(x)^T z_ext(y) = z_rff(x)^T z_rff(y) + sigma_c^2,
+reproducing the constant kernel contribution. For gradient predictions,
+the last Jacobian row is zero, so forces use only the RFF features.
+
+The effective dimension becomes d_eff = D_rff + 1.
+
+** Configuration
+
+#+begin_src rust
+let mut cfg = MinimizationConfig::default();
+cfg.const_sigma2 = 1.0;  // molecular systems
+// cfg.const_sigma2 = 0.0;  // 2D surfaces (default)
+#+end_src
+
+All method config structs (=MinimizationConfig=, =DimerConfig=, =OTGPDConfig=,
+=NEBConfig=) accept =const_sigma2=. Set to 1.0 for molecular systems; leave
+at 0.0 for 2D analytical surfaces (backward compatible).
+
+** Effect on convergence
+
+On the HCN system (9 atoms, 27 DOF) with GP-NEB OIE:
+
+| const_sigma2 | Oracle calls | Converged |
+|--------------+--------------+-----------|
+| 0.0 | diverges | no |
+| 1.0 | 134 | yes |
+
+The constant kernel stabilizes the GP predictions for molecular systems
+where the energy scale is large relative to local variations. Without it,
+the GP posterior mean can collapse to zero between training points,
+producing spurious forces that mislead the optimizer.
+
+** SymPy verification
+
+The constant kernel derivative properties (all zeros except EE) and the
+RFF constant feature construction are verified in:
+
+#+begin_src bash
+python scripts/sympy/t8_constant_kernel.py
+#+end_src

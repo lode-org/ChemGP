@@ -81,6 +81,11 @@ other images are predicted by the GP.
 
 OIE is the most oracle-efficient variant, but requires good image selection.
 
+NEB builds on the GP machinery from earlier tutorials: the kernel ([[file:molecular_kernels.org][T3]]),
+hyperparameter training ([[file:hyperparameter_training.org][T4]]), and FPS/RFF scalability ([[file:scalability.org][T5]]).
+The GP-NEB variants use the same =PredModel= dispatch and trust region
+clipping as GP minimization.
+
 ** LCB scoring in OIE
 
 OIE selects the image to evaluate by scoring each with:
@@ -98,7 +103,7 @@ where:
 The combination prioritizes images that are both far from the MEP /and/
 uncertain. This is more effective than either criterion alone: force magnitude
 catches images the GP thinks are wrong; variance catches images where the GP does
-not know.
+not know. See =scripts/sympy/t7_lcb_scoring.py= for the derivation.
 
 Priority cascade: before LCB scoring, two special cases take precedence:
 1. *Early-stop image*: if an image's force increased after the last oracle call,

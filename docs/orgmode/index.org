@@ -130,9 +130,22 @@ Each solves a specific problem:
 
 ** Learning path
 
-- New to GPs? Start with [[file:tutorials/gp_basics.org][GP Basics]].
-- Want to see it work? Start with [[file:quickstart.org][Quickstart]].
-- Building on ChemGP? See [[file:reference/architecture.org][Architecture]] and [[file:reference/kernel_design.org][Kernel Design]].
+The tutorials progress from fundamentals to production use:
+
+1. [[file:tutorials/gp_basics.org][GP Basics]] -- GP regression, kernels, posterior, covariance blocks
+2. [[file:tutorials/minimization.org][Minimization]] -- GP-guided minimization, LCB, trust regions
+3. [[file:tutorials/molecular_kernels.org][Molecular Kernels]] -- Invariant features, pair-type length scales
+4. [[file:tutorials/hyperparameter_training.org][Hyperparameter Training]] -- MAP-NLL, SCG, log-space, NLL landscape
+5. [[file:tutorials/scalability.org][Scalability]] -- FPS subset selection, RFF approximation
+6. [[file:tutorials/dimer_method.org][Dimer Method]] -- Saddle point search, GP-Dimer, OTGPD
+7. [[file:tutorials/neb_method.org][NEB]] -- Minimum energy paths, AIE vs OIE, LCB scoring
+8. [[file:tutorials/constant_kernel.org][Constant Kernel]] -- sigma_c^2 for molecular systems
+9. [[file:tutorials/production_minimize.org][Production Minimization]] -- GP minimize on real PES via RPC
+10. [[file:tutorials/production_saddle.org][Production Saddle Search]] -- GP-Dimer + OTGPD on real PES
+11. [[file:tutorials/production_neb.org][Production NEB]] -- Full pipeline on real PES
+
+New to GPs? Start with tutorial 1. Want production use? Jump to tutorial 9.
+Building on ChemGP? See [[file:reference/architecture.org][Architecture]] and [[file:reference/kernel_design.org][Kernel Design]].
 
 * Getting started
 
@@ -154,9 +167,16 @@ Each solves a specific problem:
 
    tutorials/gp_basics
    tutorials/minimization
+   tutorials/molecular_kernels
+   tutorials/hyperparameter_training
+   tutorials/scalability
    tutorials/dimer_method
    tutorials/neb_method
    tutorials/otgpd
+   tutorials/constant_kernel
+   tutorials/production_minimize
+   tutorials/production_saddle
+   tutorials/production_neb
 #+end_export
 
 * Reference

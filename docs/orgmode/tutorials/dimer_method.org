@@ -50,6 +50,11 @@ construction depends on the curvature sign:
 For small molecular systems, both forces and orientations are projected onto the
 non-translational subspace (removing 6 COM + rotation degrees of freedom in 3D).
 
+The dimer method builds on the GP machinery introduced in earlier tutorials:
+the kernel ([[file:molecular_kernels.org][T3]]), hyperparameter training ([[file:hyperparameter_training.org][T4]]), and FPS/RFF
+scalability ([[file:scalability.org][T5]]). The GP-Dimer and OTGPD variants use the same
+=PredModel= dispatch and trust region clipping as GP minimization.
+
 ** Three variants
 
 *** Standard Dimer

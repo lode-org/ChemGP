@@ -1,0 +1,74 @@
+#+TITLE: Production Saddle Search
+#+OPTIONS: toc:nil todo:nil num:nil author:nil title:nil
+#+STARTUP: content
+
+* Production Saddle Search
+
+This tutorial demonstrates GP-Dimer and OTGPD saddle point search on a
+real potential energy surface via RPC oracle.
+
+** Seeding from NEB
+
+In practice, saddle point searches are rarely started from scratch. The
+common workflow is:
+
+1. Run NEB to find the MEP between reactant and product
+2. Identify the climbing image (highest energy image on the converged path)
+3. Use the path tangent at the climbing image as the dimer orientation
+4. Run GP-Dimer or OTGPD to refine the transition state geometry
+
+The NEB tangent provides a much better initial orientation than a random
+guess, eliminating the rotation phase entirely (=max_rot_iter = 0=).
+
+** Running the example
+
+#+begin_src bash
+cargo run --release --example hcn_dimer --features io,rgpot -- --method all
+#+end_src
+
+This runs both GP-Dimer and OTGPD on the system100 dataset using PET-MAD
+via RPC. The initial guess is the midpoint between reactant and product,
+with orientation along the reactant-to-product displacement vector.
+
+** GP-Dimer vs OTGPD
+
+Both methods find the transition state, but differ in oracle strategy:
+
+- *GP-Dimer*: calls the oracle at every outer iteration (predictable cost,
+  straightforward convergence)
+- *OTGPD*: calls the oracle only when the GP is uncertain (adaptive, can
+  skip calls when the GP is confident)
+
+For starting geometries near the saddle (the NEB refinement case), both
+methods perform similarly. For starting geometries far from the saddle
+(exploratory search), OTGPD's adaptive threshold avoids wasting oracle
+calls on poor early GP predictions.
+
+** Configuration for molecular systems
+
+#+begin_src rust
+let mut cfg = DimerConfig::default();
+cfg.t_force_true = 0.1;        // force convergence (eV/A)
+cfg.trust_radius = 0.05;       // conservative for molecules
+cfg.max_rot_iter = 0;          // skip rotation (NEB tangent)
+cfg.trust_metric = TrustMetric::Emd;
+cfg.atom_types = atomic_numbers.clone();
+cfg.const_sigma2 = 1.0;        // constant kernel
+#+end_src
+
+Key differences from the LEPS example:
+
+- Smaller trust_radius (0.05 vs 0.1): molecular surfaces have finer
+  features near the saddle
+- EMD trust metric: appropriate for molecular systems
+- const_sigma2 = 1.0: stabilizes predictions for many-atom systems
+- No rotation: provided orientation from NEB tangent
+
+** When to use each method
+
+| Starting geometry | Method | Reason |
+|-------------------+--------+--------|
+| NEB climbing image | GP-Dimer | Simple, predictable, few calls |
+| Approximate TS | OTGPD | Adaptive threshold saves calls |
+| Random guess | OTGPD | Better early-phase behavior |
+| Known eigenmode | GP-Dimer | Direct with =max_rot_iter=0= |

@@ -1,0 +1,121 @@
+#+TITLE: Molecular Kernels
+#+OPTIONS: toc:nil todo:nil num:nil author:nil title:nil
+#+STARTUP: content
+
+* Molecular Kernels
+
+This tutorial compares the =CartesianSE= and =MolInvDistSE= kernels on a
+molecular potential and explains why rotational/translational invariance
+matters for GP efficiency.
+
+** The invariance argument
+
+A potential energy surface depends only on internal coordinates: bond lengths,
+bond angles, and torsions. Rotating or translating a molecule in space does
+not change the energy. If the kernel operates on raw Cartesian coordinates,
+the GP must /learn/ this invariance from data, wasting oracle calls on
+rotated/translated copies that the physics guarantees are equivalent.
+
+The =MolInvDistSE= kernel avoids this waste by mapping coordinates to inverse
+interatomic distances /before/ computing the kernel. These features are
+invariant by construction: rotating a molecule changes the Cartesian
+coordinates but not the interatomic distances.
+
+** CartesianSE vs MolInvDistSE
+
+| Property | CartesianSE | MolInvDistSE |
+|----------+-------------+--------------|
+| Input | Raw coordinates | Inverse distances |
+| Rot/trans invariant | No | Yes |
+| Length scales | 1 (isotropic) | 1 per pair type |
+| Use case | 2D test surfaces | Real molecules |
+
+For 2D analytical surfaces (Muller-Brown, model potentials), the coordinates
+/are/ the natural degrees of freedom and there is no concept of rotation. Use
+=CartesianSE= there.
+
+For molecules, always use =MolInvDistSE=. The cost of computing inverse
+distances and Jacobians is negligible compared to the kernel evaluation.
+
+** Feature space and Jacobian
+
+The mapping from Cartesian coordinates to inverse distance features:
+
+#+begin_example
+f_ij(x) = 1 / r_ij,   r_ij = ||x_i - x_j||
+#+end_example
+
+For N atoms, this produces N*(N-1)/2 features (one per pair). The Jacobian
+J[l,d] = df_l / dx_d transforms kernel derivatives from feature space to
+coordinate space:
+
+#+begin_example
+df_ij/dx_i = -(x_i - x_j) / r_ij^3
+df_ij/dx_j = +(x_i - x_j) / r_ij^3
+df_ij/dx_k = 0   (k not in {i,j})
+#+end_example
+
+The kernel blocks use the chain rule through this Jacobian:
+
+#+begin_example
+k_ef = J^T @ (dk/df)        (energy-force cross-covariance)
+k_ff = J^T @ H_feat @ J     (force-force covariance)
+#+end_example
+
+where dk/df and H_feat are the gradient and Hessian of the kernel in
+feature space. See =scripts/sympy/t3_invdist_jacobian.py= for the full
+derivation.
+
+** Pair-type length scales
+
+The =MolInvDistSE= kernel assigns a separate inverse length scale theta_p
+to each pair type (H-H, H-C, C-C, etc.):
+
+#+begin_example
+k(x,y) = sigma^2 * exp(-sum_p theta_p^2 * (f_p(x) - f_p(y))^2)
+#+end_example
+
+This lets the kernel learn that stretching a C-C bond (stiff, high energy
+change per unit displacement) is different from displacing a van der Waals
+contact (soft, small energy change per large displacement).
+
+During SCG training, each theta_p adapts independently. Pair types with
+many features (e.g., C-C in a hydrocarbon) get tighter MAP priors to
+prevent overfitting; pair types with few features get looser priors.
+
+** LEPS comparison example
+
+#+begin_src bash
+cargo run --release --example leps_kernel_comparison
+#+end_src
+
+This runs GP minimization on the LEPS H+H2 surface with both kernels.
+The LEPS surface describes a collinear 3-atom system (9 Cartesian coords):
+
+- =MolInvDistSE= converges in ~9 oracle calls (3 inverse distance features,
+  natural representation of the bond-breaking reaction)
+- =CartesianSE= requires more calls because it must learn that only relative
+  positions matter, and that the 9 Cartesian coordinates are massively
+  redundant for a collinear system with 2 internal degrees of freedom
+
+** When CartesianSE still wins
+
+=CartesianSE= is appropriate when:
+
+- The potential is defined directly in Cartesian space (analytical surfaces)
+- There is no molecular structure (lattice models, field theories)
+- The system is constrained so that invariance is already broken (e.g., a
+  molecule in a fixed external field)
+
+For everything else, =MolInvDistSE= is the right choice.
+
+** SymPy verification
+
+The inverse distance Jacobian derivation is verified in:
+
+#+begin_src bash
+python scripts/sympy/t3_invdist_jacobian.py
+#+end_src
+
+This derives J analytically for a 3-atom collinear system, then verifies
+that the chain rule (J^T @ dk/df) matches direct differentiation dk/dy.
