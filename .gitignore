@@ -17,9 +17,20 @@ rgpot/
 
 # Model files and run outputs
 *.pt
+*.ckpt
 *.ini
+!petmad_hcn_v15xs.ini
+!validation/**/*.ini
 results_*/
 scratch/
+
+# Validation run outputs (only commit input configs)
+validation/**/climb.con
+validation/**/saddle.con
+validation/**/results.dat
+validation/**/direction.dat
+validation/**/mode.dat
+validation/**/from_*
 
 # Figure script output
 scripts/figures/tutorial/output/

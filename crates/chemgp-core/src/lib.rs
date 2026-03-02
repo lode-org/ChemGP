@@ -19,6 +19,7 @@ pub mod idpp;
 pub mod neb;
 pub mod neb_oie;
 pub mod dimer;
+pub mod dimer_utils;
 pub mod hod;
 pub mod otgpd;
 
