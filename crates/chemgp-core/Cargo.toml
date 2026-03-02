@@ -9,6 +9,7 @@ description = "GP-accelerated molecular optimization: kernels, SCG, minimization
 default = []
 io = ["dep:chemfiles", "dep:readcon-core"]
 rgpot = ["dep:rgpot-core"]
+cli = ["dep:clap"]
 
 [dependencies]
 faer = { workspace = true }
@@ -19,6 +20,7 @@ rand_distr = { workspace = true }
 chemfiles = { workspace = true, optional = true }
 readcon-core = { workspace = true, optional = true }
 rgpot-core = { workspace = true, optional = true }
+clap = { workspace = true, optional = true }
 
 [dev-dependencies]
 approx = { workspace = true }

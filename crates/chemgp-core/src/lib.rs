@@ -19,6 +19,7 @@ pub mod idpp;
 pub mod neb;
 pub mod neb_oie;
 pub mod dimer;
+pub mod hod;
 pub mod otgpd;
 
 #[cfg(feature = "io")]

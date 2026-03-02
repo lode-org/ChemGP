@@ -51,7 +51,7 @@ fn main() {
     train_model(&mut gp, 100, false);
 
     // Build exact GP prediction model
-    let exact_pred = build_pred_model(&gp.kernel, &td, 0, 42);
+    let exact_pred = build_pred_model(&gp.kernel, &td, 0, 42, 0.0);
 
     // Generate test points (different from training)
     let test_perts: Vec<f64> = vec![
@@ -100,7 +100,7 @@ fn main() {
 
     // Evaluate RFF at various D_rff
     for &d_rff in &[25, 50, 100, 150, 200, 300, 500] {
-        let rff_pred = build_pred_model(&gp.kernel, &td, d_rff, 42);
+        let rff_pred = build_pred_model(&gp.kernel, &td, d_rff, 42, 0.0);
 
         let mut rff_e_errors = Vec::new();
         let mut rff_g_errors = Vec::new();

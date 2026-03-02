@@ -9,7 +9,7 @@ use crate::predict::build_pred_model;
 use crate::sampling::{prune_training_data, select_optim_subset};
 use crate::train::train_model;
 use crate::trust::{
-    adaptive_trust_threshold, min_distance_to_data, trust_distance, trust_min_distance, TrustMetric,
+    adaptive_trust_threshold, trust_distance, trust_min_distance, TrustMetric,
 };
 use crate::types::{init_kernel, GPModel, TrainingData};
 use crate::StopReason;
@@ -28,7 +28,6 @@ pub struct MinimizationConfig {
     pub perturb_scale: f64,
     pub penalty_coeff: f64,
     pub max_move: f64,
-    pub dedup_tol: f64,
     pub energy_regression_tol: f64,
     pub max_training_points: usize,
     pub rff_features: usize,
@@ -42,6 +41,9 @@ pub struct MinimizationConfig {
     pub adaptive_n_half: usize,
     pub adaptive_a: f64,
     pub adaptive_floor: f64,
+    /// Constant kernel variance for energy-energy block.
+    /// Set to 1.0 for molecular systems; 0.0 disables (default).
+    pub const_sigma2: f64,
     pub verbose: bool,
 }
 
@@ -57,7 +59,6 @@ impl Default for MinimizationConfig {
             perturb_scale: 0.1,
             penalty_coeff: 1e3,
             max_move: 0.1,
-            dedup_tol: 0.0,
             energy_regression_tol: 0.0,
             max_training_points: 0,
             rff_features: 0,
@@ -71,6 +72,7 @@ impl Default for MinimizationConfig {
             adaptive_n_half: 50,
             adaptive_a: 1.3,
             adaptive_floor: 0.2,
+            const_sigma2: 0.0,
             verbose: true,
         }
     }
@@ -136,12 +138,6 @@ pub fn gp_minimize(
     let mut x_curr = x_init.to_vec();
     let mut oracle_calls = td.npoints();
     let mut prev_kern: Option<Kernel> = None;
-    let eff_dedup = if cfg.dedup_tol > 0.0 {
-        cfg.dedup_tol
-    } else {
-        cfg.conv_tol * 0.1
-    };
-
     let mut stagnation_count = 0;
     let mut prev_force = f64::NEG_INFINITY;
     let mut stop_reason = StopReason::MaxIterations;
@@ -201,11 +197,12 @@ pub fn gp_minimize(
         let kern = kern.with_params(clamped_sv, clamped_ls);
 
         let mut gp_sub = GPModel::new(kern, &td_sub, y_sub, 1e-6, 1e-4, 1e-6);
+        gp_sub.const_sigma2 = cfg.const_sigma2;
         train_model(&mut gp_sub, train_iters, cfg.verbose);
         prev_kern = Some(gp_sub.kernel.clone());
 
         // Build prediction model on full data (RFF if configured, else exact GP)
-        let pred_model = build_pred_model(&gp_sub.kernel, &td, cfg.rff_features, 42);
+        let pred_model = build_pred_model(&gp_sub.kernel, &td, cfg.rff_features, 42, cfg.const_sigma2);
 
         // Step 3: Optimize on GP surface via L-BFGS
         let best_idx = td
@@ -442,19 +439,14 @@ pub fn gp_minimize(
         if e_true > e_best + regress_tol && g_norm > cfg.conv_tol * 10.0 {
             trajectory.push(x_curr.clone());
             all_energies.push(e_true);
-            if min_distance_to_data(&x_curr, &td.data, d, td.npoints()) > eff_dedup {
-                td.add_point(&x_curr, e_true, &g_true);
-            }
+            td.add_point(&x_curr, e_true, &g_true);
             x_curr = td.col(best_idx).to_vec();
             continue;
         }
 
         trajectory.push(x_curr.clone());
         all_energies.push(e_true);
-
-        if min_distance_to_data(&x_curr, &td.data, d, td.npoints()) > eff_dedup {
-            td.add_point(&x_curr, e_true, &g_true);
-        }
+        td.add_point(&x_curr, e_true, &g_true);
 
         if cfg.max_training_points > 0 {
             let dist_fn = |a: &[f64], b: &[f64]| euclidean_distance(a, b);

@@ -16,4 +16,5 @@ rand_distr = "0.5"
 chemfiles = "0.10"
 readcon-core = "0.4"
 approx = "0.5"
-rgpot-core = { path = "/home/rgoswami/Git/Github/OmniPotentRPC/rgpot/rgpot-core" }
+rgpot-core = { path = "/home/rgoswami/Git/Github/OmniPotentRPC/rgpot/rgpot-core", features = ["rpc"] }
+clap = { version = "4", features = ["derive", "env"] }

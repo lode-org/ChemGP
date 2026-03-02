@@ -104,6 +104,46 @@ fn main() {
     writeln!(f, r#"{{"summary":true,"neb_calls":{},"aie_calls":{},"oie_calls":{}}}"#,
         neb_result.oracle_calls, aie_result.oracle_calls, oie_result.oracle_calls).unwrap();
 
+    // LEPS energy grid in (rAB, rBC) space for contour plot
+    let nx = 100;
+    let ny = 100;
+    let rab_min = 0.4f64;
+    let rab_max = 4.0;
+    let rbc_min = 0.4f64;
+    let rbc_max = 4.0;
+    writeln!(f, r#"{{"type":"grid_meta","nx":{},"ny":{},"rab_min":{},"rab_max":{},"rbc_min":{},"rbc_max":{}}}"#,
+        nx, ny, rab_min, rab_max, rbc_min, rbc_max).unwrap();
+
+    for iy in 0..ny {
+        let rbc = rbc_min + (rbc_max - rbc_min) * iy as f64 / (ny - 1) as f64;
+        for ix in 0..nx {
+            let rab = rab_min + (rab_max - rab_min) * ix as f64 / (nx - 1) as f64;
+            let coords = [0.0, 0.0, 0.0, rab, 0.0, 0.0, rab + rbc, 0.0, 0.0];
+            let (e, _) = leps_energy_gradient(&coords);
+            writeln!(f, r#"{{"type":"grid","ix":{},"iy":{},"rAB":{},"rBC":{},"energy":{}}}"#,
+                ix, iy, rab, rbc, e).unwrap();
+        }
+    }
+
+    // OIE converged NEB path (rAB, rBC coordinates)
+    let best_result = &oie_result;
+    for (i, img) in best_result.path.images.iter().enumerate() {
+        let rab = img[3] - img[0]; // x_B - x_A
+        let rbc = img[6] - img[3]; // x_C - x_B
+        writeln!(f, r#"{{"type":"neb_path","image":{},"rAB":{},"rBC":{}}}"#,
+            i, rab, rbc).unwrap();
+    }
+
+    // Endpoints
+    let rab_start = x_start[3] - x_start[0];
+    let rbc_start = x_start[6] - x_start[3];
+    let rab_end = x_end[3] - x_end[0];
+    let rbc_end = x_end[6] - x_end[3];
+    writeln!(f, r#"{{"type":"endpoint","label":"reactant","rAB":{},"rBC":{}}}"#,
+        rab_start, rbc_start).unwrap();
+    writeln!(f, r#"{{"type":"endpoint","label":"product","rAB":{},"rBC":{}}}"#,
+        rab_end, rbc_end).unwrap();
+
     eprintln!("\nSummary: NEB={} calls, AIE={} calls, OIE={} calls",
         neb_result.oracle_calls, aie_result.oracle_calls, oie_result.oracle_calls);
     eprintln!("Output: {}", outfile);

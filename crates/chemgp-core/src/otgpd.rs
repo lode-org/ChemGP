@@ -6,6 +6,7 @@
 //!
 //! Reference: Goswami et al., J. Chem. Theory Comput. (2025).
 
+use crate::hod::{HodConfig, HodState};
 use crate::kernel::Kernel;
 use crate::lbfgs::LbfgsHistory;
 use crate::predict::{build_pred_model, PredModel};
@@ -58,6 +59,9 @@ pub struct OTGPDConfig {
     pub adaptive_n_half: usize,
     pub adaptive_a: f64,
     pub adaptive_floor: f64,
+    /// Constant kernel variance for energy-energy block.
+    /// Set to 1.0 for molecular systems; 0.0 disables (default).
+    pub const_sigma2: f64,
     pub verbose: bool,
 }
 
@@ -102,6 +106,7 @@ impl Default for OTGPDConfig {
             adaptive_n_half: 50,
             adaptive_a: 1.3,
             adaptive_floor: 0.2,
+            const_sigma2: 0.0,
             verbose: true,
         }
     }
@@ -130,89 +135,6 @@ pub struct OTGPDHistory {
 
 /// Oracle function type.
 pub type OracleFn = dyn Fn(&[f64]) -> (f64, Vec<f64>);
-
-/// HOD state for monitoring hyperparameter oscillation.
-struct HodState {
-    history: Vec<Vec<f64>>,
-    current_fps_history: usize,
-}
-
-impl HodState {
-    fn new(initial_fps: usize) -> Self {
-        Self {
-            history: Vec::new(),
-            current_fps_history: initial_fps,
-        }
-    }
-
-    /// Extract log-space hyperparameters from GP model.
-    fn extract_hyperparams(model: &GPModel) -> Vec<f64> {
-        let mut hp = vec![model.kernel.signal_variance().ln()];
-        for ls in model.kernel.inv_lengthscales() {
-            hp.push(ls.ln());
-        }
-        hp.push(model.noise_var.ln());
-        hp.push(model.grad_noise_var.ln());
-        hp
-    }
-
-    /// Check for oscillation and potentially enlarge FPS subset.
-    fn check(&mut self, model: &GPModel, cfg: &OTGPDConfig) -> bool {
-        let hp = Self::extract_hyperparams(model);
-        self.history.push(hp);
-
-        if self.history.len() < 3 {
-            return false;
-        }
-
-        let window = cfg.hod_monitoring_window.min(self.history.len() - 1);
-        let start = self.history.len() - window - 1;
-
-        let n_dims = self.history[start].len();
-        let mut n_flips = 0;
-        let mut n_pairs = 0;
-
-        for i in start..self.history.len() - 1 {
-            if i + 1 >= self.history.len() {
-                break;
-            }
-            let d1: Vec<f64> = self.history[i]
-                .iter()
-                .zip(self.history[i.saturating_sub(1)].iter())
-                .map(|(a, b)| a - b)
-                .collect();
-            let d2: Vec<f64> = self.history[i + 1]
-                .iter()
-                .zip(self.history[i].iter())
-                .map(|(a, b)| a - b)
-                .collect();
-
-            for j in 0..n_dims {
-                if d1[j].abs() > 1e-10 && d2[j].abs() > 1e-10 {
-                    n_pairs += 1;
-                    if d1[j].signum() != d2[j].signum() {
-                        n_flips += 1;
-                    }
-                }
-            }
-        }
-
-        if n_pairs == 0 {
-            return false;
-        }
-
-        let flip_ratio = n_flips as f64 / n_pairs as f64;
-        if flip_ratio > cfg.hod_flip_threshold {
-            let new_size = (self.current_fps_history + cfg.hod_history_increment)
-                .min(cfg.hod_max_history);
-            if new_size > self.current_fps_history {
-                self.current_fps_history = new_size;
-                return true;
-            }
-        }
-        false
-    }
-}
 
 // ============================================================================
 // Dimer utility functions (reused from dimer.rs patterns)
@@ -545,16 +467,23 @@ pub fn otgpd(
         };
 
         let mut gp_sub = GPModel::new(kern, &td_sub, y_sub.clone(), 1e-6, 1e-4, 1e-6);
+        gp_sub.const_sigma2 = cfg.const_sigma2;
         train_model(&mut gp_sub, train_iters, cfg.verbose);
         prev_kern = Some(gp_sub.kernel.clone());
 
         // HOD check
         if cfg.use_hod {
-            hod_state.check(&gp_sub, cfg);
+            let hod_cfg = HodConfig {
+                monitoring_window: cfg.hod_monitoring_window,
+                flip_threshold: cfg.hod_flip_threshold,
+                history_increment: cfg.hod_history_increment,
+                max_history: cfg.hod_max_history,
+            };
+            hod_state.check(&gp_sub, &hod_cfg);
         }
 
         // Build prediction model on full data (RFF if configured, else exact GP)
-        let model = build_pred_model(&gp_sub.kernel, &td, cfg.rff_features, 42);
+        let model = build_pred_model(&gp_sub.kernel, &td, cfg.rff_features, 42, cfg.const_sigma2);
         let e_ref = td.energies[0];
 
         // Adaptive GP threshold

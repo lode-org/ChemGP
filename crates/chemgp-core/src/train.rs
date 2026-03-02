@@ -49,10 +49,11 @@ pub fn train_model(model: &mut GPModel, iterations: usize, verbose: bool) {
     let y = model.y.clone();
     let template = model.kernel.clone();
 
+    let const_s2 = model.const_sigma2;
     let mut fg = |w: &[f64]| -> (f64, Vec<f64>) {
         nll_and_grad(
             w, &x_data, dim, n, &y, &template, noise_e, noise_g, jit, &w_prior,
-            &prior_var,
+            &prior_var, const_s2,
         )
     };
 

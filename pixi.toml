@@ -10,6 +10,7 @@ version     = "0.1.0"
 
 [dependencies]
 python = ">=3.10"
+julia = ">=1.12.5,<1.13"
 
 [feature.docs.dependencies]
 nodejs = ">=22,<26"
@@ -86,6 +87,34 @@ python scripts/plot_trust_illustration.py
 """
 depends-on = ["examples"]
 
+[feature.rpc.dependencies]
+eon  = "==2.11.1"
+rust = ">=1.75"
+
+[feature.rpc.pypi-dependencies]
+matplotlib = ">=3.8, <4"
+
+[feature.rpc.tasks.serve-lj]
+cmd = "eonclient -p lj --serve-port 12345"
+
+[feature.rpc.tasks.serve-petmad]
+cmd = "eonclient -p metatomic --config petmad_hcn.ini --serve-port 12345"
+
+[feature.rpc.tasks.rpc-examples]
+cmd = """
+TMPDIR=.cache/.tmpclaude \
+cargo run --release --features rgpot --example petmad_minimize && \
+cargo run --release --features rgpot --example hcn_neb
+"""
+
+[feature.rpc.tasks.rpc-figures]
+cmd = "python scripts/plot_rpc_results.py"
+depends-on = ["rpc-examples"]
+
+[feature.rpc.tasks.rpc-smoke]
+cmd = "TMPDIR=.cache/.tmpclaude cargo run --release --features rgpot --example rpc_smoke_test"
+
 [environments]
 docs = ["docs"]
-dev = ["dev"]
+dev  = ["dev"]
+rpc  = ["rpc"]

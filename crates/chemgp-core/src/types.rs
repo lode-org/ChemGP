@@ -103,6 +103,9 @@ pub struct GPModel {
     pub noise_var: f64,
     pub grad_noise_var: f64,
     pub jitter: f64,
+    /// Constant kernel variance: k_c(x,x') = const_sigma2 for energy-energy block.
+    /// Matches C++ gpr_optim ConstantCF: max(1, mean_y^2). Not optimized by SCG.
+    pub const_sigma2: f64,
 }
 
 impl GPModel {
@@ -116,6 +119,10 @@ impl GPModel {
     ) -> Self {
         let dim = td.dim;
         let n_train = td.npoints();
+        // Constant kernel: off by default (0.0). Set to 1.0 for molecular
+        // systems to match C++ gpr_optim ConstantCF. Callers override via
+        // gp.const_sigma2 = config.const_sigma2 after construction.
+        let const_sigma2 = 0.0;
         Self {
             kernel,
             x_data: td.data.clone(),
@@ -125,6 +132,7 @@ impl GPModel {
             noise_var,
             grad_noise_var,
             jitter,
+            const_sigma2,
         }
     }
 

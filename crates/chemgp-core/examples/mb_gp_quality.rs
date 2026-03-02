@@ -76,7 +76,7 @@ fn main() {
     }
 
     // Generate GP quality data for multiple training set sizes
-    for &n_train in &[5, 15, 21, 30] {
+    for &n_train in &[3, 8, 15, 30] {
         println!("Training GP with {} points...", n_train);
         let td = generate_training_data(n_train);
 
@@ -95,7 +95,7 @@ fn main() {
         train_model(&mut gp, 100, false);
 
         // Build prediction model
-        let pred = build_pred_model(&gp.kernel, &td, 0, 42);
+        let pred = build_pred_model(&gp.kernel, &td, 0, 42, 0.0);
 
         // Evaluate on grid
         for iy in 0..ny {
