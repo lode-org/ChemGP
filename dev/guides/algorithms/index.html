@@ -33,61 +33,99 @@ Output: DimerResult
    e. Check: |F_true| &lt; T_dimer AND C &lt; 0 → CONVERGED</code></pre><h2 id="OTGPD-([otgpd](@ref))"><a class="docs-heading-anchor" href="#OTGPD-([otgpd](@ref))">OTGPD (<a href="../../api/optimizers/#ChemGP.otgpd"><code>otgpd</code></a>)</a><a id="OTGPD-([otgpd](@ref))-1"></a><a class="docs-heading-anchor-permalink" href="#OTGPD-([otgpd](@ref))" title="Permalink"></a></h2><pre><code class="nohighlight hljs">Input: oracle, x_init, orient_init, kernel, config
 Output: OTGPDResult
 
-Phase 1 — Initial Rotation (optional):
+Initialize: HODState (if use_hod), training data, dimer state
+
+Phase 1 -- Initial Rotation (optional):
   for rot = 1:max_initial_rot
     Evaluate oracle at midpoint + image 1
     Compute F_rot, curvature C
     Modified Newton angle optimization (parabolic fit):
-      dθ = 0.5 * atan(|F_rot|/|C|)
+      d_theta = 0.5 * atan(|F_rot|/|C|)
       Trial rotation, evaluate oracle
-      Fit F(θ) = a₁cos2θ + b₁sin2θ
-      θ* = 0.5 * atan(b₁/a₁)
-    Check: dθ &lt; T_angle → break
+      Fit F(theta) = a1*cos(2*theta) + b1*sin(2*theta)
+      theta* = 0.5 * atan(b1/a1)
+    Check: d_theta &lt; T_angle -&gt; break
 
-Phase 2 — Main GP Loop:
+Phase 2 -- Main GP Loop:
   for outer_iter = 1:max_outer_iter
     Prune training data (if max_training_points &gt; 0)
-    Train GP
+
+    FPS subset selection:
+      fps_size = hod_state.current_fps_history (dynamic via HOD)
+      Select fps_latest_points most recent + FPS from rest
+      td_sub = extract_subset(td, selected_indices)
+
+    Compute barrier strength: beta = min(1e-4 + 1e-3*n_sub, 0.5)
+
+    Train GP (two-path strategy):
+      IF kernel isa AbstractMoleculeKernel:
+        Energy shift (not normalize), fix_noise=true
+        Warm-start kernel from previous iteration
+        NLL with variance barrier (barrier_strength = beta)
+      ELSE:
+        Normalize, optimize noise as free parameter
+      Optimize hyperparams on td_sub, rebuild model on full td
+
+    HOD check:
+      Extract log-space hyperparams, count sign-flips
+      If flip_ratio &gt; threshold -&gt; enlarge FPS subset
+
     Adaptive threshold: T_gp = max(min(F_history)/divisor, T/10)
-    Inner loop (same as gp_dimer inner loop)
+    Adaptive trust: T_trust = sigmoid(n_data/n_atoms) or fixed
+
+    Inner loop (on GP surface):
+      Rotate, translate (L-BFGS or simple)
+      Check: |F_trans| &lt; T_gp -&gt; GP converged
+      Check: trust_distance(R_new, td, metric) &gt; T_trust -&gt; scale step
+      Check: interatomic ratio -&gt; reject distortion
+
     Oracle evaluation (+ image 1 if eval_image1)
-    Check: |F_true| &lt; T_dimer AND C &lt; 0 → CONVERGED</code></pre><h2 id="NEB-Variants-Overview"><a class="docs-heading-anchor" href="#NEB-Variants-Overview">NEB Variants Overview</a><a id="NEB-Variants-Overview-1"></a><a class="docs-heading-anchor-permalink" href="#NEB-Variants-Overview" title="Permalink"></a></h2><p><img src="../../assets/diagrams/neb_variants.svg" alt="NEB Variants"/></p><h2 id="Standard-NEB-([neb_optimize](@ref))"><a class="docs-heading-anchor" href="#Standard-NEB-([neb_optimize](@ref))">Standard NEB (<a href="../../api/optimizers/#ChemGP.neb_optimize"><code>neb_optimize</code></a>)</a><a id="Standard-NEB-([neb_optimize](@ref))-1"></a><a class="docs-heading-anchor-permalink" href="#Standard-NEB-([neb_optimize](@ref))" title="Permalink"></a></h2><pre><code class="nohighlight hljs">Input: oracle, x_start, x_end, config
+    Check: |F_true| &lt; T_dimer AND C &lt; 0 -&gt; CONVERGED</code></pre><h2 id="NEB-Variants-Overview"><a class="docs-heading-anchor" href="#NEB-Variants-Overview">NEB Variants Overview</a><a id="NEB-Variants-Overview-1"></a><a class="docs-heading-anchor-permalink" href="#NEB-Variants-Overview" title="Permalink"></a></h2><p><img src="../../assets/diagrams/neb_variants.svg" alt="NEB Variants"/></p><h2 id="Standard-NEB-([neb_optimize](@ref))"><a class="docs-heading-anchor" href="#Standard-NEB-([neb_optimize](@ref))">Standard NEB (<a href="../../api/optimizers/#ChemGP.neb_optimize"><code>neb_optimize</code></a>)</a><a id="Standard-NEB-([neb_optimize](@ref))-1"></a><a class="docs-heading-anchor-permalink" href="#Standard-NEB-([neb_optimize](@ref))" title="Permalink"></a></h2><pre><code class="nohighlight hljs">Input: oracle (or oracle pool), x_start, x_end, config
 Output: NEBResult
 
-1. Linear interpolation → N images
-2. Evaluate oracle at all images
+1. Linear interpolation -&gt; N images
+2. Evaluate oracle at all images (parallel if pool)
 3. for iter = 1:max_iter
    a. Compute tangent at each image (improved method):
-      - Monotonic increase: τ = R_{i+1} - R_i
-      - Monotonic decrease: τ = R_i - R_{i-1}
+      - Monotonic increase: tau = R_{i+1} - R_i
+      - Monotonic decrease: tau = R_i - R_{i-1}
       - Extremum: energy-weighted average
    b. NEB force at each image:
-      - Standard: F = -G⊥ + F_spring∥
-      - Climbing image: F = -G + 2(G·τ̂)τ̂
+      - Standard: F = -G_perp + F_spring_parallel
+      - Climbing image: F = -G + 2(G . tau_hat) tau_hat
    c. Steepest descent update
-   d. Re-evaluate oracle at all images
-   e. Check: max|F| &lt; conv_tol → CONVERGED</code></pre><h2 id="GP-NEB-AIE-([gp_neb_aie](@ref))"><a class="docs-heading-anchor" href="#GP-NEB-AIE-([gp_neb_aie](@ref))">GP-NEB-AIE (<a href="../../api/optimizers/#ChemGP.gp_neb_aie"><code>gp_neb_aie</code></a>)</a><a id="GP-NEB-AIE-([gp_neb_aie](@ref))-1"></a><a class="docs-heading-anchor-permalink" href="#GP-NEB-AIE-([gp_neb_aie](@ref))" title="Permalink"></a></h2><pre><code class="nohighlight hljs">Input: oracle, x_start, x_end, kernel, config
+   d. Re-evaluate oracle at all images (parallel if pool)
+   e. Check: max|F| &lt; conv_tol -&gt; CONVERGED</code></pre><h2 id="GP-NEB-AIE-([gp_neb_aie](@ref))"><a class="docs-heading-anchor" href="#GP-NEB-AIE-([gp_neb_aie](@ref))">GP-NEB-AIE (<a href="../../api/optimizers/#ChemGP.gp_neb_aie"><code>gp_neb_aie</code></a>)</a><a id="GP-NEB-AIE-([gp_neb_aie](@ref))-1"></a><a class="docs-heading-anchor-permalink" href="#GP-NEB-AIE-([gp_neb_aie](@ref))" title="Permalink"></a></h2><pre><code class="nohighlight hljs">Input: oracle (or oracle pool), x_start, x_end, kernel, config
 Output: NEBResult
 
-1. Linear interpolation, evaluate oracle at all images
-2. for outer_iter = 1:max_outer_iter
+1. Linear interpolation, evaluate oracle at all images (parallel if pool)
+2. Initialize prev_kern = nothing (for warm-start)
+3. for outer_iter = 1:max_outer_iter
    a. Compute true NEB forces, check convergence
-   b. Train GP on accumulated data
+   b. Train GP on accumulated data:
+      - Warm-start: reuse prev_kern if available
+      - Molecular kernel: energy shift, fix_noise, regularized noise
+      - Other kernel: normalize, optimize noise
+      prev_kern = model.kernel
    c. Inner loop: relax path on GP surface
       - GP-predict E, G at all intermediate images
       - Compute NEB forces from GP predictions
       - Steepest descent on GP
-   d. Evaluate oracle at ALL new image positions
-   e. Add to training data</code></pre><h2 id="GP-NEB-OIE-([gp_neb_oie](@ref))"><a class="docs-heading-anchor" href="#GP-NEB-OIE-([gp_neb_oie](@ref))">GP-NEB-OIE (<a href="../../api/optimizers/#ChemGP.gp_neb_oie"><code>gp_neb_oie</code></a>)</a><a id="GP-NEB-OIE-([gp_neb_oie](@ref))-1"></a><a class="docs-heading-anchor-permalink" href="#GP-NEB-OIE-([gp_neb_oie](@ref))" title="Permalink"></a></h2><pre><code class="nohighlight hljs">Input: oracle, x_start, x_end, kernel, config
+   d. Evaluate oracle at ALL new image positions (parallel if pool)
+   e. Add to training data (dedup by min distance)</code></pre><h2 id="GP-NEB-OIE-([gp_neb_oie](@ref))"><a class="docs-heading-anchor" href="#GP-NEB-OIE-([gp_neb_oie](@ref))">GP-NEB-OIE (<a href="../../api/optimizers/#ChemGP.gp_neb_oie"><code>gp_neb_oie</code></a>)</a><a id="GP-NEB-OIE-([gp_neb_oie](@ref))-1"></a><a class="docs-heading-anchor-permalink" href="#GP-NEB-OIE-([gp_neb_oie](@ref))" title="Permalink"></a></h2><pre><code class="nohighlight hljs">Input: oracle, x_start, x_end, kernel, config
 Output: NEBResult
 
 1. Linear interpolation, evaluate midpoint
-2. for outer_iter = 1:max_outer_iter
-   a. Train GP on accumulated data
-   b. Predict E, G at all images from GP
+2. Initialize prev_kern = nothing (for warm-start)
+3. for outer_iter = 1:max_outer_iter
+   a. Train GP on accumulated data (warm-start from prev_kern)
+      - If max_gp_points &gt; 0: FPS subset for hyperparameter training
+      - If rff_features &gt; 0 and MolInvDistSE and N &gt; M_subset:
+        Build RFF model on ALL data using trained hyperparameters
+   b. Predict E, G at all images (from GP or RFF model)
    c. Compute predictive variance at all images
    d. Select image i* = argmax(variance_E)
-   e. Evaluate oracle at image i*
+   e. Evaluate oracle at image i* (single call, no parallelism)
    f. Inner loop: relax path on GP surface
    g. Check convergence (all images evaluated + max|F| &lt; tol)</code></pre><h2 id="Modified-Newton-Rotation"><a class="docs-heading-anchor" href="#Modified-Newton-Rotation">Modified Newton Rotation</a><a id="Modified-Newton-Rotation-1"></a><a class="docs-heading-anchor-permalink" href="#Modified-Newton-Rotation" title="Permalink"></a></h2><pre><code class="nohighlight hljs">Input: state, model, F_rot_direction, config
 Output: curvature_estimate
@@ -114,4 +152,4 @@ Output: search direction d
 5. for i = 1, 2, ..., m:      (oldest to newest)
    β = (y_i·d) / (y_i·s_i)
    d = d + (α_i - β)·s_i
-6. return d</code></pre></article><nav class="docs-footer"><a class="docs-footer-prevpage" href="../trust_regions/">« Trust Regions</a><a class="docs-footer-nextpage" href="../comparison/">Codebase Comparison »</a><div class="flexbox-break"></div><p class="footer-message">Powered by <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> and the <a href="https://julialang.org/">Julia Programming Language</a>.</p></nav></div><div class="modal" id="documenter-settings"><div class="modal-background"></div><div class="modal-card"><header class="modal-card-head"><p class="modal-card-title">Settings</p><button class="delete"></button></header><section class="modal-card-body"><p><label class="label">Theme</label><div class="select"><select id="documenter-themepicker"><option value="auto">Automatic (OS)</option><option value="documenter-light">documenter-light</option><option value="documenter-dark">documenter-dark</option><option value="catppuccin-latte">catppuccin-latte</option><option value="catppuccin-frappe">catppuccin-frappe</option><option value="catppuccin-macchiato">catppuccin-macchiato</option><option value="catppuccin-mocha">catppuccin-mocha</option></select></div></p><hr/><p>This document was generated with <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> version 1.17.0 on <span class="colophon-date" title="Monday 23 February 2026 08:51">Monday 23 February 2026</span>. Using Julia version 1.12.5.</p></section><footer class="modal-card-foot"></footer></div></div></div></body></html>
+6. return d</code></pre></article><nav class="docs-footer"><a class="docs-footer-prevpage" href="../trust_regions/">« Trust Regions</a><a class="docs-footer-nextpage" href="../comparison/">Codebase Comparison »</a><div class="flexbox-break"></div><p class="footer-message">Powered by <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> and the <a href="https://julialang.org/">Julia Programming Language</a>.</p></nav></div><div class="modal" id="documenter-settings"><div class="modal-background"></div><div class="modal-card"><header class="modal-card-head"><p class="modal-card-title">Settings</p><button class="delete"></button></header><section class="modal-card-body"><p><label class="label">Theme</label><div class="select"><select id="documenter-themepicker"><option value="auto">Automatic (OS)</option><option value="documenter-light">documenter-light</option><option value="documenter-dark">documenter-dark</option><option value="catppuccin-latte">catppuccin-latte</option><option value="catppuccin-frappe">catppuccin-frappe</option><option value="catppuccin-macchiato">catppuccin-macchiato</option><option value="catppuccin-mocha">catppuccin-mocha</option></select></div></p><hr/><p>This document was generated with <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> version 1.17.0 on <span class="colophon-date" title="Monday 2 March 2026 08:45">Monday 2 March 2026</span>. Using Julia version 1.12.5.</p></section><footer class="modal-card-foot"></footer></div></div></div></body></html>
