@@ -174,21 +174,6 @@ pub fn nll_and_grad(
     }
     nll -= barrier_strength * gap.ln();
 
-    // Lower-bound barrier on sigma2 when const_sigma2 > 0.
-    // Prevents sigma_m^2 from collapsing below const_sigma2, which would
-    // make gradient predictions unreliable (gradients only use the SE kernel).
-    let gap_lo = if const_sigma2 > 0.0 {
-        let min_log_sigma2 = const_sigma2.ln();
-        let g = w[0] - min_log_sigma2;
-        if g <= 0.0 {
-            return (f64::INFINITY, vec![0.0; n_params]);
-        }
-        nll -= barrier_strength * g.ln();
-        g
-    } else {
-        0.0
-    };
-
     // Gradient: W = K_inv - alpha*alpha', grad_j = 0.5 * tr(W * dK_j)
     let k_inv = llt.inverse();
 
@@ -216,11 +201,6 @@ pub fn nll_and_grad(
 
     // magnSigma2 barrier gradient: d/dw[0] of -strength * ln(gap) = +strength / gap
     grad[0] += barrier_strength / gap;
-
-    // Lower-bound barrier gradient: d/dw[0] of -strength * ln(gap_lo) = -strength / gap_lo
-    if const_sigma2 > 0.0 {
-        grad[0] -= barrier_strength / gap_lo;
-    }
 
     (nll, grad)
 }
