@@ -127,7 +127,8 @@ let kernel = Kernel::Cartesian(CartesianSE::new(100.0, 2.0));
 #+end_src
 
 Use =CartesianSE= only for systems where rotational invariance is meaningless.
-For real molecules, always use =MolInvDistSE=.
+For real molecules, always use =MolInvDistSE=. See [[file:molecular_kernels.org][Molecular Kernels]] for a
+detailed comparison and the invariance argument.
 
 ** Kernel blocks
 
@@ -183,6 +184,8 @@ length scales from wandering.
 Training uses the Scaled Conjugate Gradient (SCG) optimizer, which requires
 analytical gradients of the NLL with respect to log-space hyperparameters.
 Both kernel types provide these gradients via =kernel_blocks_and_hypergrads=.
+See [[file:hyperparameter_training.org][Hyperparameter Training]] for the full NLL gradient derivation and
+NLL landscape visualization.
 
 ** Data-dependent initialization
 
@@ -219,7 +222,8 @@ without the cost of exact GP prediction.
 
 When =rff_features > 0=, the RFF model provides O(D_rff) prediction cost instead
 of O((N*(1+D))^2) for exact GP. For inner optimization loops that call predict
-hundreds of times, this speedup is essential.
+hundreds of times, this speedup is essential. See [[file:scalability.org][Scalability]] for
+the theory behind FPS and RFF.
 
 ** GP quality on Muller-Brown
 
@@ -262,6 +266,18 @@ Run =cargo run --release --example mb_gp_quality= followed by
    (blue). Errors are smallest near training points and largest in under-sampled
    regions, as expected from the variance map above.
 #+end_export
+
+** SymPy verification
+
+The CartesianSE kernel block derivations (k_ee, k_ef, k_fe, k_ff) are
+verified in:
+
+#+begin_src bash
+python scripts/sympy/t1_cartesian_se_blocks.py
+#+end_src
+
+This derives all four blocks symbolically and confirms the antisymmetry
+k_ef = -k_fe and the diagonal/off-diagonal structure of k_ff.
 
 ** Computational cost summary
 

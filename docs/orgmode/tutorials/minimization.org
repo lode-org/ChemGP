@@ -10,6 +10,13 @@ The GP minimizer (=gp_minimize=) replaces most oracle calls with GP predictions,
 querying the true potential only when the GP uncertainty is high or when the
 predicted step leaves the trust region.
 
+This is a form of Bayesian optimization (BO): the GP provides a probabilistic
+surrogate of the objective, and the LCB acquisition function balances
+exploitation (follow the GP mean) with exploration (query uncertain regions).
+Unlike standard BO for black-box optimization, ChemGP exploits gradient
+information (1+D observations per oracle call) and uses an inner optimization
+loop on the surrogate rather than optimizing the acquisition function directly.
+
 The basic idea: instead of calling the oracle at every gradient descent step,
 train a GP on the oracle results so far, optimize on the GP surrogate (which is
 free), then call the oracle only at the proposed minimum. Each oracle call is
