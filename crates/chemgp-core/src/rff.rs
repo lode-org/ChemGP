@@ -2,7 +2,6 @@
 //!
 //! Ports `rff.jl`. Approximates the GP with O(N*D*D_rff + D_rff^3) cost.
 
-use crate::invdist::compute_inverse_distances;
 use crate::kernel::Kernel;
 use faer::linalg::solvers::Solve;
 use faer::{Mat, Side};
@@ -25,9 +24,10 @@ pub struct RffModel {
     pub b: Vec<f64>,      // (d_rff,)
     pub c: f64,           // sigma * sqrt(2/d_rff)
     pub feature_mode: FeatureMode,
-    pub alpha: Vec<f64>,  // (d_rff,)
+    pub alpha: Vec<f64>,  // (d_eff,) where d_eff = d_rff + 1 (constant feature)
     pub a_chol: Mat<f64>, // Lower-triangular Cholesky factor of regularized Gram
     pub dim: usize,       // Coordinate dimension D
+    pub const_sigma2: f64, // Constant kernel variance
 }
 
 impl RffModel {
@@ -38,21 +38,7 @@ impl RffModel {
 
         let (phi, j_phi) = match &self.feature_mode {
             FeatureMode::InverseDistances { frozen } => {
-                let phi = compute_inverse_distances(x, frozen);
-                let d_feat = phi.len();
-
-                // Numerical Jacobian of phi w.r.t. x (finite difference)
-                let eps = 1e-7;
-                let mut j_phi = Mat::<f64>::zeros(d_feat, d);
-                for dd in 0..d {
-                    let mut x_plus = x.to_vec();
-                    x_plus[dd] += eps;
-                    let phi_plus = compute_inverse_distances(&x_plus, frozen);
-                    for f in 0..d_feat {
-                        j_phi[(f, dd)] = (phi_plus[f] - phi[f]) / eps;
-                    }
-                }
-                (phi, j_phi)
+                crate::kernel::invdist_jacobian(x, frozen)
             }
             FeatureMode::Cartesian => {
                 // Features = coordinates, Jacobian = identity
@@ -78,7 +64,7 @@ impl RffModel {
             u[i] = s;
         }
 
-        let z: Vec<f64> = u.iter().map(|&v| self.c * v.cos()).collect();
+        let mut z: Vec<f64> = u.iter().map(|&v| self.c * v.cos()).collect();
 
         // w_jphi = W * J_phi (d_rff x d)
         let mut w_jphi = Mat::<f64>::zeros(d_rff, d);
@@ -93,13 +79,18 @@ impl RffModel {
         }
 
         // J_z = -c * sin(u) .* (W * J_phi)
-        let mut j_z = Mat::<f64>::zeros(d_rff, d);
+        // Append constant feature: z gets sqrt(const_sigma2), j_z gets zero row.
+        let d_eff = d_rff + 1;
+        let mut j_z = Mat::<f64>::zeros(d_eff, d);
         for i in 0..d_rff {
             let sin_u = u[i].sin();
             for j in 0..d {
                 j_z[(i, j)] = -self.c * sin_u * w_jphi[(i, j)];
             }
         }
+        // Row d_rff (constant feature) is already zeros.
+
+        z.push(self.const_sigma2.sqrt());
 
         (z, j_z)
     }
@@ -116,6 +107,7 @@ pub fn build_rff(
     noise_var: f64,
     grad_noise_var: f64,
     seed: u64,
+    const_sigma2: f64,
 ) -> RffModel {
     let inv_ls = kernel.inv_lengthscales();
     let d_feat = kernel.n_features(dim);
@@ -158,31 +150,34 @@ pub fn build_rff(
     let c = sigma * (2.0 / d_rff as f64).sqrt();
 
     // Build design matrix Z: [energy rows; gradient rows]
+    // d_eff = d_rff + 1: extra column for constant kernel feature.
+    let d_eff = d_rff + 1;
     let n_obs = n * (1 + dim);
-    let mut z_mat = Mat::<f64>::zeros(n_obs, d_rff);
+    let mut z_mat = Mat::<f64>::zeros(n_obs, d_eff);
 
     let model = RffModel {
         w: w.clone(),
         b: b.clone(),
         c,
         feature_mode: feature_mode.clone(),
-        alpha: vec![0.0; d_rff],
-        a_chol: Mat::<f64>::zeros(d_rff, d_rff),
+        alpha: vec![0.0; d_eff],
+        a_chol: Mat::<f64>::zeros(d_eff, d_eff),
         dim,
+        const_sigma2,
     };
 
     for i in 0..n {
         let xi = &x_train[i * dim..(i + 1) * dim];
         let (z, j_z) = model.features(xi);
 
-        // Energy row i
-        for f in 0..d_rff {
+        // Energy row i (d_eff features including constant)
+        for f in 0..d_eff {
             z_mat[(i, f)] = z[f];
         }
 
-        // Gradient rows
+        // Gradient rows (constant feature derivative is zero)
         for d in 0..dim {
-            for f in 0..d_rff {
+            for f in 0..d_eff {
                 z_mat[(n + i * dim + d, f)] = j_z[(f, d)];
             }
         }
@@ -198,18 +193,18 @@ pub fn build_rff(
     }
 
     // A = Z^T diag(prec) Z + I
-    // ztp = Z^T * diag(prec)  (d_rff x n_obs)
-    let mut ztp = Mat::<f64>::zeros(d_rff, n_obs);
-    for i in 0..d_rff {
+    // ztp = Z^T * diag(prec)  (d_eff x n_obs)
+    let mut ztp = Mat::<f64>::zeros(d_eff, n_obs);
+    for i in 0..d_eff {
         for j in 0..n_obs {
             ztp[(i, j)] = z_mat[(j, i)] * prec[j];
         }
     }
 
-    // a = ztp * z_mat + I  (d_rff x d_rff)
-    let mut a = Mat::<f64>::zeros(d_rff, d_rff);
-    for i in 0..d_rff {
-        for j in 0..d_rff {
+    // a = ztp * z_mat + I  (d_eff x d_eff)
+    let mut a = Mat::<f64>::zeros(d_eff, d_eff);
+    for i in 0..d_eff {
+        for j in 0..d_eff {
             let mut s = 0.0;
             for k in 0..n_obs {
                 s += ztp[(i, k)] * z_mat[(k, j)];
@@ -222,8 +217,8 @@ pub fn build_rff(
     let llt = a.llt(Side::Lower).expect("RFF Cholesky failed");
     let a_chol_l = {
         let l = llt.L();
-        let mut m = Mat::<f64>::zeros(d_rff, d_rff);
-        for i in 0..d_rff {
+        let mut m = Mat::<f64>::zeros(d_eff, d_eff);
+        for i in 0..d_eff {
             for j in 0..=i {
                 m[(i, j)] = l[(i, j)];
             }
@@ -231,9 +226,9 @@ pub fn build_rff(
         m
     };
 
-    // rhs = ztp * y  (d_rff x 1)
-    let mut rhs = Mat::<f64>::zeros(d_rff, 1);
-    for i in 0..d_rff {
+    // rhs = ztp * y  (d_eff x 1)
+    let mut rhs = Mat::<f64>::zeros(d_eff, 1);
+    for i in 0..d_eff {
         let mut s = 0.0;
         for j in 0..n_obs {
             s += ztp[(i, j)] * y_train[j];
@@ -242,7 +237,7 @@ pub fn build_rff(
     }
 
     let alpha_mat = llt.solve(&rhs);
-    let alpha: Vec<f64> = (0..d_rff).map(|i| alpha_mat[(i, 0)]).collect();
+    let alpha: Vec<f64> = (0..d_eff).map(|i| alpha_mat[(i, 0)]).collect();
 
     RffModel {
         w,
@@ -252,6 +247,7 @@ pub fn build_rff(
         alpha,
         a_chol: a_chol_l,
         dim,
+        const_sigma2,
     }
 }
 

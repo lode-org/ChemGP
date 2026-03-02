@@ -76,7 +76,7 @@ def grid_to_arrays(grid_records, meta):
 
 def plot_gp_progression(meta, minima, saddles, train_points, grids):
     """2x2 panel: GP mean at N=5, 15, 21, 30 with training points."""
-    n_trains = [5, 15, 21, 30]
+    n_trains = [3, 8, 15, 30]
     fig, axes = plt.subplots(2, 2, figsize=(8, 6.5), sharex=True, sharey=True)
 
     levels = np.linspace(-200, 50, 30)
@@ -117,7 +117,7 @@ def plot_gp_progression(meta, minima, saddles, train_points, grids):
 
 def plot_variance(meta, minima, saddles, train_points, grids):
     """GP variance overlay with diagonal crosshatching on MB surface."""
-    n = 21
+    n = 15
     if n not in grids:
         print(f"No grid data for N={n}", file=sys.stderr)
         return
@@ -193,7 +193,7 @@ def plot_variance(meta, minima, saddles, train_points, grids):
 
 def plot_gp_error(meta, minima, saddles, train_points, grids):
     """GP prediction error (mean - true) for N=21."""
-    n = 21
+    n = 15
     if n not in grids:
         print(f"No grid data for N={n}", file=sys.stderr)
         return

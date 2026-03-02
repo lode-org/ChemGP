@@ -26,6 +26,7 @@ pub fn nll_and_grad(
     jitter: f64,
     w_prior: &[f64],
     prior_var: &[f64],
+    const_sigma2: f64,
 ) -> (f64, Vec<f64>) {
     let sigma2 = w[0].exp();
     let inv_ls: Vec<f64> = w[1..].iter().map(|v| v.exp()).collect();
@@ -47,7 +48,7 @@ pub fn nll_and_grad(
         let bg = kern.kernel_blocks_and_hypergrads(xi, xi);
         let b = &bg.blocks;
 
-        k_mat[(i, i)] = b.k_ee + noise_e + jitter;
+        k_mat[(i, i)] = b.k_ee + const_sigma2 + noise_e + jitter;
         for d in 0..dim {
             k_mat[(i, s_gi + d)] = b.k_ef[d];
             k_mat[(s_gi + d, i)] = b.k_fe[d];
@@ -81,8 +82,8 @@ pub fn nll_and_grad(
             let bg = kern.kernel_blocks_and_hypergrads(xi, xj);
             let b = &bg.blocks;
 
-            k_mat[(i, j)] = b.k_ee;
-            k_mat[(j, i)] = b.k_ee;
+            k_mat[(i, j)] = b.k_ee + const_sigma2;
+            k_mat[(j, i)] = b.k_ee + const_sigma2;
 
             for d in 0..dim {
                 k_mat[(i, s_gj + d)] = b.k_ef[d];
@@ -161,6 +162,33 @@ pub fn nll_and_grad(
         nll += 0.5 * (w[i] - w_prior[i]).powi(2) / prior_var[i];
     }
 
+    // magnSigma2 barrier: log-barrier penalty keeping sigma^2 bounded.
+    // Matches gpr_optim C++ SCG barrier: max_log_magnSigma2 = log(2.0).
+    // Barrier strength grows with dataset size to tighten as more data
+    // constrains the model (initial_strength=1e-4, growth=1e-3 per point).
+    let max_log_sigma2 = (2.0f64).ln();
+    let barrier_strength = (1e-4 + 1e-3 * n as f64).min(0.5);
+    let gap = max_log_sigma2 - w[0];
+    if gap <= 0.0 {
+        return (f64::INFINITY, vec![0.0; n_params]);
+    }
+    nll -= barrier_strength * gap.ln();
+
+    // Lower-bound barrier on sigma2 when const_sigma2 > 0.
+    // Prevents sigma_m^2 from collapsing below const_sigma2, which would
+    // make gradient predictions unreliable (gradients only use the SE kernel).
+    let gap_lo = if const_sigma2 > 0.0 {
+        let min_log_sigma2 = const_sigma2.ln();
+        let g = w[0] - min_log_sigma2;
+        if g <= 0.0 {
+            return (f64::INFINITY, vec![0.0; n_params]);
+        }
+        nll -= barrier_strength * g.ln();
+        g
+    } else {
+        0.0
+    };
+
     // Gradient: W = K_inv - alpha*alpha', grad_j = 0.5 * tr(W * dK_j)
     let k_inv = llt.inverse();
 
@@ -184,6 +212,14 @@ pub fn nll_and_grad(
         grad[jp] = 0.5 * trace;
         // MAP prior gradient
         grad[jp] += (w[jp] - w_prior[jp]) / prior_var[jp];
+    }
+
+    // magnSigma2 barrier gradient: d/dw[0] of -strength * ln(gap) = +strength / gap
+    grad[0] += barrier_strength / gap;
+
+    // Lower-bound barrier gradient: d/dw[0] of -strength * ln(gap_lo) = -strength / gap_lo
+    if const_sigma2 > 0.0 {
+        grad[0] -= barrier_strength / gap_lo;
     }
 
     (nll, grad)

@@ -19,11 +19,11 @@ function main()
 
     set_theme!(PUBLICATION_THEME)
 
-    n_points_list = [5, 15, 30, 50]
+    n_points_list = [3, 8, 15, 30]
     fig = Figure(; size=(700, 600))
 
     for (idx, n_pts) in enumerate(n_points_list)
-        row = (idx - 1) div 2 + 1
+        row = div(idx - 1, 2) + 1
         col = (idx - 1) % 2 + 1
 
         ax = Axis(

@@ -19,6 +19,7 @@ pub fn build_full_covariance(
     noise_e: f64,
     noise_g: f64,
     jitter: f64,
+    const_sigma2: f64,
 ) -> Mat<f64> {
     let total = n * (1 + dim);
     let mut k_mat = Mat::<f64>::zeros(total, total);
@@ -30,7 +31,7 @@ pub fn build_full_covariance(
         let b = kernel.kernel_blocks(xi, xi);
 
         // Energy index
-        k_mat[(i, i)] = b.k_ee + noise_e + jitter;
+        k_mat[(i, i)] = b.k_ee + const_sigma2 + noise_e + jitter;
 
         // Gradient indices
         let s_g = n + i * dim;
@@ -52,8 +53,8 @@ pub fn build_full_covariance(
 
             let j_s = n + j * dim;
 
-            k_mat[(i, j)] = b.k_ee;
-            k_mat[(j, i)] = b.k_ee;
+            k_mat[(i, j)] = b.k_ee + const_sigma2;
+            k_mat[(j, i)] = b.k_ee + const_sigma2;
 
             for d in 0..dim {
                 k_mat[(i, j_s + d)] = b.k_ef[d];

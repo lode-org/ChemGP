@@ -186,6 +186,21 @@ pub fn max_atom_force(force: &[f64], n_atoms: usize, n_coords: usize) -> f64 {
     max_f
 }
 
+/// Acquisition strategy for OIE image selection.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub enum AcquisitionStrategy {
+    /// Max energy variance among unevaluated images (MATLAB baseline).
+    MaxVariance,
+    /// Max GP-predicted NEB force among unevaluated images.
+    MaxForce,
+    /// Upper confidence bound: |F| + kappa * sigma_perp.
+    Ucb,
+    /// Expected improvement: E[max(F_i - F_max, 0)] over force.
+    ExpectedImprovement,
+    /// Thompson sampling: draw from GP posterior, pick highest sampled force.
+    ThompsonSampling,
+}
+
 /// NEB configuration.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct NEBConfig {
@@ -234,10 +249,50 @@ pub struct NEBConfig {
     pub bond_stretch_limit: f64,
     /// LCB exploration weight: score = |F| + kappa * sigma_perp.
     pub lcb_kappa: f64,
+    /// Acquisition strategy for image selection (OIE only).
+    pub acquisition: AcquisitionStrategy,
     /// FPS subset size for hyperparameter training.
     pub fps_history: usize,
     /// Most recent points always included in FPS.
     pub fps_latest_points: usize,
+    /// Use Quick-min Velocity Verlet for inner GP relaxation instead of L-BFGS.
+    /// Matches MATLAB GP_NEB_OIE baseline; naturally conservative steps.
+    pub use_quickmin: bool,
+    /// QM-VV time step (dt).
+    pub qm_dt: f64,
+    /// Two-phase acquisition: when max GP energy uncertainty across
+    /// unevaluated images exceeds this, select highest-uncertainty image
+    /// (pure exploration). Below this threshold, use configured strategy.
+    /// CatLearn default: 0.05. Set 0 to disable (always use strategy).
+    pub unc_convergence: f64,
+    /// Uncertainty gate for convergence: require max GP uncertainty < this
+    /// in addition to force convergence. 0 disables the check.
+    pub unc_conv_tol: f64,
+    /// Uncertainty gate for inner relaxation revert: if max GP uncertainty
+    /// at relaxed positions exceeds this, revert to pre-relaxation path.
+    /// Mirrors CatLearn max_unc_restart. 0 disables. Typical: 0.05 eV.
+    pub unc_revert_tol: f64,
+    /// Images evaluated per outer iteration: 1 (classic OIE) or 3 (triplet).
+    /// Triplet mode evaluates {i-1, i, i+1} so the Henkelman-Jonsson improved
+    /// tangent at image i uses ground-truth data on both sides.
+    pub evals_per_iter: usize,
+    /// Hard oracle call budget for NEB OIE (0 = unlimited).
+    pub max_neb_oracle_calls: usize,
+    /// Enable Hyperparameter Oscillation Detection (HOD).
+    /// When hyperparameters oscillate, grows FPS subset to stabilize training.
+    pub use_hod: bool,
+    /// HOD sliding window size.
+    pub hod_monitoring_window: usize,
+    /// HOD sign-flip threshold (0.0--1.0).
+    pub hod_flip_threshold: f64,
+    /// HOD FPS growth increment.
+    pub hod_history_increment: usize,
+    /// HOD maximum FPS subset size.
+    pub hod_max_history: usize,
+    /// Constant kernel variance added to energy-energy block.
+    /// Set to 1.0 for molecular systems (matches C++ ConstantCF).
+    /// Default 0.0 (disabled, backward compatible for 2D surfaces).
+    pub const_sigma2: f64,
     pub verbose: bool,
 }
 
@@ -281,8 +336,22 @@ impl Default for NEBConfig {
             max_step_frac: 0.1,
             bond_stretch_limit: 2.0 / 3.0,
             lcb_kappa: 2.0,
+            acquisition: AcquisitionStrategy::Ucb,
             fps_history: 0,
             fps_latest_points: 2,
+            use_quickmin: false,
+            qm_dt: 0.1,
+            unc_convergence: 0.0,
+            unc_conv_tol: 0.0,
+            unc_revert_tol: 0.0,
+            evals_per_iter: 1,
+            max_neb_oracle_calls: 0,
+            use_hod: true,
+            hod_monitoring_window: 5,
+            hod_flip_threshold: 0.8,
+            hod_history_increment: 2,
+            hod_max_history: 30,
+            const_sigma2: 0.0,
             verbose: true,
         }
     }

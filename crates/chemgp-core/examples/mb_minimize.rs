@@ -22,7 +22,6 @@ fn main() {
     gp_cfg.max_iter = 200;
     gp_cfg.max_oracle_calls = 50;
     gp_cfg.conv_tol = 1.0;
-    gp_cfg.dedup_tol = 0.001; // MB coordinates span ~3 units; default (conv_tol*0.1) is way too large
     gp_cfg.n_initial_perturb = 3;
     gp_cfg.perturb_scale = 0.15;
     gp_cfg.trust_radius = 0.3;

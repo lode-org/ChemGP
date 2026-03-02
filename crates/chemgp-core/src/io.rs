@@ -124,8 +124,10 @@ pub fn read_con(path: &str) -> Result<Vec<MolConfig>, String> {
 
 /// Read all frames from an extxyz file.
 pub fn read_extxyz(path: &str) -> Result<Vec<MolConfig>, String> {
-    let mut traj =
-        Trajectory::open(path, 'r').map_err(|e| format!("Failed to open {}: {}", path, e))?;
+    // Always use XYZ format hint since chemfiles may not recognize .extxyz
+    // and ORCA-style XYZ files can cause issues with auto-detection.
+    let mut traj = Trajectory::open_with_format(path, 'r', "XYZ")
+        .map_err(|e| format!("Failed to open {}: {}", path, e))?;
     let nsteps = traj.nsteps();
     let mut configs = Vec::with_capacity(nsteps as usize);
     let mut frame = Frame::new();
@@ -227,7 +229,7 @@ pub fn write_extxyz(path: &str, configs: &[MolConfig]) -> Result<(), String> {
             frame.set("energy", e);
         }
 
-        frame.set_step(step as u64);
+        frame.set_step(step);
 
         if let Some(ref forces) = cfg.forces {
             for i in 0..natoms {

@@ -13,7 +13,7 @@ use crate::optim_step::OptimState;
 use crate::predict::{build_pred_model, PredModel};
 use crate::train::train_model;
 use crate::trust::{
-    adaptive_trust_threshold, min_distance_to_data, trust_distance, trust_min_distance, TrustMetric,
+    adaptive_trust_threshold, trust_distance, trust_min_distance, TrustMetric,
 };
 use crate::types::{init_kernel, GPModel, TrainingData};
 use crate::StopReason;
@@ -183,10 +183,14 @@ pub fn neb_optimize(
             break;
         }
 
-        if cfg.verbose && (iter % 50 == 0 || iter == 0) {
+        if cfg.verbose {
             eprintln!(
-                "  Iter {:3}: max|F| = {:.5} | CI|F| = {:.5}",
-                iter, neb_forces.max_f, neb_forces.ci_f
+                "  Iter {:3}: max|F| = {:.4e} | CI|F| = {:.4e} | CI={} | E_max = {:.4}",
+                iter,
+                neb_forces.max_f,
+                neb_forces.ci_f,
+                ci_on,
+                path.energies.iter().cloned().fold(f64::NEG_INFINITY, f64::max)
             );
         }
 
@@ -245,8 +249,6 @@ pub fn gp_neb_aie(
     let cfg = config;
     let n = cfg.images + 2;
     let d = x_start.len();
-    let dedup_tol = cfg.conv_tol * 0.1;
-
     let mut images = init_neb_images(cfg, x_start, x_end);
 
     // Evaluate endpoints
@@ -297,6 +299,18 @@ pub fn gp_neb_aie(
         gradients: gradients.clone(),
         spring_constant: cfg.spring_constant,
     };
+
+    // Path scale for early stopping displacement check
+    let path_scale: f64 = (0..n - 1)
+        .map(|i| {
+            images[i]
+                .iter()
+                .zip(images[i + 1].iter())
+                .map(|(a, b)| (a - b).powi(2))
+                .sum::<f64>()
+                .sqrt()
+        })
+        .sum();
 
     let mut history = NEBHistory::default();
     let mut ci_on = false;
@@ -395,40 +409,42 @@ pub fn gp_neb_aie(
         };
 
         let mut gp_sub = GPModel::new(kern, &td_use, y_sub, 1e-6, 1e-4, 1e-6);
+        gp_sub.const_sigma2 = cfg.const_sigma2;
         train_model(&mut gp_sub, train_iters, cfg.verbose);
         prev_kern = Some(gp_sub.kernel.clone());
 
         // Build prediction model: RFF (fast) or exact GP (small data)
         let e_ref_full = td.energies[0];
-        let pred_model = build_pred_model(&gp_sub.kernel, &td, cfg.rff_features, 42);
+        let pred_model = build_pred_model(&gp_sub.kernel, &td, cfg.rff_features, 42, cfg.const_sigma2);
 
         // Inner loop: relax on GP/RFF surface
         let gp_tol = (neb_forces.max_f / 10.0)
             .min(cfg.conv_tol)
             .max(cfg.conv_tol / 10.0);
-        images = gp_inner_relax(
+        let (new_images, _early_stopped) = gp_inner_relax(
             &pred_model,
             &images,
             &energies,
             &gradients,
+            &td,
             cfg,
             ci_on,
             e_ref_full,
             gp_tol,
+            path_scale,
         );
+        images = new_images;
 
         // EMD trust clip
         emd_trust_clip(&mut images, &td, cfg);
 
-        // Re-evaluate oracle at new positions; deduplicate
+        // Re-evaluate oracle at new positions
         for i in 1..n - 1 {
             let (e, g) = oracle(&images[i]);
             energies[i] = e;
             gradients[i] = g.clone();
             oracle_calls += 1;
-            if min_distance_to_data(&images[i], &td.data, d, td.npoints()) > dedup_tol {
-                td.add_point(&images[i], e, &g);
-            }
+            td.add_point(&images[i], e, &g);
         }
 
         path.images = images.clone();
@@ -451,16 +467,21 @@ pub fn gp_neb_aie(
 }
 
 /// Inner GP/RFF surface relaxation for NEB images.
+///
+/// Returns (relaxed_images, early_stopped) where early_stopped is true
+/// if bond stretch or displacement guards triggered.
 fn gp_inner_relax(
     model: &PredModel,
     images: &[Vec<f64>],
     energies: &[f64],
     gradients: &[Vec<f64>],
+    td: &TrainingData,
     cfg: &NEBConfig,
     ci_on: bool,
     e_ref: f64,
     gp_tol: f64,
-) -> Vec<Vec<f64>> {
+    path_scale: f64,
+) -> (Vec<Vec<f64>>, bool) {
     let n = images.len();
     let d = images[0].len();
     let n_mov = n - 2;
@@ -468,8 +489,9 @@ fn gp_inner_relax(
     let mut gp_images = images.to_vec();
     let start_images = images.to_vec();
     let mut optim = OptimState::new(cfg.lbfgs_memory);
+    let mut early_stopped = false;
 
-    for _ in 0..cfg.max_iter {
+    for inner in 0..cfg.max_iter {
         let mut gp_energies = energies.to_vec();
         let mut gp_gradients = gradients.to_vec();
 
@@ -502,6 +524,8 @@ fn gp_inner_relax(
         let disp = optim.step(&cur_x, &cur_force, cfg.max_move, 3);
         let new_x: Vec<f64> = cur_x.iter().zip(disp.iter()).map(|(a, b)| a + b).collect();
 
+        let pre_step = gp_images.clone();
+
         for img_idx in 0..n_mov {
             let off = img_idx * d;
             let candidate = &new_x[off..off + d];
@@ -522,9 +546,20 @@ fn gp_inner_relax(
                 gp_images[img_idx + 1] = candidate.to_vec();
             }
         }
+
+        // Early stopping guard (from step 2 onward)
+        if inner >= 1 {
+            let (stop, _offending) =
+                crate::neb_oie::oie_check_early_stop(&gp_images, td, cfg, path_scale);
+            if stop {
+                gp_images = pre_step;
+                early_stopped = true;
+                break;
+            }
+        }
     }
 
-    gp_images
+    (gp_images, early_stopped)
 }
 
 /// Post-inner-loop EMD trust region clip.
@@ -578,7 +613,7 @@ fn emd_trust_clip(images: &mut [Vec<f64>], td: &TrainingData, cfg: &NEBConfig) {
 }
 
 /// Per-bead nearest-neighbor subset selection for NEB.
-fn bead_local_subset(
+pub(crate) fn bead_local_subset(
     td: &TrainingData,
     max_points: usize,
     images: &[Vec<f64>],

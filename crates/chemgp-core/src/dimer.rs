@@ -57,6 +57,7 @@ pub struct DimerConfig {
     pub adaptive_n_half: usize,
     pub adaptive_a: f64,
     pub adaptive_floor: f64,
+    pub const_sigma2: f64,
     pub verbose: bool,
 }
 
@@ -92,6 +93,7 @@ impl Default for DimerConfig {
             adaptive_n_half: 50,
             adaptive_a: 1.3,
             adaptive_floor: 0.2,
+            const_sigma2: 0.0,
             verbose: true,
         }
     }
@@ -626,13 +628,14 @@ pub fn gp_dimer(
         };
 
         let mut gp_sub = GPModel::new(kern, &td_sub, y_sub.clone(), 1e-6, 1e-4, 1e-6);
+        gp_sub.const_sigma2 = cfg.const_sigma2;
         train_model(&mut gp_sub, train_iters, cfg.verbose);
         prev_kern = Some(gp_sub.kernel.clone());
 
         // Build prediction model on full data (RFF if configured, else exact GP)
         let y_mean = td.energies[0];
         let y_std = 1.0;
-        let model = build_pred_model(&gp_sub.kernel, &td, cfg.rff_features, 42);
+        let model = build_pred_model(&gp_sub.kernel, &td, cfg.rff_features, 42, cfg.const_sigma2);
 
         // Reset L-BFGS/CG state for new outer iteration
         if let Some(ref mut rh) = rot_hist {

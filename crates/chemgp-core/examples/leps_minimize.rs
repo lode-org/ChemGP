@@ -22,15 +22,26 @@ fn main() {
 
     let gp_result = gp_minimize(&oracle, &x_init, &kernel, &gp_cfg, None);
 
+    // Re-evaluate forces at each GP trajectory point for plotting
+    let mut gp_forces: Vec<f64> = Vec::new();
+    for pt in &gp_result.trajectory {
+        let (_, g) = oracle(pt);
+        let max_f = g.iter().map(|v| v.abs()).fold(0.0f64, f64::max);
+        gp_forces.push(max_f);
+    }
+
     // Direct gradient descent (no GP, just repeated oracle calls)
     let mut x = x_init.clone();
     let mut direct_energies = Vec::new();
+    let mut direct_forces = Vec::new();
     let mut direct_calls = 0;
     let max_step = 0.05;
 
     for _ in 0..200 {
         let (e, g) = oracle(&x);
+        let max_f = g.iter().map(|v| v.abs()).fold(0.0f64, f64::max);
         direct_energies.push(e);
+        direct_forces.push(max_f);
         direct_calls += 1;
 
         let g_norm: f64 = g.iter().map(|v| v * v).sum::<f64>().sqrt();
@@ -50,15 +61,15 @@ fn main() {
     let mut f = std::fs::File::create(outfile).unwrap();
 
     // GP trajectory
-    for (i, e) in gp_result.energies.iter().enumerate() {
-        writeln!(f, r#"{{"method":"gp_minimize","step":{},"energy":{},"oracle_calls":{}}}"#,
-            i, e, i + 1).unwrap();
+    for (i, (e, max_f)) in gp_result.energies.iter().zip(gp_forces.iter()).enumerate() {
+        writeln!(f, r#"{{"method":"gp_minimize","step":{},"energy":{},"max_fatom":{},"oracle_calls":{}}}"#,
+            i, e, max_f, i + 1).unwrap();
     }
 
     // Direct trajectory
-    for (i, e) in direct_energies.iter().enumerate() {
-        writeln!(f, r#"{{"method":"direct_minimize","step":{},"energy":{},"oracle_calls":{}}}"#,
-            i, e, i + 1).unwrap();
+    for (i, (e, max_f)) in direct_energies.iter().zip(direct_forces.iter()).enumerate() {
+        writeln!(f, r#"{{"method":"direct_minimize","step":{},"energy":{},"max_fatom":{},"oracle_calls":{}}}"#,
+            i, e, max_f, i + 1).unwrap();
     }
 
     eprintln!("GP minimize: {} oracle calls, final E = {:.6}, converged = {}",
