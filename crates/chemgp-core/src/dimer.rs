@@ -6,6 +6,10 @@
 //! Reference: Henkelman & Jonsson, J. Chem. Phys. 111, 7010 (1999).
 //! GP-Dimer: Koistinen et al., J. Chem. Theory Comput. 16, 499 (2020).
 
+use crate::dimer_utils::{
+    curvature, max_atom_motion, max_atom_motion_applied, normalize_vec, project_out_translations,
+    rotational_force, translational_force, vec_dot, vec_norm,
+};
 use crate::kernel::Kernel;
 use crate::lbfgs::LbfgsHistory;
 use crate::predict::{build_pred_model, PredModel};
@@ -66,7 +70,7 @@ impl Default for DimerConfig {
         Self {
             t_force_true: 1e-3,
             t_force_gp: 1e-2,
-            t_angle_rot: 1e-3,
+            t_angle_rot: 5.0_f64.to_radians(),
             trust_radius: 0.1,
             max_outer_iter: 50,
             max_oracle_calls: 0,
@@ -78,8 +82,8 @@ impl Default for DimerConfig {
             perturb_scale: 0.15,
             rotation_method: "lbfgs".to_string(),
             translation_method: "lbfgs".to_string(),
-            lbfgs_memory: 5,
-            max_step: 0.5,
+            lbfgs_memory: 25,
+            max_step: 0.05,
             step_convex: 0.1,
             max_training_points: 0,
             rff_features: 0,
@@ -142,71 +146,6 @@ fn dimer_images(state: &DimerState) -> (Vec<f64>, Vec<f64>) {
     (r1, r2)
 }
 
-/// Curvature along dimer direction.
-fn curvature(g0: &[f64], g1: &[f64], orient: &[f64], dimer_sep: f64) -> f64 {
-    let dot: f64 = g1
-        .iter()
-        .zip(g0.iter())
-        .zip(orient.iter())
-        .map(|((g1, g0), o)| (g1 - g0) * o)
-        .sum();
-    dot / dimer_sep
-}
-
-/// Rotational force perpendicular to the dimer.
-fn rotational_force(g0: &[f64], g1: &[f64], orient: &[f64], dimer_sep: f64) -> Vec<f64> {
-    let g_diff: Vec<f64> = g1
-        .iter()
-        .zip(g0.iter())
-        .map(|(a, b)| (a - b) / dimer_sep)
-        .collect();
-    let dot: f64 = g_diff.iter().zip(orient.iter()).map(|(g, o)| g * o).sum();
-    g_diff.iter().zip(orient.iter()).map(|(g, o)| g - dot * o).collect()
-}
-
-/// Modified translational force for saddle point search.
-fn translational_force(g0: &[f64], orient: &[f64]) -> Vec<f64> {
-    let f_par: f64 = g0.iter().zip(orient.iter()).map(|(g, o)| g * o).sum();
-    g0.iter()
-        .zip(orient.iter())
-        .map(|(g, o)| -g + 2.0 * f_par * o)
-        .collect()
-}
-
-/// Project out translational components from a 3N vector.
-///
-/// For N atoms in 3D, removes the 3 rigid translation modes so the
-/// dimer operates only in the internal coordinate subspace.
-fn project_out_translations(v: &mut [f64]) {
-    let n = v.len() / 3;
-    if n == 0 {
-        return;
-    }
-    // For each Cartesian direction, remove the uniform translation component
-    for d in 0..3 {
-        let avg: f64 = (0..n).map(|i| v[3 * i + d]).sum::<f64>() / n as f64;
-        for i in 0..n {
-            v[3 * i + d] -= avg;
-        }
-    }
-}
-
-fn vec_norm(v: &[f64]) -> f64 {
-    v.iter().map(|x| x * x).sum::<f64>().sqrt()
-}
-
-fn vec_dot(a: &[f64], b: &[f64]) -> f64 {
-    a.iter().zip(b.iter()).map(|(x, y)| x * y).sum()
-}
-
-fn normalize_vec(v: &[f64]) -> Vec<f64> {
-    let n = vec_norm(v);
-    if n > 1e-18 {
-        v.iter().map(|x| x / n).collect()
-    } else {
-        v.to_vec()
-    }
-}
 
 // ============================================================================
 // GP prediction helpers
@@ -296,7 +235,7 @@ fn rotate_dimer_newton(
         return None;
     }
 
-    let a1 = (f_dtheta - f_0 * cos2) / sin2;
+    let a1 = (f_dtheta - f_0 * cos2) / (2.0 * sin2);
     let b1 = -0.5 * f_0;
 
     let angle_rot = 0.5 * (b1 / (a1 + 1e-18)).atan();
@@ -868,8 +807,13 @@ pub fn standard_dimer(
     let mut history = DimerHistory::default();
     #[allow(unused_assignments)]
     let mut stop_reason = StopReason::MaxIterations;
-    let max_step = 0.05;
+    let max_step = config.max_step.max(0.05);
     let call_cap = if config.max_oracle_calls > 0 { config.max_oracle_calls } else { 600 };
+
+    let use_lbfgs = config.translation_method == "lbfgs";
+    let mut trans_hist = LbfgsHistory::new(config.lbfgs_memory);
+    let mut f_trans_prev: Vec<f64> = Vec::new();
+    let mut r_prev = r.clone();
 
     loop {
         if oracle_calls >= call_cap {
@@ -886,90 +830,108 @@ pub fn standard_dimer(
         let (_e1, g1) = oracle(&r1);
         oracle_calls += 1;
 
-        let c0 = curvature(&g0, &g1, &orient, dimer_sep);
+        let mut c_cur = curvature(&g0, &g1, &orient, dimer_sep);
+        let mut g1_cur = g1.clone();
 
-        // Rotate: parabolic fit rotation step (Henkelman & Jonsson 1999)
-        let f_rot = rotational_force(&g0, &g1, &orient, dimer_sep);
-        let f_rot_norm = vec_norm(&f_rot);
-        let mut g1_final = g1.clone();
-        if f_rot_norm > 1e-10 {
-            let dtheta = 0.5 * (0.5 * f_rot_norm / (c0.abs() + 1e-10)).atan().min(0.3);
-            let orient_rot: Vec<f64> = f_rot.iter().map(|x| x / f_rot_norm).collect();
+        // Rotation loop (Kastner-Sherwood ImprovedDimer with L-BFGS rotation direction)
+        let phi_tol_rad = config.t_angle_rot;
+        let max_rots = config.max_rot_iter;
+        let mut rot_lbfgs = LbfgsHistory::new(config.lbfgs_memory);
+        let mut f_rot_prev: Vec<f64> = Vec::new();
+        let mut orient_prev: Vec<f64> = Vec::new();
 
-            // Trial rotation at dtheta
-            let orient_trial: Vec<f64> = orient.iter().zip(orient_rot.iter())
-                .map(|(o, r)| dtheta.cos() * o + dtheta.sin() * r).collect();
-            let orient_trial = normalize_vec(&orient_trial);
+        for _rot_iter in 0..max_rots {
+            if oracle_calls >= call_cap { break; }
 
-            let r1_trial: Vec<f64> = r.iter().zip(orient_trial.iter())
+            let f_rot = rotational_force(&g0, &g1_cur, &orient, dimer_sep);
+            let f_rot_norm = vec_norm(&f_rot);
+            if f_rot_norm < 1e-10 { break; }
+
+            // L-BFGS direction for rotation (matches eOn ImprovedDimer)
+            let theta = if !f_rot_prev.is_empty() {
+                let s: Vec<f64> = orient.iter().zip(orient_prev.iter()).map(|(a, b)| a - b).collect();
+                let y: Vec<f64> = f_rot.iter().zip(f_rot_prev.iter()).map(|(a, b)| -(a - b)).collect();
+                rot_lbfgs.push_pair(s, y);
+
+                let neg_f: Vec<f64> = f_rot.iter().map(|x| -x).collect();
+                let mut dir = rot_lbfgs.compute_direction(&neg_f);
+                // Project perpendicular to orient
+                let sd_dot = vec_dot(&dir, &orient);
+                for (d, o) in dir.iter_mut().zip(orient.iter()) { *d -= sd_dot * o; }
+                let sn = vec_norm(&dir);
+                if sn < 1e-12 { normalize_vec(&f_rot) }
+                else { dir.iter().map(|x| x / sn).collect() }
+            } else {
+                normalize_vec(&f_rot)
+            };
+
+            // Curvature derivative for trial angle estimate
+            let d_c_d_phi = 2.0 * g1_cur.iter().zip(g0.iter()).zip(theta.iter())
+                .map(|((g1v, g0v), tv)| (g1v - g0v) * tv).sum::<f64>() / dimer_sep;
+            let phi_prime = -0.5 * (d_c_d_phi / (2.0 * c_cur.abs() + 1e-10)).atan();
+
+            if phi_prime.abs() < phi_tol_rad { break; }
+
+            // Evaluate at trial rotation
+            let tau_prime: Vec<f64> = orient.iter().zip(theta.iter())
+                .map(|(o, t)| phi_prime.cos() * o + phi_prime.sin() * t).collect();
+            let tau_prime = normalize_vec(&tau_prime);
+            let r1_trial: Vec<f64> = r.iter().zip(tau_prime.iter())
                 .map(|(r, o)| r + dimer_sep * o).collect();
             let (_, g1_trial) = oracle(&r1_trial);
             oracle_calls += 1;
 
-            // Parabolic fit for optimal angle
-            let f_rot_trial = rotational_force(&g0, &g1_trial, &orient_trial, dimer_sep);
-            let orient_rot_trial: Vec<f64> = orient.iter().zip(orient_rot.iter())
-                .map(|(o, r)| -dtheta.sin() * o + dtheta.cos() * r).collect();
-            let orient_rot_trial = normalize_vec(&orient_rot_trial);
+            let c_trial = curvature(&g0, &g1_trial, &tau_prime, dimer_sep);
 
-            let f_dtheta = vec_dot(&f_rot_trial, &orient_rot_trial);
-            let f_0 = vec_dot(&f_rot, &orient_rot);
-            let sin2 = (2.0 * dtheta).sin();
-            let cos2 = (2.0 * dtheta).cos();
+            // Parabolic fit for optimal angle (Kastner-Sherwood Eq. 4-6)
+            let b1 = 0.5 * d_c_d_phi;
+            let a1 = (c_cur - c_trial + b1 * (2.0 * phi_prime).sin())
+                / (1.0 - (2.0 * phi_prime).cos());
+            let phi_min = 0.5 * (b1 / a1).atan();
 
-            // Check if trial rotation improves curvature
-            let c_trial = curvature(&g0, &g1_trial, &orient_trial, dimer_sep);
+            let a0 = 2.0 * (c_cur - a1);
+            let mut c_min = 0.5 * a0 + a1 * (2.0 * phi_min).cos() + b1 * (2.0 * phi_min).sin();
+            let mut phi_final = phi_min;
 
-            if c_trial < c0 {
-                // Trial rotation improved curvature: accept and try parabolic refinement
-                if sin2.abs() > 1e-12 {
-                    let a1 = (f_dtheta - f_0 * cos2) / sin2;
-                    let b1 = -0.5 * f_0;
-                    let mut angle_final = 0.5 * (b1 / (a1 + 1e-18)).atan();
-                    let mut c_est = c0 + a1 * ((2.0 * angle_final).cos() - 1.0)
-                        + b1 * (2.0 * angle_final).sin();
-                    if c_est > c0 {
-                        angle_final += std::f64::consts::FRAC_PI_2;
-                        c_est = c0 + a1 * ((2.0 * angle_final).cos() - 1.0)
-                            + b1 * (2.0 * angle_final).sin();
-                    }
-
-                    if c_est < c0 {
-                        // Parabolic fit improvement: use fitted angle
-                        let orient_new: Vec<f64> = orient.iter().zip(orient_rot.iter())
-                            .map(|(o, r)| angle_final.cos() * o + angle_final.sin() * r).collect();
-                        orient = normalize_vec(&orient_new);
-
-                        // Interpolate g1 at fitted angle
-                        if dtheta.abs() > 1e-15 {
-                            let sin_ratio_1 = (dtheta - angle_final).sin() / dtheta.sin();
-                            let sin_ratio_2 = angle_final.sin() / dtheta.sin();
-                            let cos_correction = 1.0 - angle_final.cos()
-                                - angle_final.sin() * (dtheta * 0.5).tan();
-                            g1_final = g1.iter()
-                                .zip(g1_trial.iter())
-                                .zip(g0.iter())
-                                .map(|((a, b), c)| sin_ratio_1 * a + sin_ratio_2 * b + cos_correction * c)
-                                .collect();
-                        }
-                    } else {
-                        // Parabolic fit failed: use trial angle
-                        orient = orient_trial.clone();
-                        g1_final = g1_trial.clone();
-                    }
-                } else {
-                    // sin2 too small: use trial angle directly
-                    orient = orient_trial.clone();
-                    g1_final = g1_trial.clone();
-                }
-                project_out_translations(&mut orient);
-                orient = normalize_vec(&orient);
+            if c_min > c_cur {
+                phi_final += std::f64::consts::FRAC_PI_2;
+                c_min = 0.5 * a0 + a1 * (2.0 * phi_final).cos() + b1 * (2.0 * phi_final).sin();
             }
-            // else: rotation made curvature worse, keep original orient
+
+            // Wrap angle for L-BFGS accuracy (eOn: if phi_min > pi/2, subtract pi)
+            if phi_final > std::f64::consts::FRAC_PI_2 {
+                phi_final -= std::f64::consts::PI;
+            }
+
+            if c_min >= c_cur { break; }
+
+            // Accept rotation
+            f_rot_prev = f_rot;
+            orient_prev = orient.clone();
+
+            orient = orient.iter().zip(theta.iter())
+                .map(|(o, t)| phi_final.cos() * o + phi_final.sin() * t).collect();
+            orient = normalize_vec(&orient);
+            project_out_translations(&mut orient);
+            orient = normalize_vec(&orient);
+
+            // Interpolate g1 at optimal angle (Kastner-Sherwood Eq. 8)
+            if phi_prime.abs() > 1e-15 {
+                g1_cur = g1_cur.iter().zip(g1_trial.iter()).zip(g0.iter())
+                    .map(|((g1v, g1pv), g0v)| {
+                        let sr1 = (phi_prime - phi_final).sin() / phi_prime.sin();
+                        let sr2 = phi_final.sin() / phi_prime.sin();
+                        let cc = 1.0 - phi_final.cos() - phi_final.sin() * (phi_prime * 0.5).tan();
+                        sr1 * g1v + sr2 * g1pv + cc * g0v
+                    }).collect();
+            } else {
+                g1_cur = g1_trial;
+            }
+            c_cur = c_min;
         }
 
-        // Curvature and translational force with the ROTATED orient and matching g1
-        let c = curvature(&g0, &g1_final, &orient, dimer_sep);
+        // Curvature and translational force with the ROTATED orient
+        let c = c_cur;
         let f_trans = translational_force(&g0, &orient);
         let mut f_trans_proj = f_trans;
         project_out_translations(&mut f_trans_proj);
@@ -986,22 +948,104 @@ pub fn standard_dimer(
             break;
         }
 
-        // Translate: for negative curvature, use modified force; for positive, step along orient
+        // Translate
         if c < 0.0 {
-            let step_size = (max_step / f_norm.max(1e-18)).min(0.01);
-            for j in 0..d {
-                r[j] += step_size * f_trans_proj[j];
+            if use_lbfgs {
+                // L-BFGS translation (matches eOn LBFGS.cpp with auto_scale)
+                let n_atoms = d / 3;
+                // Use dimer curvature for initial H0 (matches eOn's FD estimate)
+                let mut h0 = if c.abs() > 1e-6 { 1.0 / c.abs() } else { 0.01 };
+
+                // Update L-BFGS history and compute auto-scaled H0
+                if !f_trans_prev.is_empty() {
+                    let dr: Vec<f64> = r.iter().zip(r_prev.iter()).map(|(a, b)| a - b).collect();
+                    let df: Vec<f64> = f_trans_prev.iter().zip(f_trans_proj.iter())
+                        .map(|(fp, fc)| fp - fc).collect();
+                    let dr_dot_df: f64 = dr.iter().zip(df.iter()).map(|(a, b)| a * b).sum();
+                    let df_dot_df: f64 = df.iter().map(|x| x * x).sum();
+
+                    if dr_dot_df > 1e-18 {
+                        let curv = df_dot_df / dr_dot_df;
+                        if curv > 0.0 {
+                            h0 = 1.0 / curv;
+                        } else {
+                            // Negative curvature: reset, take max move step
+                            trans_hist.reset();
+                            let scaled_f: Vec<f64> = f_trans_proj.iter()
+                                .map(|x| 1000.0 * x).collect();
+                            let step = max_atom_motion_applied(&scaled_f, max_step, n_atoms);
+                            for j in 0..d { r[j] += step[j]; }
+                            r_prev = r.clone();
+                            f_trans_prev = f_trans_proj.clone();
+                            continue;
+                        }
+                        trans_hist.push_pair(dr, df);
+                    }
+                }
+
+                let neg_f: Vec<f64> = f_trans_proj.iter().map(|x| -x).collect();
+                let mut search_dir = trans_hist.compute_direction(&neg_f);
+
+                // Apply H0 scaling when no history
+                if trans_hist.s.is_empty() {
+                    for s in search_dir.iter_mut() { *s *= h0; }
+                }
+
+                let d_vec = search_dir.clone();
+
+                // Distance reset: if any atom moves > max_move, reset
+                let max_atom = max_atom_motion(&d_vec, n_atoms);
+                if max_atom >= max_step {
+                    trans_hist.reset();
+                    let fallback: Vec<f64> = f_trans_proj.iter()
+                        .map(|x| h0 * x).collect();
+                    let step = max_atom_motion_applied(&fallback, max_step, n_atoms);
+                    r_prev = r.clone();
+                    for j in 0..d { r[j] += step[j]; }
+                    f_trans_prev = f_trans_proj.clone();
+                    continue;
+                }
+
+                // Angle reset: if direction > 90 degrees from force
+                let d_norm = vec_norm(&d_vec);
+                let f_norm_local = vec_norm(&f_trans_proj);
+                if d_norm > 1e-18 && f_norm_local > 1e-18 {
+                    let cos_angle: f64 = d_vec.iter().zip(f_trans_proj.iter())
+                        .map(|(a, b)| a * b).sum::<f64>() / (d_norm * f_norm_local);
+                    if cos_angle.clamp(-1.0, 1.0).acos() > std::f64::consts::FRAC_PI_2 {
+                        trans_hist.reset();
+                        let fallback: Vec<f64> = f_trans_proj.iter()
+                            .map(|x| h0 * x).collect();
+                        let step = max_atom_motion_applied(&fallback, max_step, n_atoms);
+                        r_prev = r.clone();
+                        for j in 0..d { r[j] += step[j]; }
+                        f_trans_prev = f_trans_proj.clone();
+                        continue;
+                    }
+                }
+
+                // Per-atom clipping on final step
+                let step = max_atom_motion_applied(&d_vec, max_step, n_atoms);
+                r_prev = r.clone();
+                for j in 0..d { r[j] += step[j]; }
+                f_trans_prev = f_trans_proj.clone();
+            } else {
+                let step_size = max_step / f_norm.max(1e-18);
+                for j in 0..d {
+                    r[j] += step_size * f_trans_proj[j];
+                }
             }
         } else {
-            // Convex region: step along negative gradient projected onto orient (uphill)
+            // Convex region: parallel-only force along dimer axis
             let g_par: f64 = g0.iter().zip(orient.iter()).map(|(g, o)| g * o).sum();
-            let mut step: Vec<f64> = orient.iter().map(|o| -g_par * o).collect();
-            project_out_translations(&mut step);
-            let sn = vec_norm(&step);
-            if sn > 1e-18 {
-                let scale = max_step.min(sn) / sn;
+            let f_along: Vec<f64> = orient.iter().map(|o| -g_par * o).collect();
+            let fn_val = vec_norm(&f_along);
+            trans_hist.reset();
+            f_trans_prev.clear();
+            if fn_val > 1e-12 {
+                let step_len = config.step_convex.min(max_step);
                 for j in 0..d {
-                    r[j] += scale * config.step_convex * step[j];
+                    r[j] += step_len * f_along[j] / fn_val;
                 }
             }
         }

@@ -6,13 +6,20 @@
 //!
 //! Reference: Goswami et al., J. Chem. Theory Comput. (2025).
 
+use crate::dimer_utils::{
+    curvature, normalize_vec, project_out_translations, rotational_force, translational_force,
+    vec_dot, vec_norm,
+};
 use crate::hod::{HodConfig, HodState};
 use crate::kernel::Kernel;
 use crate::lbfgs::LbfgsHistory;
 use crate::predict::{build_pred_model, PredModel};
 use crate::sampling::{prune_training_data, select_optim_subset};
 use crate::train::train_model;
-use crate::trust::{adaptive_trust_threshold, trust_distance, trust_min_distance, TrustMetric};
+use crate::trust::{
+    adaptive_trust_threshold, remove_rigid_body_modes, trust_distance, trust_min_distance,
+    TrustMetric,
+};
 use crate::types::{init_kernel, GPModel, TrainingData};
 use crate::StopReason;
 use rand::Rng;
@@ -136,53 +143,58 @@ pub struct OTGPDHistory {
 /// Oracle function type.
 pub type OracleFn = dyn Fn(&[f64]) -> (f64, Vec<f64>);
 
-// ============================================================================
-// Dimer utility functions (reused from dimer.rs patterns)
-// ============================================================================
 
-fn vec_norm(v: &[f64]) -> f64 {
-    v.iter().map(|x| x * x).sum::<f64>().sqrt()
-}
-
-fn vec_dot(a: &[f64], b: &[f64]) -> f64 {
-    a.iter().zip(b.iter()).map(|(x, y)| x * y).sum()
-}
-
-fn normalize_vec(v: &[f64]) -> Vec<f64> {
-    let n = vec_norm(v);
-    if n > 1e-18 { v.iter().map(|x| x / n).collect() } else { v.to_vec() }
-}
-
-/// Project out translational components from a 3N vector.
-fn project_out_translations(v: &mut [f64]) {
-    let n = v.len() / 3;
-    if n == 0 {
-        return;
+/// Per-atom step limiting (C++ AtomicDimer.cpp:336-396).
+///
+/// Checks that no atom moves more than 0.5*(1-ratio_at_limit)*min_interatomic_distance.
+/// If exceeded, scales the entire step so the most constrained atom is at 99% of its limit.
+/// Returns true if the step was clipped.
+fn limit_per_atom_step(r: &[f64], r_new: &mut [f64], n_atoms: usize, ratio_at_limit: f64) -> bool {
+    // Per-atom step lengths
+    let mut atom_steps = vec![0.0; n_atoms];
+    for i in 0..n_atoms {
+        let dx = r_new[3 * i] - r[3 * i];
+        let dy = r_new[3 * i + 1] - r[3 * i + 1];
+        let dz = r_new[3 * i + 2] - r[3 * i + 2];
+        atom_steps[i] = (dx * dx + dy * dy + dz * dz).sqrt();
     }
-    for d in 0..3 {
-        let avg: f64 = (0..n).map(|i| v[3 * i + d]).sum::<f64>() / n as f64;
-        for i in 0..n {
-            v[3 * i + d] -= avg;
+
+    // Minimum interatomic distance per atom
+    let mut min_dists = vec![f64::INFINITY; n_atoms];
+    for i in 0..n_atoms {
+        for j in (i + 1)..n_atoms {
+            let dx = r[3 * i] - r[3 * j];
+            let dy = r[3 * i + 1] - r[3 * j + 1];
+            let dz = r[3 * i + 2] - r[3 * j + 2];
+            let d = (dx * dx + dy * dy + dz * dz).sqrt();
+            min_dists[i] = min_dists[i].min(d);
+            min_dists[j] = min_dists[j].min(d);
         }
     }
+
+    let factor = 0.5 * (1.0 - ratio_at_limit);
+    let mut needs_clip = false;
+    let mut min_ratio = f64::INFINITY;
+
+    for i in 0..n_atoms {
+        let limit = factor * min_dists[i];
+        if atom_steps[i] > 0.99 * limit && atom_steps[i] > 1e-15 {
+            needs_clip = true;
+            let ratio = limit / atom_steps[i];
+            min_ratio = min_ratio.min(ratio);
+        }
+    }
+
+    if needs_clip {
+        let scale = min_ratio * 0.99;
+        for j in 0..r_new.len() {
+            r_new[j] = r[j] + (r_new[j] - r[j]) * scale;
+        }
+    }
+
+    needs_clip
 }
 
-fn curvature_fn(g0: &[f64], g1: &[f64], orient: &[f64], sep: f64) -> f64 {
-    let dot: f64 = g1.iter().zip(g0.iter()).zip(orient.iter())
-        .map(|((g1, g0), o)| (g1 - g0) * o).sum();
-    dot / sep
-}
-
-fn rotational_force_fn(g0: &[f64], g1: &[f64], orient: &[f64], sep: f64) -> Vec<f64> {
-    let g_diff: Vec<f64> = g1.iter().zip(g0.iter()).map(|(a, b)| (a - b) / sep).collect();
-    let dot: f64 = g_diff.iter().zip(orient.iter()).map(|(g, o)| g * o).sum();
-    g_diff.iter().zip(orient.iter()).map(|(g, o)| g - dot * o).collect()
-}
-
-fn translational_force_fn(g0: &[f64], orient: &[f64]) -> Vec<f64> {
-    let f_par: f64 = g0.iter().zip(orient.iter()).map(|(g, o)| g * o).sum();
-    g0.iter().zip(orient.iter()).map(|(g, o)| -g + 2.0 * f_par * o).collect()
-}
 
 fn predict_dimer(
     r: &[f64], orient: &[f64], sep: f64, model: &PredModel, e_ref: f64,
@@ -208,15 +220,15 @@ fn rotate_on_gp(
     let mut best_c = 0.0;
     for _ in 0..cfg.max_rot_iter {
         let (g0, g1, _) = predict_dimer(r, orient, sep, model, e_ref);
-        let f_rot = rotational_force_fn(&g0, &g1, orient, sep);
+        let f_rot = rotational_force(&g0, &g1, orient, sep);
         let f_rot_norm = vec_norm(&f_rot);
 
         if f_rot_norm < 1e-10 {
-            best_c = curvature_fn(&g0, &g1, orient, sep);
+            best_c = curvature(&g0, &g1, orient, sep);
             break;
         }
 
-        let c0 = curvature_fn(&g0, &g1, orient, sep);
+        let c0 = curvature(&g0, &g1, orient, sep);
         best_c = c0;
 
         let dtheta = 0.5 * (0.5 * f_rot_norm / (c0.abs() + 1e-10)).atan();
@@ -236,7 +248,7 @@ fn rotate_on_gp(
         let pred1_trial = model.predict(&r1_trial);
         let g1_trial: Vec<f64> = pred1_trial[1..].to_vec();
 
-        let f_rot_trial = rotational_force_fn(&g0, &g1_trial, &orient_trial, sep);
+        let f_rot_trial = rotational_force(&g0, &g1_trial, &orient_trial, sep);
 
         let orient_rot_trial: Vec<f64> = orient.iter().zip(orient_rot.iter())
             .map(|(o, r)| -dtheta.sin() * o + dtheta.cos() * r).collect();
@@ -253,7 +265,7 @@ fn rotate_on_gp(
             continue;
         }
 
-        let a1 = (f_dtheta - f_0 * cos2) / sin2;
+        let a1 = (f_dtheta - f_0 * cos2) / (2.0 * sin2);
         let b1 = -0.5 * f_0;
         let angle_rot = 0.5 * (b1 / (a1 + 1e-18)).atan();
 
@@ -345,9 +357,9 @@ pub fn otgpd(
             td.add_point(&r, e0_rot, &g0);
             td.add_point(&r1_cur, e1_rot, &g1);
 
-            let f_rot = rotational_force_fn(&g0, &g1, &orient, cfg.dimer_sep);
+            let f_rot = rotational_force(&g0, &g1, &orient, cfg.dimer_sep);
             let f_rot_norm = vec_norm(&f_rot);
-            let c0 = curvature_fn(&g0, &g1, &orient, cfg.dimer_sep);
+            let c0 = curvature(&g0, &g1, &orient, cfg.dimer_sep);
 
             let dtheta = 0.5 * (0.5 * f_rot_norm / (c0.abs() + 1e-10)).atan();
             if dtheta < cfg.t_angle_rot {
@@ -366,11 +378,11 @@ pub fn otgpd(
             oracle_calls += 1;
             td.add_point(&r1_trial, e1_trial, &g1_trial);
 
-            let c_trial = curvature_fn(&g0, &g1_trial, &orient_trial, cfg.dimer_sep);
+            let c_trial = curvature(&g0, &g1_trial, &orient_trial, cfg.dimer_sep);
 
             if c_trial < c0 {
                 // Trial improved curvature: try parabolic refinement
-                let f_rot_trial = rotational_force_fn(&g0, &g1_trial, &orient_trial, cfg.dimer_sep);
+                let f_rot_trial = rotational_force(&g0, &g1_trial, &orient_trial, cfg.dimer_sep);
                 let orient_rot_trial: Vec<f64> = orient.iter().zip(orient_rot.iter())
                     .map(|(o, r)| -dtheta.sin() * o + dtheta.cos() * r).collect();
                 let orient_rot_trial = normalize_vec(&orient_rot_trial);
@@ -381,7 +393,7 @@ pub fn otgpd(
                 let cos2 = (2.0 * dtheta).cos();
 
                 if sin2.abs() > 1e-12 {
-                    let a1 = (f_dtheta - f_0 * cos2) / sin2;
+                    let a1 = (f_dtheta - f_0 * cos2) / (2.0 * sin2);
                     let b1 = -0.5 * f_0;
                     let angle_rot = 0.5 * (b1 / (a1 + 1e-18)).atan();
 
@@ -414,9 +426,9 @@ pub fn otgpd(
 
     // Record initial state in history (before GP loop)
     {
-        let f_trans_init = translational_force_fn(&g_r, &orient);
+        let f_trans_init = translational_force(&g_r, &orient);
         let f_norm_init = vec_norm(&f_trans_init);
-        let c_init = curvature_fn(&g_r, &g_r1, &orient, cfg.dimer_sep);
+        let c_init = curvature(&g_r, &g_r1, &orient, cfg.dimer_sep);
         history.e_true.push(e_r);
         history.f_true.push(f_norm_init);
         history.curv_true.push(c_init);
@@ -429,8 +441,23 @@ pub fn otgpd(
     let mut stop_reason = StopReason::MaxIterations;
     let mut hod_state = HodState::new(cfg.fps_history);
     let n_atoms = d / 3;
+    // Track latest true gradient Linf for C++ threshold formula
+    let mut latest_g_inf: f64 = g_r.iter().map(|x| x.abs()).fold(0.0f64, f64::max);
+    // Restart logic (C++ AtomicDimer.cpp:496-522): track latest converged state
+    let r_init = r.clone();
+    let orient_init = orient.clone();
+    let mut r_latest_conv: Option<Vec<f64>> = None;
+    let mut orient_latest_conv: Option<Vec<f64>> = None;
 
     for outer_iter in 0..cfg.max_outer_iter {
+        // Restart from latest converged state (C++ defineStartPath)
+        if let Some(ref rc) = r_latest_conv {
+            r = rc.clone();
+            orient = orient_latest_conv.as_ref().unwrap().clone();
+        } else {
+            r = r_init.clone();
+            orient = orient_init.clone();
+        }
         // Pruning
         if cfg.max_training_points > 0 && td.npoints() > cfg.max_training_points {
             let dist_fn = |a: &[f64], b: &[f64]| crate::distances::euclidean_distance(a, b);
@@ -486,12 +513,12 @@ pub fn otgpd(
         let model = build_pred_model(&gp_sub.kernel, &td, cfg.rff_features, 42, cfg.const_sigma2);
         let e_ref = td.energies[0];
 
-        // Adaptive GP threshold
-        let t_gp = if cfg.divisor_t_dimer_gp > 0.0 && !history.f_true.is_empty() {
-            let min_f = history.f_true.iter().cloned().fold(f64::INFINITY, f64::min);
-            (min_f / cfg.divisor_t_dimer_gp).max(cfg.t_dimer / 10.0)
+        // Adaptive GP threshold (C++ AtomicDimer.cpp:1056)
+        // Uses Linf of the current true gradient, not historical min L2 force
+        let t_gp = if cfg.divisor_t_dimer_gp > 0.0 {
+            (latest_g_inf / cfg.divisor_t_dimer_gp).max(cfg.t_dimer * 0.1)
         } else {
-            cfg.t_dimer / 10.0
+            cfg.t_dimer * 0.1
         };
 
         // Inner loop: optimize on GP surface
@@ -506,12 +533,16 @@ pub fn otgpd(
 
             // Predict
             let (g0, g1, _e0) = predict_dimer(&r, &orient, cfg.dimer_sep, &model, e_ref);
-            let c = curvature_fn(&g0, &g1, &orient, cfg.dimer_sep);
-            let mut f_trans = translational_force_fn(&g0, &orient);
+            let c = curvature(&g0, &g1, &orient, cfg.dimer_sep);
+            let mut f_trans = translational_force(&g0, &orient);
             project_out_translations(&mut f_trans);
-            let f_norm = vec_norm(&f_trans);
 
-            if f_norm < t_gp {
+            // Inner convergence: raw GP gradient Linf (C++ AtomicDimer.cpp:561)
+            let g0_inf = g0.iter().map(|x| x.abs()).fold(0.0f64, f64::max);
+            if g0_inf < t_gp {
+                // Update latest converged state (C++ AtomicDimer.cpp:562-563)
+                r_latest_conv = Some(r.clone());
+                orient_latest_conv = Some(orient.clone());
                 break;
             }
 
@@ -520,21 +551,41 @@ pub fn otgpd(
                 // Negative curvature: L-BFGS (pass -f_trans as gradient to minimize)
                 let neg_f: Vec<f64> = f_trans.iter().map(|x| -x).collect();
                 let dir = trans_hist.compute_direction(&neg_f);
-                let step_size = (cfg.max_step / vec_norm(&dir).max(1e-18)).min(0.01 / f_norm);
+                let step_size = cfg.max_step / vec_norm(&dir).max(1e-18);
                 dir.iter().map(|d| step_size * d).collect::<Vec<f64>>()
             } else {
-                // Positive curvature: fixed step along force
-                f_trans.iter().map(|f| cfg.step_convex * f / f_norm.max(1e-18)).collect::<Vec<f64>>()
+                // Positive curvature: parallel-only force (C++ Dimer.cpp:177-180)
+                let g_dot_o: f64 = g0.iter().zip(orient.iter()).map(|(g, o)| g * o).sum();
+                let f_along: Vec<f64> = orient.iter().map(|o| -g_dot_o * o).collect();
+                let fn_val = vec_norm(&f_along);
+                trans_hist.reset();
+                if fn_val < 1e-12 {
+                    break;
+                }
+                f_along.iter().map(|f| cfg.step_convex * f / fn_val).collect::<Vec<f64>>()
             };
 
             let step_norm = vec_norm(&step);
             let step = if step_norm > cfg.max_step {
+                trans_hist.reset(); // C++ Dimer.cpp:481
                 step.iter().map(|s| s * cfg.max_step / step_norm).collect()
             } else {
                 step
             };
 
-            let r_new: Vec<f64> = r.iter().zip(step.iter()).map(|(a, b)| a + b).collect();
+            let mut step_proj = step;
+            // 6-DOF projection: remove rigid body translation + rotation (C++ Dimer.cpp:21-101)
+            if n_atoms >= 2 {
+                remove_rigid_body_modes(&mut step_proj, &r, n_atoms);
+            }
+            let mut r_new: Vec<f64> = r.iter().zip(step_proj.iter()).map(|(a, b)| a + b).collect();
+
+            // Per-atom step limiting (C++ AtomicDimer.cpp:336-396)
+            if n_atoms >= 2 {
+                if limit_per_atom_step(&r, &mut r_new, n_atoms, cfg.ratio_at_limit) {
+                    trans_hist.reset();
+                }
+            }
 
             // Trust region check
             let thresh = adaptive_trust_threshold(
@@ -567,7 +618,7 @@ pub fn otgpd(
             if c < 0.0 {
                 let s: Vec<f64> = r_new.iter().zip(r.iter()).map(|(a, b)| a - b).collect();
                 let (g0_new, _g1_new, _) = predict_dimer(&r_new, &orient, cfg.dimer_sep, &model, e_ref);
-                let f_trans_new = translational_force_fn(&g0_new, &orient);
+                let f_trans_new = translational_force(&g0_new, &orient);
                 let y: Vec<f64> = f_trans.iter().zip(f_trans_new.iter()).map(|(a, b)| -(a - b)).collect();
                 trans_hist.push_pair(s, y);
             }
@@ -579,6 +630,7 @@ pub fn otgpd(
         let (e_true, g_true) = oracle(&r);
         oracle_calls += 1;
         td.add_point(&r, e_true, &g_true);
+        latest_g_inf = g_true.iter().map(|x| x.abs()).fold(0.0f64, f64::max);
 
         let mut c_true = f64::NAN;
         if cfg.eval_image1 {
@@ -587,10 +639,10 @@ pub fn otgpd(
             let (e_r1, g_r1) = oracle(&r1_cur);
             oracle_calls += 1;
             td.add_point(&r1_cur, e_r1, &g_r1);
-            c_true = curvature_fn(&g_true, &g_r1, &orient, cfg.dimer_sep);
+            c_true = curvature(&g_true, &g_r1, &orient, cfg.dimer_sep);
         }
 
-        let mut f_trans_true = translational_force_fn(&g_true, &orient);
+        let mut f_trans_true = translational_force(&g_true, &orient);
         project_out_translations(&mut f_trans_true);
         let f_norm_true = vec_norm(&f_trans_true);
 
