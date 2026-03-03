@@ -100,6 +100,22 @@ pub fn build_pred_model(
     seed: u64,
     const_sigma2: f64,
 ) -> PredModel {
+    build_pred_model_full(kernel, td, rff_features, seed, const_sigma2, 1e-6, 1e-4, 1e-6)
+}
+
+/// Build a PredModel with explicit noise and jitter.
+///
+/// C++ gpr_optim defaults: noise_e=1e-7, noise_g=1e-5, jitter=0 for molecular systems.
+pub fn build_pred_model_full(
+    kernel: &Kernel,
+    td: &TrainingData,
+    rff_features: usize,
+    seed: u64,
+    const_sigma2: f64,
+    noise_e: f64,
+    noise_g: f64,
+    jitter: f64,
+) -> PredModel {
     let e_ref = td.energies[0];
     if rff_features > 0 {
         let mut y_rff: Vec<f64> = td.energies.iter().map(|e| e - e_ref).collect();
@@ -111,8 +127,8 @@ pub fn build_pred_model(
             td.npoints(),
             &y_rff,
             rff_features,
-            1e-6,
-            1e-4,
+            noise_e,
+            noise_g,
             seed,
             const_sigma2,
         );
@@ -120,7 +136,7 @@ pub fn build_pred_model(
     } else {
         let mut y_gp: Vec<f64> = td.energies.iter().map(|e| e - e_ref).collect();
         y_gp.extend_from_slice(&td.gradients);
-        let mut gp_model = GPModel::new(kernel.clone(), td, y_gp, 1e-6, 1e-4, 1e-6);
+        let mut gp_model = GPModel::new(kernel.clone(), td, y_gp, noise_e, noise_g, jitter);
         gp_model.const_sigma2 = const_sigma2;
         let cached = CachedGpModel::from_gp(&gp_model);
         PredModel::Gp(cached)

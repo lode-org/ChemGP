@@ -49,7 +49,10 @@ pub fn trust_min_distance(
     min_d
 }
 
-/// Adaptive trust threshold with sigmoidal decay.
+/// Adaptive trust threshold with exponential saturation (C++ AtomicDimer.cpp:429).
+///
+/// More data -> higher threshold -> more permissive exploration.
+/// Capped by `physical_limit = max(floor, a / sqrt(n_atoms))`.
 pub fn adaptive_trust_threshold(
     trust_radius: f64,
     n_data: usize,
@@ -64,9 +67,10 @@ pub fn adaptive_trust_threshold(
     if !use_adaptive {
         return trust_radius;
     }
-    let n_eff = n_data as f64 / n_atoms.max(1) as f64;
-    let t = t_min + delta_t / (1.0 + a * (n_eff / n_half as f64).exp());
-    t.max(floor)
+    let k = 2.0_f64.ln() / n_half.max(1) as f64;
+    let earned = t_min + delta_t * (1.0 - (-k * n_data as f64).exp());
+    let physical = floor.max(a / (n_atoms.max(1) as f64).sqrt());
+    earned.min(physical)
 }
 
 /// Minimum distance from x to any training point (Euclidean).

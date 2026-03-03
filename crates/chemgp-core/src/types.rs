@@ -106,6 +106,16 @@ pub struct GPModel {
     /// Constant kernel variance: k_c(x,x') = const_sigma2 for energy-energy block.
     /// Matches C++ gpr_optim ConstantCF: max(1, mean_y^2). Not optimized by SCG.
     pub const_sigma2: f64,
+    /// SCG initial lambda (trust-region regularization). Default 10.0 (C++ default).
+    /// d_000 config uses 100. Higher = more conservative SCG steps.
+    pub scg_lambda_init: f64,
+    /// Student-t prior degrees of freedom on sqrt(sigma2). 0.0 = Gaussian fallback.
+    /// C++ gpr_optim uses PriorSqrtt with dof=28 for molecular systems.
+    pub prior_dof: f64,
+    /// Student-t prior scale parameter (s2). Default 1.0.
+    pub prior_s2: f64,
+    /// Student-t prior location parameter (mu). Default 0.0.
+    pub prior_mu: f64,
 }
 
 impl GPModel {
@@ -133,6 +143,10 @@ impl GPModel {
             grad_noise_var,
             jitter,
             const_sigma2,
+            scg_lambda_init: 10.0,
+            prior_dof: 0.0,
+            prior_s2: 1.0,
+            prior_mu: 0.0,
         }
     }
 

@@ -8,6 +8,29 @@ use faer::linalg::solvers::{DenseSolveCore, Solve};
 use faer::Mat;
 use std::f64::consts::PI;
 
+/// Lanczos approximation for ln(Gamma(x)), x > 0. Accurate to ~15 digits.
+fn ln_gamma(x: f64) -> f64 {
+    // Coefficients from Numerical Recipes (Lanczos, g=7, n=9).
+    const C: [f64; 9] = [
+        0.99999999999980993,
+        676.5203681218851,
+        -1259.1392167224028,
+        771.32342877765313,
+        -176.61502916214059,
+        12.507343278686905,
+        -0.13857109526572012,
+        9.9843695780195716e-6,
+        1.5056327351493116e-7,
+    ];
+    let x = x - 1.0;
+    let mut sum = C[0];
+    for i in 1..9 {
+        sum += C[i] / (x + i as f64);
+    }
+    let t = x + 7.5;
+    0.5 * (2.0 * PI).ln() + (x + 0.5) * t.ln() - t + sum.ln()
+}
+
 /// Compute MAP NLL and gradient w.r.t. log-space hyperparameters.
 ///
 /// w = [log(sigma2), log(theta_1), ..., log(theta_P)]
@@ -27,6 +50,9 @@ pub fn nll_and_grad(
     w_prior: &[f64],
     prior_var: &[f64],
     const_sigma2: f64,
+    prior_dof: f64,
+    prior_s2: f64,
+    prior_mu: f64,
 ) -> (f64, Vec<f64>) {
     let sigma2 = w[0].exp();
     let inv_ls: Vec<f64> = w[1..].iter().map(|v| v.exp()).collect();
@@ -157,8 +183,25 @@ pub fn nll_and_grad(
     let constant = 0.5 * total_dim as f64 * (2.0 * PI).ln();
     let mut nll = data_fit + complexity + constant;
 
-    // MAP prior contribution
-    for i in 0..n_params {
+    // MAP prior contribution: sigma2 (w[0]) and length scales (w[1..])
+    if prior_dof > 0.0 {
+        // Student-t prior on sqrt(sigma2), matching C++ PriorSqrtt + SexpatCF Jacobian.
+        // log p = StudentT(sqrt(sigma2); mu, s2, nu) - log(2*sqrt(sigma2)) + log(sigma2)
+        let sqrt_s2 = sigma2.sqrt();
+        let nu = prior_dof;
+        let diff = sqrt_s2 - prior_mu;
+        let lp = ln_gamma((nu + 1.0) / 2.0) - ln_gamma(nu / 2.0)
+            - 0.5 * (nu * PI * prior_s2).ln()
+            - (nu + 1.0) / 2.0 * (1.0 + diff * diff / (nu * prior_s2)).ln()
+            - (2.0 * sqrt_s2).ln()
+            + w[0];
+        nll -= lp;
+    } else {
+        // Gaussian prior on log(sigma2)
+        nll += 0.5 * (w[0] - w_prior[0]).powi(2) / prior_var[0];
+    }
+    // Gaussian prior on length scale parameters (unchanged)
+    for i in 1..n_params {
         nll += 0.5 * (w[i] - w_prior[i]).powi(2) / prior_var[i];
     }
 
@@ -195,8 +238,27 @@ pub fn nll_and_grad(
             }
         }
         grad[jp] = 0.5 * trace;
-        // MAP prior gradient
-        grad[jp] += (w[jp] - w_prior[jp]) / prior_var[jp];
+        // MAP prior gradient for length scales (w[1..])
+        if jp > 0 {
+            grad[jp] += (w[jp] - w_prior[jp]) / prior_var[jp];
+        }
+    }
+
+    // sigma2 prior gradient (w[0])
+    if prior_dof > 0.0 {
+        // Student-t gradient: d(-lp)/dw[0]
+        let sqrt_s2 = sigma2.sqrt();
+        let nu = prior_dof;
+        let diff = sqrt_s2 - prior_mu;
+        // d(sqrtt_log_prior)/d(sigma2)
+        let dsqrtt = 0.5 / sqrt_s2
+            * (-(nu + 1.0) * diff / (nu * prior_s2 + diff * diff))
+            - 0.5 / sigma2;
+        // Chain: d/dw[0] = dsqrtt * sigma2 + 1.0 (Jacobian)
+        let dlp_dw0 = dsqrtt * sigma2 + 1.0;
+        grad[0] -= dlp_dw0;
+    } else {
+        grad[0] += (w[0] - w_prior[0]) / prior_var[0];
     }
 
     // magnSigma2 barrier gradient: d/dw[0] of -strength * ln(gap) = +strength / gap

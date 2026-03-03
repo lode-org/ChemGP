@@ -148,7 +148,7 @@ fn main() {
     } else {
         None
     };
-    let neb_calls = neb_result.as_ref().map_or(402, |r| r.oracle_calls);
+    let _neb_calls = neb_result.as_ref().map_or(402, |r| r.oracle_calls);
 
     // --- GP-NEB AIE ---
     let aie_result = if run_aie {

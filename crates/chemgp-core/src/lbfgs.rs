@@ -9,6 +9,9 @@ pub struct LbfgsHistory {
     pub s: Vec<Vec<f64>>,
     pub y: Vec<Vec<f64>>,
     pub count: usize,
+    /// Initial Hessian scaling when no history is available (C++ LBFGS default_scaling).
+    /// Default: 0.01, matching C++ gpr_optim LBFGS.cpp.
+    pub default_scaling: f64,
 }
 
 impl LbfgsHistory {
@@ -18,6 +21,7 @@ impl LbfgsHistory {
             s: Vec::new(),
             y: Vec::new(),
             count: 0,
+            default_scaling: 0.01,
         }
     }
 
@@ -43,7 +47,7 @@ impl LbfgsHistory {
         let m = self.s.len();
 
         if m == 0 {
-            return gradient.iter().map(|x| -x).collect();
+            return gradient.iter().map(|x| -self.default_scaling * x).collect();
         }
 
         let mut q = gradient.to_vec();
@@ -106,6 +110,9 @@ mod tests {
         let h = LbfgsHistory::new(5);
         let g = vec![1.0, -2.0, 3.0];
         let d = h.compute_direction(&g);
-        assert_eq!(d, vec![-1.0, 2.0, -3.0]);
+        // default_scaling = 0.01 (C++ gpr_optim LBFGS.cpp)
+        assert!((d[0] - (-0.01)).abs() < 1e-15);
+        assert!((d[1] - 0.02).abs() < 1e-15);
+        assert!((d[2] - (-0.03)).abs() < 1e-15);
     }
 }
