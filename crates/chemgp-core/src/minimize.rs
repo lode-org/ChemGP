@@ -9,7 +9,8 @@ use crate::predict::build_pred_model;
 use crate::sampling::{prune_training_data, select_optim_subset};
 use crate::train::train_model;
 use crate::trust::{
-    adaptive_trust_threshold, trust_distance, trust_min_distance, TrustMetric,
+    adaptive_trust_threshold, remove_rigid_body_modes, trust_distance, trust_min_distance,
+    TrustMetric,
 };
 use crate::types::{init_kernel, GPModel, TrainingData};
 use crate::StopReason;
@@ -304,8 +305,23 @@ pub fn gp_minimize(
 
         x_curr = x_opt;
 
-        // Per-atom max-move clip (only for 3D molecular coordinates)
+        // 6-DOF rigid body projection (molecular systems only)
         let n_at = d / 3;
+        if n_at >= 2 && d == 3 * n_at {
+            let mut step: Vec<f64> = x_curr
+                .iter()
+                .zip(x_prev.iter())
+                .map(|(a, b)| a - b)
+                .collect();
+            remove_rigid_body_modes(&mut step, &x_prev, n_at);
+            x_curr = x_prev
+                .iter()
+                .zip(step.iter())
+                .map(|(a, b)| a + b)
+                .collect();
+        }
+
+        // Per-atom max-move clip (only for 3D molecular coordinates)
         if n_at >= 2 && d == 3 * n_at {
             let disp: Vec<f64> = x_curr
                 .iter()

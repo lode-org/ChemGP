@@ -25,11 +25,11 @@ impl Default for ScgConfig {
     fn default() -> Self {
         Self {
             max_iter: 200,
-            tol_x: 1e-6,
-            tol_f: 1e-8,
+            tol_x: 1e-4,
+            tol_f: 1e-4,
             sigma0: 1e-4,
-            lambda_init: 1.0,
-            lambda_max: 1e100,
+            lambda_init: 10.0,
+            lambda_max: 1e20,
             lambda_min: 1e-15,
             verbose: false,
         }

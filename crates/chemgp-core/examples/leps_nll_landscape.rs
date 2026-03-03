@@ -85,6 +85,7 @@ fn main() {
             let (nll, grad) = nll_and_grad(
                 &w, &x_data, dim, n, &y, &template,
                 noise_e, noise_g, jitter, &w_prior, &prior_var, const_sigma2,
+                0.0, 1.0, 0.0,
             );
 
             if nll.is_finite() {

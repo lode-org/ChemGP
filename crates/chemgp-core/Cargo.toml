@@ -24,3 +24,28 @@ clap = { workspace = true, optional = true }
 
 [dev-dependencies]
 approx = { workspace = true }
+
+# Feature-gated examples: cargo won't build these without the required features.
+[[example]]
+name = "petmad_minimize"
+required-features = ["rgpot"]
+
+[[example]]
+name = "rpc_smoke_test"
+required-features = ["rgpot"]
+
+[[example]]
+name = "hcn_dimer"
+required-features = ["io", "rgpot"]
+
+[[example]]
+name = "rpc_dimer"
+required-features = ["io", "rgpot"]
+
+[[example]]
+name = "hcn_neb"
+required-features = ["io", "rgpot"]
+
+[[example]]
+name = "system100_neb"
+required-features = ["cli", "io", "rgpot"]

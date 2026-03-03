@@ -34,7 +34,7 @@ pub fn train_model(model: &mut GPModel, iterations: usize, verbose: bool) {
     }
 
     let mut prior_var = Vec::with_capacity(1 + n_ls);
-    prior_var.push(2.0);
+    prior_var.push(1.0);
     for p in 0..n_ls {
         let v = 0.5 * (n_feat_per_param[p] as f64 / 3.0).clamp(0.3, 1.0);
         prior_var.push(v);
@@ -50,16 +50,20 @@ pub fn train_model(model: &mut GPModel, iterations: usize, verbose: bool) {
     let template = model.kernel.clone();
 
     let const_s2 = model.const_sigma2;
+    let p_dof = model.prior_dof;
+    let p_s2 = model.prior_s2;
+    let p_mu = model.prior_mu;
     let mut fg = |w: &[f64]| -> (f64, Vec<f64>) {
         nll_and_grad(
             w, &x_data, dim, n, &y, &template, noise_e, noise_g, jit, &w_prior,
-            &prior_var, const_s2,
+            &prior_var, const_s2, p_dof, p_s2, p_mu,
         )
     };
 
     let config = ScgConfig {
         max_iter: iterations,
         tol_f: 1e-4,
+        lambda_init: model.scg_lambda_init,
         verbose,
         ..Default::default()
     };

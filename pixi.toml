@@ -88,7 +88,7 @@ python scripts/plot_trust_illustration.py
 depends-on = ["examples"]
 
 [feature.rpc.dependencies]
-eon  = "==2.11.1"
+eon  = ">=2.11.1,<3"
 rust = ">=1.75"
 
 [feature.rpc.pypi-dependencies]
@@ -104,7 +104,7 @@ cmd = "eonclient -p metatomic --config petmad_hcn.ini --serve-port 12345"
 cmd = """
 TMPDIR=.cache/.tmpclaude \
 cargo run --release --features rgpot --example petmad_minimize && \
-cargo run --release --features rgpot --example hcn_neb
+cargo run --release --features io,rgpot --example hcn_neb
 """
 
 [feature.rpc.tasks.rpc-figures]
