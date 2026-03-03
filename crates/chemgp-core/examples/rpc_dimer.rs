@@ -22,7 +22,7 @@ use chemgp_core::io::read_con;
 use chemgp_core::kernel::{Kernel, MolInvDistSE};
 use chemgp_core::oracle::RpcOracle;
 use chemgp_core::otgpd::{otgpd, OTGPDConfig};
-use chemgp_core::trust::TrustMetric;
+
 
 fn get_arg(args: &[String], flag: &str) -> Option<String> {
     args.iter()
@@ -211,15 +211,10 @@ fn main() {
         cfg.trust_radius = 0.05;
         cfg.max_outer_iter = max_calls;
         cfg.max_oracle_calls = max_calls;
-        cfg.max_rot_iter = 10;
+        cfg.max_rot_iter = 0;
         cfg.gp_train_iter = 400;
-        cfg.fps_history = 10;
-        cfg.fps_latest_points = 3;
-        cfg.trust_metric = TrustMetric::Emd;
         cfg.atom_types = atomic_numbers.clone();
         cfg.const_sigma2 = 1.0;
-        cfg.translation_method = "lbfgs".to_string();
-        cfg.lbfgs_memory = 25;
 
         eprintln!("\n=== GP-Dimer ===");
         let result = gp_dimer(&oracle, &x_start, &orient, &kernel, &cfg, None, dimer_sep);
@@ -252,26 +247,16 @@ fn main() {
     // --- OTGPD ---
     if run_otgpd {
         let mut cfg = OTGPDConfig::default();
-        cfg.t_dimer = 0.01;
-        cfg.divisor_t_dimer_gp = 10.0;
         cfg.trust_radius = 0.05;
         cfg.max_outer_iter = max_calls;
         cfg.dimer_sep = dimer_sep;
-        cfg.max_rot_iter = 10;
-        cfg.initial_rotation = true;
-        cfg.max_initial_rot = 5;
+        cfg.max_rot_iter = 0;
+        cfg.max_initial_rot = 0;
         cfg.gp_train_iter = 400;
-        cfg.fps_history = 10;
         cfg.fps_latest_points = 3;
-        cfg.trust_metric = TrustMetric::Emd;
         cfg.atom_types = atomic_numbers.clone();
         cfg.const_sigma2 = 1.0;
-        cfg.use_hod = true;
-        cfg.hod_monitoring_window = 5;
         cfg.hod_max_history = 60;
-        cfg.translation_method = "lbfgs".to_string();
-        cfg.lbfgs_memory = 25;
-        cfg.max_step = 0.05;
         cfg.use_adaptive_threshold = true;
 
         eprintln!("\n=== OTGPD ===");

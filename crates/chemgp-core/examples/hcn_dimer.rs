@@ -1,8 +1,11 @@
-//! GP-Dimer and OTGPD saddle point search on system100 via RPC oracle.
+//! GP-Dimer and OTGPD saddle point search on d_000 (C3H5) via RPC oracle.
 //!
 //! Tutorial T10 (Production Saddle Search): demonstrates GP-accelerated
-//! saddle point refinement on a real PES, seeded from an NEB climbing
-//! image tangent.
+//! saddle point refinement on a real PES, using the softest-mode
+//! displacement from gprdzbl benchmark data.
+//!
+//! System: d_000 (allyl radical C3H5, 8 atoms, doublet)
+//! Reference: gprdzbl OTGPD converged in 15 oracle calls.
 //!
 //! Requires a running eOn serve instance:
 //!   pixi run -e rpc serve-petmad
@@ -37,23 +40,22 @@ fn main() {
         .parse()
         .expect("RGPOT_PORT must be a valid port number");
 
-    // Load system100 endpoints for initial geometry
-    let react_frames =
-        read_con("data/system100/reactant_minimized.con").expect("Failed to read reactant");
-    let prod_frames =
-        read_con("data/system100/product_minimized.con").expect("Failed to read product");
+    // Load d_000 geometry: pos.con (initial) and displacement.con (softest mode displaced)
+    let pos_frames = read_con("data/d000/pos.con").expect("Failed to read pos.con");
+    let disp_frames =
+        read_con("data/d000/displacement.con").expect("Failed to read displacement.con");
 
-    let reactant = &react_frames[0];
-    let product = &prod_frames[0];
-    let atomic_numbers = reactant.atomic_numbers.clone();
+    let pos = &pos_frames[0];
+    let disp = &disp_frames[0];
+    let atomic_numbers = pos.atomic_numbers.clone();
     let n_atoms = atomic_numbers.len();
     let box_matrix = [
-        reactant.cell[0][0], reactant.cell[0][1], reactant.cell[0][2],
-        reactant.cell[1][0], reactant.cell[1][1], reactant.cell[1][2],
-        reactant.cell[2][0], reactant.cell[2][1], reactant.cell[2][2],
+        pos.cell[0][0], pos.cell[0][1], pos.cell[0][2],
+        pos.cell[1][0], pos.cell[1][1], pos.cell[1][2],
+        pos.cell[2][0], pos.cell[2][1], pos.cell[2][2],
     ];
 
-    eprintln!("System100 dimer search (PET-MAD via RPC)");
+    eprintln!("d_000 (C3H5) dimer search (PET-MAD via RPC)");
     eprintln!("  atoms: {} ({:?})", n_atoms, atomic_numbers);
     eprintln!("  connecting to {}:{}", host, port);
     eprintln!("  method: {}", method);
@@ -69,22 +71,19 @@ fn main() {
             .unwrap_or_else(|e| panic!("RPC oracle failed: {}", e))
     };
 
-    // Initial guess: midpoint between reactant and product (approximate TS)
-    let x_start: Vec<f64> = reactant
-        .positions
-        .iter()
-        .zip(product.positions.iter())
-        .map(|(r, p)| 0.5 * (r + p))
-        .collect();
+    // Starting geometry from pos.con
+    let x_start: Vec<f64> = pos.positions.clone();
 
-    // Initial orientation: reactant-to-product direction (normalized)
-    let mut orient: Vec<f64> = reactant
+    // Initial orientation: displacement direction (disp - pos), normalized
+    // This is the softest vibrational mode from the gprdzbl benchmark
+    let mut orient: Vec<f64> = pos
         .positions
         .iter()
-        .zip(product.positions.iter())
-        .map(|(r, p)| p - r)
+        .zip(disp.positions.iter())
+        .map(|(p, d)| d - p)
         .collect();
     let orient_norm: f64 = orient.iter().map(|v| v * v).sum::<f64>().sqrt();
+    eprintln!("  displacement magnitude: {:.6} A", orient_norm);
     for v in &mut orient {
         *v /= orient_norm;
     }
@@ -93,6 +92,7 @@ fn main() {
         &atomic_numbers, vec![], &[], 1.0, 1.0,
     ));
 
+    // Match gprdzbl config: dimer_separation = 0.01, max_step_size = 0.05
     let dimer_sep = 0.01;
     let run_dimer = method == "dimer" || method == "all";
     let run_otgpd = method == "otgpd" || method == "all";
@@ -103,20 +103,20 @@ fn main() {
     // --- GP-Dimer ---
     if run_dimer {
         let mut cfg = DimerConfig::default();
-        cfg.t_force_true = 0.1;
-        cfg.t_force_gp = 0.01;
-        cfg.trust_radius = 0.05;
-        cfg.max_outer_iter = 100;
+        cfg.t_force_true = 0.01;       // gprdzbl: converged_force = 0.01
+        cfg.t_force_gp = 0.001;
+        cfg.trust_radius = 0.05;       // gprdzbl: max_step_size = 0.05
+        cfg.max_outer_iter = 300;      // gprdzbl: max_outer_iterations = 300
         cfg.max_oracle_calls = 80;
-        cfg.max_rot_iter = 0; // skip rotation (use provided orient)
-        cfg.gp_train_iter = 100;
-        cfg.fps_history = 20;
+        cfg.max_rot_iter = 10;         // gprdzbl: max_relaxation_rotation_iterations = 10
+        cfg.gp_train_iter = 400;       // gprdzbl: opt_max_iterations = 400
+        cfg.fps_history = 10;          // gprdzbl: fps_history = 10
         cfg.fps_latest_points = 3;
         cfg.trust_metric = TrustMetric::Emd;
         cfg.atom_types = atomic_numbers.clone();
         cfg.const_sigma2 = 1.0;
         cfg.translation_method = "lbfgs".to_string();
-        cfg.lbfgs_memory = 10;
+        cfg.lbfgs_memory = 25;        // gprdzbl: lbfgs_memory = 25
 
         eprintln!("Running GP-Dimer...");
         let result = gp_dimer(&oracle, &x_start, &orient, &kernel, &cfg, None, dimer_sep);
@@ -149,15 +149,15 @@ fn main() {
     // --- OTGPD ---
     if run_otgpd {
         let mut cfg = OTGPDConfig::default();
-        cfg.t_dimer = 0.1;
-        cfg.divisor_t_dimer_gp = 10.0;
-        cfg.trust_radius = 0.05;
-        cfg.max_outer_iter = 100;
+        cfg.t_dimer = 0.01;           // gprdzbl: converged_force = 0.01
+        cfg.divisor_t_dimer_gp = 10.0; // gprdzbl: divisor_t_dimer = 10
+        cfg.trust_radius = 0.05;       // gprdzbl: max_step_size = 0.05
+        cfg.max_outer_iter = 300;      // gprdzbl: max_outer_iterations = 300
         cfg.dimer_sep = dimer_sep;
-        cfg.max_rot_iter = 0;
-        cfg.initial_rotation = false;
-        cfg.gp_train_iter = 100;
-        cfg.fps_history = 20;
+        cfg.max_rot_iter = 10;
+        cfg.initial_rotation = true;   // gprdzbl: nogp_initial_rotations = true
+        cfg.gp_train_iter = 400;       // gprdzbl: opt_max_iterations = 400
+        cfg.fps_history = 10;          // gprdzbl: fps_history = 10
         cfg.fps_latest_points = 3;
         cfg.trust_metric = TrustMetric::Emd;
         cfg.atom_types = atomic_numbers.clone();
@@ -166,7 +166,7 @@ fn main() {
         cfg.hod_monitoring_window = 5;
         cfg.hod_max_history = 60;
         cfg.translation_method = "lbfgs".to_string();
-        cfg.lbfgs_memory = 10;
+        cfg.lbfgs_memory = 25;        // gprdzbl: lbfgs_memory = 25
 
         eprintln!("Running OTGPD...");
         let result = otgpd(&oracle, &x_start, &orient, &kernel, &cfg, None);
@@ -178,6 +178,9 @@ fn main() {
             result.converged,
             result.stop_reason,
         );
+
+        // Print known saddle for comparison
+        eprintln!("  Reference (gprdzbl NWChem): 15 oracle calls, converged");
 
         for (i, ((&e, &ft), &oc)) in result
             .history
