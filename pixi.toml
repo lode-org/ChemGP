@@ -60,6 +60,7 @@ rust = ">=1.75"
 
 [feature.dev.pypi-dependencies]
 matplotlib = ">=3.8, <4"
+h5py       = ">=3.10, <4"
 
 [feature.dev.tasks.test]
 cmd = "cargo test -p chemgp-core"
@@ -74,18 +75,27 @@ cargo run --release --example leps_dimer && \
 cargo run --release --example leps_neb && \
 cargo run --release --example mb_minimize && \
 cargo run --release --example mb_gp_quality && \
-cargo run --release --example leps_rff_quality
+cargo run --release --example leps_rff_quality && \
+cargo run --release --example mb_neb && \
+cargo run --release --example mb_dimer && \
+cargo run --release --example mb_hyperparams && \
+cargo run --release --example mb_trust && \
+cargo run --release --example leps_fps
 """
+
+[feature.dev.tasks.jsonl2h5]
+cmd = "python scripts/jsonl_to_h5.py"
+depends-on = ["examples"]
 
 [feature.dev.tasks.figures]
 cmd = """
-python scripts/plot_comparisons.py && \
-python scripts/plot_surfaces.py && \
-python scripts/plot_gp_quality.py && \
-python scripts/plot_rff_quality.py && \
-python scripts/plot_trust_illustration.py
+PROJ=scripts/figures/tutorial && \
+for p in $PROJ/plotters/plot_*.jl; do \
+  echo "Running $p..." && \
+  julia --project=$PROJ -- "$p" || exit 1; \
+done
 """
-depends-on = ["examples"]
+depends-on = ["jsonl2h5"]
 
 [feature.rpc.dependencies]
 eon  = ">=2.11.1,<3"

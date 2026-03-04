@@ -10,6 +10,7 @@
 include(joinpath(@__DIR__, "common_plot.jl"))
 using LaTeXStrings
 using Colors
+using Statistics
 
 # --- Hatching helper (purely visual, stays in plotter) ---
 
@@ -98,39 +99,21 @@ function main()
     contour!(ax, xs, ys, E_clipped;
         levels=range(-200, 50; step=25), color=:black, linewidth=0.3)
 
-    # Semi-transparent grey overlay for variance
-    E_var_clamped = clamp.(E_var, 0, var_clip)
-    var_cmap = [RGBAf(0.15, 0.15, 0.15, a) for a in range(0.0, 0.35; length=256)]
-    hm = heatmap!(ax, xs, ys, E_var_clamped; colormap=var_cmap, colorrange=(0, var_clip))
-
-    # Hatching: medium variance (sparse lines)
-    med_thresh = 0.25 * var_clip
-    hx_m, hy_m = make_hatch_segments(xs, ys, E_var, med_thresh; spacing=0.10)
-    if length(hx_m) >= 2
-        linesegments!(
-            ax,
-            [Point2f(hx_m[i], hy_m[i]) for i in eachindex(hx_m)];
-            color=RGBAf(0.1, 0.1, 0.1, 0.3),
-            linewidth=0.4,
-        )
-    end
-
-    # Hatching: high variance (denser lines)
-    high_thresh = 0.55 * var_clip
+    # Single crosshatch for high-variance regions (>= 75th percentile)
+    high_thresh = Float64(quantile(vec(E_var[E_var .> 0]), 0.75))
     hx_h, hy_h = make_hatch_segments(xs, ys, E_var, high_thresh; spacing=0.06)
     if length(hx_h) >= 2
         linesegments!(
             ax,
             [Point2f(hx_h[i], hy_h[i]) for i in eachindex(hx_h)];
-            color=RGBAf(0.1, 0.1, 0.1, 0.5),
+            color=RGBAf(1.0, 1.0, 1.0, 0.45),
             linewidth=0.5,
         )
     end
 
-    # Variance contour lines
-    var_levels = [0.2 * var_clip, 0.5 * var_clip, 0.8 * var_clip]
-    contour!(ax, xs, ys, E_var_clamped;
-        levels=var_levels, color=:grey30, linewidth=0.8, linestyle=:dot)
+    # Magenta boundary contour at the high-variance threshold
+    contour!(ax, xs, ys, E_var;
+        levels=[high_thresh], color=RUHI.magenta, linewidth=1.2)
 
     # Stationary points: minima as filled circles, saddles as crosses
     min_x = minima["x"]
@@ -197,29 +180,20 @@ function main()
         strokewidth=0.5,
     )
 
-    # Max variance annotation (interior)
-    scatter!(
-        ax,
-        [max_var_x],
-        [max_var_y];
-        marker=:diamond,
-        markersize=12,
-        color=RUHI.sunshine,
-        strokecolor=:black,
-        strokewidth=1.5,
+    # Legend
+    Legend(
+        fig[2, 1],
+        [
+            MarkerElement(; marker=:circle, markersize=8, color=:black, strokecolor=:white, strokewidth=0.5),
+            MarkerElement(; marker=:circle, markersize=8, color=:white, strokecolor=:black, strokewidth=1.5),
+            MarkerElement(; marker=:xcross, markersize=10, color=:white, strokecolor=:black, strokewidth=1.5),
+            LineElement(; color=RUHI.magenta, linewidth=1.2),
+        ],
+        ["Training points", "Minima", "Saddles", L"High $\sigma^2$ boundary"];
+        orientation=:horizontal,
+        tellwidth=false,
+        tellheight=true,
     )
-    text!(
-        ax,
-        max_var_x + 0.08,
-        max_var_y - 0.12;
-        text=L"$\max \sigma^2$",
-        fontsize=9,
-        color=RUHI.sunshine,
-        strokecolor=:black,
-        strokewidth=0.5,
-    )
-
-    Colorbar(fig[1, 2], hm; label=L"$\sigma^2_E$")
 
     save_figure(fig, "mb_variance")
 end
