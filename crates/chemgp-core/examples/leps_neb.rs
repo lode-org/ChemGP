@@ -21,7 +21,7 @@ fn main() {
 
     // Standard NEB
     let mut neb_cfg = NEBConfig::default();
-    neb_cfg.images = 5;
+    neb_cfg.images = 7;
     neb_cfg.max_iter = 200;
     neb_cfg.conv_tol = 0.1;
     neb_cfg.climbing_image = false;
@@ -36,7 +36,7 @@ fn main() {
 
     // GP-NEB AIE (per-bead subset + RFF for fast inner relax)
     let mut aie_cfg = NEBConfig::default();
-    aie_cfg.images = 5;
+    aie_cfg.images = 7;
     aie_cfg.max_outer_iter = 40;
     aie_cfg.max_iter = 100;
     aie_cfg.conv_tol = 0.1;
@@ -55,7 +55,7 @@ fn main() {
 
     // GP-NEB OIE (one oracle call per outer iteration + RFF)
     let mut oie_cfg = NEBConfig::default();
-    oie_cfg.images = 5;
+    oie_cfg.images = 7;
     oie_cfg.max_outer_iter = 60;
     oie_cfg.max_iter = 100;
     oie_cfg.conv_tol = 0.1;

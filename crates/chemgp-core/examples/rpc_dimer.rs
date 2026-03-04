@@ -235,10 +235,11 @@ fn main() {
             .zip(result.history.oracle_calls.iter())
             .enumerate()
         {
+            let sp = result.history.sigma_perp[i];
             writeln!(
                 f,
-                r#"{{"method":"gp_dimer","step":{},"energy":{},"force":{},"oracle_calls":{}}}"#,
-                i, e, ft, oc
+                r#"{{"method":"gp_dimer","step":{},"energy":{},"force":{},"oracle_calls":{},"sigma_perp":{}}}"#,
+                i, e, ft, oc, sp
             )
             .unwrap();
         }
@@ -279,10 +280,11 @@ fn main() {
             .zip(result.history.oracle_calls.iter())
             .enumerate()
         {
+            let sp = result.history.sigma_perp[i];
             writeln!(
                 f,
-                r#"{{"method":"otgpd","step":{},"energy":{},"force":{},"oracle_calls":{}}}"#,
-                i, e, ft, oc
+                r#"{{"method":"otgpd","step":{},"energy":{},"force":{},"oracle_calls":{},"sigma_perp":{}}}"#,
+                i, e, ft, oc, sp
             )
             .unwrap();
         }

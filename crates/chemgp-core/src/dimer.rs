@@ -7,8 +7,8 @@
 //! GP-Dimer: Koistinen et al., J. Chem. Theory Comput. 16, 499 (2020).
 
 use crate::dimer_utils::{
-    curvature, max_atom_motion, max_atom_motion_applied, normalize_vec, project_out_translations,
-    rotational_force, translational_force, vec_dot, vec_norm,
+    curvature, max_atom_motion, max_atom_motion_applied, normalize_vec, perpendicular_sigma,
+    project_out_translations, rotational_force, translational_force, vec_dot, vec_norm,
 };
 use crate::kernel::Kernel;
 use crate::lbfgs::LbfgsHistory;
@@ -73,6 +73,13 @@ pub struct DimerConfig {
     /// Jitter added to ALL covariance diagonals (EE and GG) for numerical stability.
     /// C++ default 1e-6.
     pub jitter: f64,
+    /// LCB kappa for inner loop convergence. When > 0, the GP convergence
+    /// check uses |F| + kappa * sigma_perp < t_force_gp.
+    /// 0.0 = disabled (default, backward compatible).
+    pub lcb_kappa: f64,
+    /// Variance-based oracle gate (same semantics as OTGPD).
+    /// 0.0 = disabled (default, backward compatible).
+    pub unc_convergence: f64,
     pub verbose: bool,
 }
 
@@ -116,6 +123,8 @@ impl Default for DimerConfig {
             noise_e: 1e-7,
             noise_g: 1e-7,
             jitter: 1e-6,
+            lcb_kappa: 0.0,
+            unc_convergence: 0.0,
             verbose: true,
         }
     }
@@ -138,6 +147,8 @@ pub struct DimerHistory {
     pub f_true: Vec<f64>,
     pub curv_true: Vec<f64>,
     pub oracle_calls: Vec<usize>,
+    /// Perpendicular gradient sigma at each outer step (0.0 when LCB disabled).
+    pub sigma_perp: Vec<f64>,
 }
 
 /// Oracle function type.
@@ -183,6 +194,23 @@ fn predict_dimer_gradients(
     let e0 = pred0[0] * y_std;
 
     (g0, g1, e0)
+}
+
+/// Like predict_dimer_gradients but also returns variance at the midpoint.
+fn predict_dimer_gradients_with_variance(
+    state: &DimerState,
+    model: &PredModel,
+    y_std: f64,
+) -> (Vec<f64>, Vec<f64>, f64, Vec<f64>) {
+    let (r1, _) = dimer_images(state);
+    let (pred0, var0) = model.predict_with_variance(&state.r);
+    let pred1 = model.predict(&r1);
+
+    let g0: Vec<f64> = pred0[1..].iter().map(|v| v * y_std).collect();
+    let g1: Vec<f64> = pred1[1..].iter().map(|v| v * y_std).collect();
+    let e0 = pred0[0] * y_std;
+
+    (g0, g1, e0, var0)
 }
 
 
@@ -532,6 +560,7 @@ pub fn gp_dimer(
         history.f_true.push(f_norm);
         history.curv_true.push(f64::NAN);
         history.oracle_calls.push(oracle_calls);
+        history.sigma_perp.push(0.0);
     }
 
     let mut rot_hist: Option<LbfgsHistory> = if cfg.rotation_method == "lbfgs" {
@@ -686,7 +715,15 @@ pub fn gp_dimer(
                 );
             }
 
-            if f_norm < cfg.t_force_gp {
+            // LCB-augmented convergence: continue until both accurate and confident
+            let f_eff = if cfg.lcb_kappa > 0.0 {
+                let (_, _, _, var0) = predict_dimer_gradients_with_variance(&state, &model, y_std);
+                let sp = perpendicular_sigma(&var0, &state.orient, d);
+                f_norm + cfg.lcb_kappa * sp
+            } else {
+                f_norm
+            };
+            if f_eff < cfg.t_force_gp {
                 break;
             }
 
@@ -766,6 +803,14 @@ pub fn gp_dimer(
                 .collect();
         }
 
+        // Compute sigma_perp before oracle for history recording
+        let sp_at_r = if cfg.lcb_kappa > 0.0 || cfg.unc_convergence > 0.0 {
+            let (_, var0) = model.predict_with_variance(&state.r);
+            perpendicular_sigma(&var0, &state.orient, d)
+        } else {
+            0.0
+        };
+
         // Evaluate oracle at midpoint only (matches C++ main relaxation: 1 call/iter).
         // GP rotation and GP curvature are used for orient and curvature tracking.
         let (e_true, g_true) = oracle(&state.r);
@@ -799,6 +844,7 @@ pub fn gp_dimer(
         history.f_true.push(f_norm_true);
         history.curv_true.push(c_last_gp);
         history.oracle_calls.push(oracle_calls);
+        history.sigma_perp.push(sp_at_r);
 
         // Convergence check: force only (C++ isFinalConvergenceReached).
         // GP rotation maintains saddle orientation; curvature check uses GP.
@@ -975,6 +1021,7 @@ pub fn standard_dimer(
         history.f_true.push(f_norm);
         history.curv_true.push(c);
         history.oracle_calls.push(oracle_calls);
+        history.sigma_perp.push(0.0);
 
         // Convergence check
         if f_norm < config.t_force_true && c < 0.0 {
