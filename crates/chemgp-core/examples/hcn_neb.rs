@@ -169,7 +169,7 @@ fn main() {
         aie_cfg.initializer = "sidpp".to_string();
         aie_cfg.gp_train_iter = 100;
         aie_cfg.max_gp_points = 50;
-        aie_cfg.rff_features = 300;
+        aie_cfg.rff_features = 500;
         aie_cfg.fps_history = 30;
         aie_cfg.fps_latest_points = 3;
         aie_cfg.trust_radius = 0.05;
@@ -210,7 +210,7 @@ fn main() {
         oie_cfg.initializer = "sidpp".to_string();
         oie_cfg.gp_train_iter = 100;
         oie_cfg.max_gp_points = 50;
-        oie_cfg.rff_features = 300;
+        oie_cfg.rff_features = 500;
         oie_cfg.ci_force_tol = -1.0;
         oie_cfg.inner_ci_threshold = 0.5;
         oie_cfg.gp_tol_divisor = 10;

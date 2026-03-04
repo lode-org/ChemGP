@@ -1,4 +1,4 @@
-# PETMAD-RFF plotter: RFF approximation quality vs exact GP on PET-MAD
+# PETMAD-RFF plotter: RFF approximation quality vs exact GP on C2H4NO (PET-MAD)
 #
 # Reads RFF comparison data from HDF5, plots 2-panel (energy + gradient MAE
 # vs D_rff) on log scale.
@@ -34,7 +34,7 @@ function main()
         ylabel=L"\text{Energy MAE (eV)}",
         yscale=log10,
         xticklabelsvisible=false,
-        title=L"\text{RFF approximation quality on PET-MAD}",
+        title=L"\text{RFF approximation quality -- C$_2$H$_4$NO (PET-MAD)}",
     )
     lines!(ax1, D_rff, e_mae_true;
         color=RUHI.teal, linewidth=1.5, label="RFF vs true PES")
