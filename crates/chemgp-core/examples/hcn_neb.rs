@@ -11,10 +11,10 @@
 use std::cell::RefCell;
 use std::io::Write;
 
-use chemgp_core::io::read_con;
+use chemgp_core::io::{read_con, write_con, write_neb_dat, MolConfig};
 use chemgp_core::kernel::{Kernel, MolInvDistSE};
 use chemgp_core::minimize::{gp_minimize, MinimizationConfig};
-use chemgp_core::neb::{gp_neb_aie, neb_optimize};
+use chemgp_core::neb::{gp_neb_aie, neb_optimize, NEBResult};
 use chemgp_core::neb_oie::gp_neb_oie;
 use chemgp_core::neb_path::NEBConfig;
 use chemgp_core::oracle::RpcOracle;
@@ -169,7 +169,7 @@ fn main() {
         aie_cfg.initializer = "sidpp".to_string();
         aie_cfg.gp_train_iter = 100;
         aie_cfg.max_gp_points = 50;
-        aie_cfg.rff_features = 500;
+        aie_cfg.rff_features = 300;
         aie_cfg.fps_history = 30;
         aie_cfg.fps_latest_points = 3;
         aie_cfg.trust_radius = 0.05;
@@ -210,7 +210,7 @@ fn main() {
         oie_cfg.initializer = "sidpp".to_string();
         oie_cfg.gp_train_iter = 100;
         oie_cfg.max_gp_points = 50;
-        oie_cfg.rff_features = 500;
+        oie_cfg.rff_features = 300;
         oie_cfg.ci_force_tol = -1.0;
         oie_cfg.inner_ci_threshold = 0.5;
         oie_cfg.gp_tol_divisor = 10;
@@ -246,21 +246,71 @@ fn main() {
     let mut f = std::fs::File::create(outfile).unwrap();
 
     if let Some(ref r) = neb_result {
-        for (i, (&mf, &oc)) in r.history.max_force.iter().zip(r.history.oracle_calls.iter()).enumerate() {
-            writeln!(f, r#"{{"method":"neb","step":{},"max_force":{},"oracle_calls":{}}}"#, i, mf, oc).unwrap();
+        for (i, ((&mf, &cf), &oc)) in r.history.max_force.iter()
+            .zip(r.history.ci_force.iter())
+            .zip(r.history.oracle_calls.iter()).enumerate()
+        {
+            writeln!(f, r#"{{"method":"neb","step":{},"max_force":{},"ci_force":{},"oracle_calls":{}}}"#, i, mf, cf, oc).unwrap();
         }
     }
     if let Some(ref r) = aie_result {
-        for (i, (&mf, &oc)) in r.history.max_force.iter().zip(r.history.oracle_calls.iter()).enumerate() {
-            writeln!(f, r#"{{"method":"gp_neb_aie","step":{},"max_force":{},"oracle_calls":{}}}"#, i, mf, oc).unwrap();
+        for (i, ((&mf, &cf), &oc)) in r.history.max_force.iter()
+            .zip(r.history.ci_force.iter())
+            .zip(r.history.oracle_calls.iter()).enumerate()
+        {
+            writeln!(f, r#"{{"method":"gp_neb_aie","step":{},"max_force":{},"ci_force":{},"oracle_calls":{}}}"#, i, mf, cf, oc).unwrap();
         }
     }
     if let Some(ref r) = oie_result {
-        for (i, (&mf, &oc)) in r.history.max_force.iter().zip(r.history.oracle_calls.iter()).enumerate() {
-            writeln!(f, r#"{{"method":"gp_neb_oie","step":{},"max_force":{},"oracle_calls":{}}}"#, i, mf, oc).unwrap();
+        for (i, ((&mf, &cf), &oc)) in r.history.max_force.iter()
+            .zip(r.history.ci_force.iter())
+            .zip(r.history.oracle_calls.iter()).enumerate()
+        {
+            writeln!(f, r#"{{"method":"gp_neb_oie","step":{},"max_force":{},"ci_force":{},"oracle_calls":{}}}"#, i, mf, cf, oc).unwrap();
         }
-        for (img, e) in r.path.energies.iter().enumerate() {
-            writeln!(f, r#"{{"type":"path_energy","image":{},"energy":{}}}"#, img, e).unwrap();
+    }
+
+    // Path energy profiles for all converged methods
+    let e_ref = neb_result.as_ref()
+        .map(|r| r.path.energies[0])
+        .or(oie_result.as_ref().map(|r| r.path.energies[0]))
+        .unwrap_or(0.0);
+
+    for (label, res) in [("neb", &neb_result), ("gp_neb_aie", &aie_result), ("gp_neb_oie", &oie_result)] {
+        if let Some(ref r) = res {
+            for (img, e) in r.path.energies.iter().enumerate() {
+                writeln!(f, r#"{{"type":"path_energy","method":"{}","image":{},"energy":{}}}"#,
+                    label, img, e - e_ref).unwrap();
+            }
+        }
+    }
+
+    // Write .con + .dat for rgpycrumbs
+    let cell = reactant.cell;
+    let write_path = |label: &str, r: &NEBResult| {
+        let configs: Vec<MolConfig> = r.path.images.iter().zip(r.path.energies.iter())
+            .map(|(pos, &e)| MolConfig {
+                positions: pos.clone(),
+                atomic_numbers: atomic_numbers.clone(),
+                energy: Some(e),
+                forces: None,
+                cell,
+            })
+            .collect();
+
+        let con_path = format!("hcn_neb_path_{}.con", label);
+        write_con(&con_path, &configs).unwrap_or_else(|e| eprintln!("  warn: {}", e));
+
+        let dat_path = format!("hcn_neb_{}.dat", label);
+        write_neb_dat(&dat_path, &r.path.images, &r.path.energies, &r.path.gradients)
+            .unwrap_or_else(|e| eprintln!("  warn: {}", e));
+
+        eprintln!("  wrote {} + {}", con_path, dat_path);
+    };
+
+    for (label, res) in [("neb", &neb_result), ("aie", &aie_result), ("oie", &oie_result)] {
+        if let Some(ref r) = res {
+            write_path(label, r);
         }
     }
 

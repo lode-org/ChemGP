@@ -111,3 +111,19 @@ pub(crate) fn max_atom_motion_applied(step: &[f64], max_move: f64, n_atoms: usiz
         step.to_vec()
     }
 }
+
+/// Perpendicular gradient uncertainty relative to a direction vector.
+///
+/// Decomposes the diagonal GP variance on gradient components into the
+/// subspace perpendicular to `orient`. For dimer methods, `orient` is
+/// the dimer axis; for NEB, it is the path tangent. Minimize has no
+/// preferred direction and should use total gradient sigma instead.
+///
+/// Formula: sigma_perp = sqrt(sum_d var[1+d] * (1 - orient[d]^2))
+/// where var[0] is energy variance and var[1..d+1] are gradient variances.
+pub(crate) fn perpendicular_sigma(var: &[f64], orient: &[f64], d: usize) -> f64 {
+    let var_perp: f64 = (0..d)
+        .map(|dd| var[1 + dd].max(0.0) * (1.0 - orient[dd] * orient[dd]))
+        .sum();
+    var_perp.max(0.0).sqrt()
+}

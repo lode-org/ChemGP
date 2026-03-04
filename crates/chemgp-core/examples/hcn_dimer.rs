@@ -106,9 +106,9 @@ fn main() {
         cfg.t_force_true = 0.01;       // gprdzbl: converged_force = 0.01
         cfg.t_force_gp = 0.001;
         cfg.trust_radius = 0.05;       // gprdzbl: max_step_size = 0.05
-        cfg.max_outer_iter = 300;      // gprdzbl: max_outer_iterations = 300
-        cfg.max_oracle_calls = 80;
-        cfg.max_rot_iter = 10;         // gprdzbl: max_relaxation_rotation_iterations = 10
+        cfg.max_outer_iter = 30;
+        cfg.max_oracle_calls = 30;
+        cfg.max_rot_iter = 0;          // GP rotation breaks molecular systems (degenerate features)
         cfg.gp_train_iter = 400;       // gprdzbl: opt_max_iterations = 400
         cfg.fps_history = 10;          // gprdzbl: fps_history = 10
         cfg.fps_latest_points = 3;
@@ -137,10 +137,11 @@ fn main() {
             .zip(result.history.oracle_calls.iter())
             .enumerate()
         {
+            let sp = result.history.sigma_perp[i];
             writeln!(
                 f,
-                r#"{{"method":"gp_dimer","step":{},"energy":{},"force":{},"oracle_calls":{}}}"#,
-                i, e, ft, oc
+                r#"{{"method":"gp_dimer","step":{},"energy":{},"force":{},"oracle_calls":{},"sigma_perp":{}}}"#,
+                i, e, ft, oc, sp
             )
             .unwrap();
         }
@@ -152,10 +153,11 @@ fn main() {
         cfg.t_dimer = 0.01;           // gprdzbl: converged_force = 0.01
         cfg.divisor_t_dimer_gp = 10.0; // gprdzbl: divisor_t_dimer = 10
         cfg.trust_radius = 0.05;       // gprdzbl: max_step_size = 0.05
-        cfg.max_outer_iter = 300;      // gprdzbl: max_outer_iterations = 300
+        cfg.max_outer_iter = 30;
         cfg.dimer_sep = dimer_sep;
-        cfg.max_rot_iter = 10;
-        cfg.initial_rotation = true;   // gprdzbl: nogp_initial_rotations = true
+        cfg.max_rot_iter = 0;          // GP rotation breaks molecular systems
+        cfg.max_initial_rot = 0;
+        cfg.initial_rotation = false;
         cfg.gp_train_iter = 400;       // gprdzbl: opt_max_iterations = 400
         cfg.fps_history = 10;          // gprdzbl: fps_history = 10
         cfg.fps_latest_points = 3;
@@ -167,6 +169,7 @@ fn main() {
         cfg.hod_max_history = 60;
         cfg.translation_method = "lbfgs".to_string();
         cfg.lbfgs_memory = 25;        // gprdzbl: lbfgs_memory = 25
+        cfg.use_adaptive_threshold = true;
 
         eprintln!("Running OTGPD...");
         let result = otgpd(&oracle, &x_start, &orient, &kernel, &cfg, None);
@@ -190,10 +193,11 @@ fn main() {
             .zip(result.history.oracle_calls.iter())
             .enumerate()
         {
+            let sp = result.history.sigma_perp[i];
             writeln!(
                 f,
-                r#"{{"method":"otgpd","step":{},"energy":{},"force":{},"oracle_calls":{}}}"#,
-                i, e, ft, oc
+                r#"{{"method":"otgpd","step":{},"energy":{},"force":{},"oracle_calls":{},"sigma_perp":{}}}"#,
+                i, e, ft, oc, sp
             )
             .unwrap();
         }

@@ -45,6 +45,11 @@ pub struct MinimizationConfig {
     /// Constant kernel variance for energy-energy block.
     /// Set to 1.0 for molecular systems; 0.0 disables (default).
     pub const_sigma2: f64,
+    /// LCB kappa for inner loop convergence. When > 0, uses
+    /// |G| + kappa * sigma_g < threshold, where sigma_g is the total
+    /// gradient uncertainty (no orient direction for minimize).
+    /// 0.0 = disabled (default, backward compatible).
+    pub lcb_kappa: f64,
     pub verbose: bool,
 }
 
@@ -74,6 +79,7 @@ impl Default for MinimizationConfig {
             adaptive_a: 1.3,
             adaptive_floor: 0.2,
             const_sigma2: 0.0,
+            lcb_kappa: 0.0,
             verbose: true,
         }
     }
@@ -266,7 +272,15 @@ pub fn gp_minimize(
             };
 
             let g_norm: f64 = grad.iter().map(|x| x * x).sum::<f64>().sqrt();
-            if g_norm < 1e-4 {
+            // LCB-augmented convergence: total gradient sigma (no orient for minimize)
+            let g_eff = if cfg.lcb_kappa > 0.0 {
+                let (_, var) = pred_model.predict_with_variance(&x_opt);
+                let sigma_g = var[1..].iter().map(|v| v.max(0.0)).sum::<f64>().sqrt();
+                g_norm + cfg.lcb_kappa * sigma_g
+            } else {
+                g_norm
+            };
+            if g_eff < 1e-4 {
                 break;
             }
 

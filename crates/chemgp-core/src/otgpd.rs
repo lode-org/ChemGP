@@ -7,8 +7,8 @@
 //! Reference: Goswami et al., J. Chem. Theory Comput. (2025).
 
 use crate::dimer_utils::{
-    curvature, normalize_vec, project_out_translations, rotational_force, translational_force,
-    vec_dot, vec_norm,
+    curvature, normalize_vec, perpendicular_sigma, project_out_translations, rotational_force,
+    translational_force, vec_dot, vec_norm,
 };
 use crate::hod::{HodConfig, HodState};
 use crate::kernel::Kernel;
@@ -85,6 +85,16 @@ pub struct OTGPDConfig {
     /// Jitter added to ALL covariance diagonals (EE and GG) for numerical stability.
     /// C++ default 1e-6.
     pub jitter: f64,
+    /// LCB kappa for inner loop convergence. When > 0, the inner convergence
+    /// check uses |G|_inf + kappa * sigma_perp < t_gp, making the GP loop
+    /// continue until predictions are both accurate and confident.
+    /// 0.0 = disabled (default, backward compatible).
+    pub lcb_kappa: f64,
+    /// Variance-based oracle gate. After inner loop convergence, if the
+    /// perpendicular gradient sigma at the proposed position is below this
+    /// threshold, skip the oracle call and continue GP-only.
+    /// 0.0 = disabled (default, backward compatible).
+    pub unc_convergence: f64,
     pub verbose: bool,
 }
 
@@ -137,6 +147,8 @@ impl Default for OTGPDConfig {
             noise_e: 1e-7,
             noise_g: 1e-7,
             jitter: 1e-6,
+            lcb_kappa: 0.0,
+            unc_convergence: 0.0,
             verbose: true,
         }
     }
@@ -161,6 +173,8 @@ pub struct OTGPDHistory {
     pub curv_true: Vec<f64>,
     pub oracle_calls: Vec<usize>,
     pub t_gp: Vec<f64>,
+    /// Perpendicular gradient sigma at each outer step (0.0 when LCB disabled).
+    pub sigma_perp: Vec<f64>,
 }
 
 /// Oracle function type.
@@ -478,6 +492,7 @@ pub fn otgpd(
         history.curv_true.push(c_init);
         history.oracle_calls.push(oracle_calls);
         history.t_gp.push(f64::NAN);
+        history.sigma_perp.push(0.0);
         if cfg.verbose {
             eprintln!("OTGPD init: E={:.6} |G|_inf={:.5} C_true={:.4} calls={}", e_r, g_inf_init, c_init, oracle_calls);
         }
@@ -618,11 +633,20 @@ pub fn otgpd(
             project_out_translations(&mut f_trans);
 
             // Inner convergence: raw GP gradient Linf (C++ AtomicDimer.cpp:561)
+            // When lcb_kappa > 0, augment with perpendicular uncertainty so
+            // the inner loop continues until the GP is both accurate and confident.
             let g0_inf = g0.iter().map(|x| x.abs()).fold(0.0f64, f64::max);
+            let g0_inf_eff = if cfg.lcb_kappa > 0.0 {
+                let (_, var0) = model.predict_with_variance(&r);
+                let sp = perpendicular_sigma(&var0, &orient, d);
+                g0_inf + cfg.lcb_kappa * sp
+            } else {
+                g0_inf
+            };
             if cfg.verbose && inner_iter < 5 {
                 eprintln!("  inner {}: g0_inf={:.6} t_gp={:.6} c={:.4}", inner_iter, g0_inf, t_gp, c);
             }
-            if g0_inf < t_gp {
+            if g0_inf_eff < t_gp {
                 r_latest_conv = Some(r.clone());
                 orient_latest_conv = Some(orient.clone());
                 break;
@@ -711,6 +735,36 @@ pub fn otgpd(
             }
 
             r = r_new;
+        }
+
+        // Variance-based oracle gate: if GP is confident enough at the
+        // proposed position, skip the oracle and continue GP-only.
+        let sp_at_r = if cfg.lcb_kappa > 0.0 || cfg.unc_convergence > 0.0 {
+            let (_, var0) = model.predict_with_variance(&r);
+            perpendicular_sigma(&var0, &orient, d)
+        } else {
+            0.0
+        };
+
+        let skip_oracle = cfg.unc_convergence > 0.0 && sp_at_r < cfg.unc_convergence;
+        if skip_oracle {
+            // Record GP-only step in history (no oracle evaluation)
+            let pred0 = model.predict(&r);
+            let e_gp = pred0[0] + e_ref;
+            let g_gp_inf = pred0[1..].iter().map(|x| x.abs()).fold(0.0f64, f64::max);
+            history.e_true.push(e_gp);
+            history.f_true.push(g_gp_inf);
+            history.curv_true.push(c_true_cached);
+            history.oracle_calls.push(oracle_calls);
+            history.t_gp.push(t_gp);
+            history.sigma_perp.push(sp_at_r);
+            if cfg.verbose {
+                eprintln!(
+                    "OTGPD outer {} (GP-only): sigma_perp={:.5} < unc_conv={:.5}, skipping oracle",
+                    outer_iter, sp_at_r, cfg.unc_convergence,
+                );
+            }
+            continue;
         }
 
         // Oracle evaluation
@@ -818,6 +872,7 @@ pub fn otgpd(
         history.curv_true.push(c_true);
         history.oracle_calls.push(oracle_calls);
         history.t_gp.push(t_gp);
+        history.sigma_perp.push(sp_at_r);
 
         if cfg.verbose {
             eprintln!(

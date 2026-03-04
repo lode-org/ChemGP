@@ -148,11 +148,12 @@ fn main() {
     {
         writeln!(
             f,
-            r#"{{"method":"gp_dimer","step":{},"energy":{},"force":{},"oracle_calls":{}}}"#,
+            r#"{{"method":"gp_dimer","step":{},"energy":{},"force":{},"oracle_calls":{},"sigma_perp":{}}}"#,
             i,
             e,
             fv,
-            dimer_result.history.oracle_calls[i]
+            dimer_result.history.oracle_calls[i],
+            dimer_result.history.sigma_perp[i]
         )
         .unwrap();
     }
@@ -166,11 +167,12 @@ fn main() {
     {
         writeln!(
             f,
-            r#"{{"method":"otgpd","step":{},"energy":{},"force":{},"oracle_calls":{}}}"#,
+            r#"{{"method":"otgpd","step":{},"energy":{},"force":{},"oracle_calls":{},"sigma_perp":{}}}"#,
             i,
             e,
             fv,
-            otgpd_result.history.oracle_calls[i]
+            otgpd_result.history.oracle_calls[i],
+            otgpd_result.history.sigma_perp[i]
         )
         .unwrap();
     }
