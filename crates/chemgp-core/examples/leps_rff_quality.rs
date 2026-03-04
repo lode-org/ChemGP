@@ -99,7 +99,7 @@ fn main() {
     println!("Exact GP: energy MAE = {:.6}, gradient MAE = {:.6}", exact_e_mae, exact_g_mae);
 
     // Evaluate RFF at various D_rff
-    for &d_rff in &[25, 50, 100, 150, 200, 300, 500] {
+    for &d_rff in &[10, 25, 50, 75, 100, 150, 200, 300, 500, 750, 1000] {
         let rff_pred = build_pred_model(&gp.kernel, &td, d_rff, 42, 0.0);
 
         let mut rff_e_errors = Vec::new();

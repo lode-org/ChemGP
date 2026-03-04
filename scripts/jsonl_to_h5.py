@@ -582,6 +582,41 @@ def convert_leps_rff():
     print(f"  wrote {dst}")
 
 
+def convert_petmad_rff():
+    """petmad_rff_quality.jsonl -> petmad_rff.h5
+
+    Same format as leps_rff.h5 but with system metadata.
+    """
+    src = ROOT / "petmad_rff_quality.jsonl"
+    if not src.exists():
+        print(f"  skip (no {src.name})", file=sys.stderr)
+        return
+
+    records = read_jsonl(src)
+
+    exact = next(r for r in records if r.get("type") == "exact_gp")
+    rffs = sorted(
+        [r for r in records if r.get("type") == "rff"],
+        key=lambda r: r["d_rff"],
+    )
+
+    dst = OUTDIR / "petmad_rff.h5"
+    with h5py.File(dst, "w") as f:
+        h5_write_table(f, "table", {
+            "D_rff": [r["d_rff"] for r in rffs],
+            "energy_mae_vs_true": [r["energy_mae_vs_true"] for r in rffs],
+            "gradient_mae_vs_true": [r["gradient_mae_vs_true"] for r in rffs],
+            "energy_mae_vs_gp": [r["energy_mae_vs_gp"] for r in rffs],
+            "gradient_mae_vs_gp": [r["gradient_mae_vs_gp"] for r in rffs],
+        })
+        f.attrs["gp_e_mae"] = exact["energy_mae"]
+        f.attrs["gp_g_mae"] = exact["gradient_mae"]
+        f.attrs["system"] = exact.get("system", "C2H4NO")
+        f.attrs["n_atoms"] = exact.get("n_atoms", 9)
+        f.attrs["n_features"] = exact.get("n_features", 36)
+    print(f"  wrote {dst}")
+
+
 def convert_hcn_convergence():
     """hcn_neb_comparison.jsonl -> hcn_convergence.h5
 
@@ -679,13 +714,16 @@ def main():
     print("leps_rff:")
     convert_leps_rff()
 
+    print("petmad_rff:")
+    convert_petmad_rff()
+
     # HCN (partial if run was incomplete)
     print("hcn_convergence:")
     convert_hcn_convergence()
     print("hcn_neb:")
     convert_hcn_neb_profile()
 
-    print("\nDone. Kept existing: petmad_minimize.h5, petmad_rff.h5")
+    print("\nDone.")
 
 
 if __name__ == "__main__":
