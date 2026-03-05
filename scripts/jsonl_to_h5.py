@@ -617,6 +617,60 @@ def convert_petmad_rff():
     print(f"  wrote {dst}")
 
 
+def convert_leps_nll():
+    """leps_nll_landscape.jsonl -> leps_nll.h5
+
+    grids/nll, grids/grad_norm (2D grids in log_sigma2 x log_theta),
+    points/optimum {log_sigma2, log_theta}
+    """
+    src = ROOT / "leps_nll_landscape.jsonl"
+    if not src.exists():
+        print(f"  skip (no {src.name})", file=sys.stderr)
+        return
+
+    records = read_jsonl(src)
+    if not records:
+        print("  skip (no records)", file=sys.stderr)
+        return
+
+    ls2_vals = sorted(set(r["log_sigma2"] for r in records))
+    lt_vals = sorted(set(r["log_theta"] for r in records))
+    nx, ny = len(ls2_vals), len(lt_vals)
+
+    ls2_idx = {v: i for i, v in enumerate(ls2_vals)}
+    lt_idx = {v: i for i, v in enumerate(lt_vals)}
+
+    nll_grid = np.full((nx, ny), np.nan)
+    grad_grid = np.full((nx, ny), np.nan)
+    for r in records:
+        ix = ls2_idx[r["log_sigma2"]]
+        iy = lt_idx[r["log_theta"]]
+        nll_grid[ix, iy] = r["nll"]
+        grad_grid[ix, iy] = r["grad_norm"]
+
+    ls2_range = (ls2_vals[0], ls2_vals[-1])
+    lt_range = (lt_vals[0], lt_vals[-1])
+
+    # Find MAP optimum (minimum finite NLL)
+    finite_mask = np.isfinite(nll_grid)
+    if np.any(finite_mask):
+        min_idx = np.unravel_index(np.nanargmin(nll_grid), nll_grid.shape)
+        opt_ls2 = ls2_vals[min_idx[0]]
+        opt_lt = lt_vals[min_idx[1]]
+    else:
+        opt_ls2, opt_lt = 0.0, 0.0
+
+    dst = OUTDIR / "leps_nll.h5"
+    with h5py.File(dst, "w") as f:
+        h5_write_grid(f, "nll", nll_grid, ls2_range, lt_range)
+        h5_write_grid(f, "grad_norm", grad_grid, ls2_range, lt_range)
+        h5_write_points(f, "optimum", {
+            "log_sigma2": [opt_ls2],
+            "log_theta": [opt_lt],
+        })
+    print(f"  wrote {dst}")
+
+
 def convert_hcn_convergence():
     """hcn_neb_comparison.jsonl -> hcn_convergence.h5
 
@@ -713,6 +767,8 @@ def main():
     convert_leps_fps()
     print("leps_rff:")
     convert_leps_rff()
+    print("leps_nll:")
+    convert_leps_nll()
 
     print("petmad_rff:")
     convert_petmad_rff()
