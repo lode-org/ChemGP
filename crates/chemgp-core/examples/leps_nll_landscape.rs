@@ -69,7 +69,7 @@ fn main() {
     let prior_var = vec![2.0; n_params];
 
     let outfile = "leps_nll_landscape.jsonl";
-    let mut f = std::fs::File::create(outfile).unwrap();
+    let mut f = std::fs::File::create(outfile).expect("Failed to create output file");
 
     let mut n_finite = 0;
     let mut n_inf = 0;
@@ -93,7 +93,7 @@ fn main() {
                 writeln!(f,
                     r#"{{"log_sigma2":{},"log_theta":{},"nll":{},"grad_norm":{}}}"#,
                     ls2, lt, nll, grad_norm
-                ).unwrap();
+                ).expect("Failed to write to output file");
                 n_finite += 1;
             } else {
                 n_inf += 1;
@@ -104,8 +104,8 @@ fn main() {
     eprintln!("NLL landscape: {} finite points, {} infeasible (Cholesky failure or barrier)",
         n_finite, n_inf);
     eprintln!("Grid: log_sigma2 in [{:.1}, {:.1}], log_theta in [{:.1}, {:.1}]",
-        log_sigma2_range[0], log_sigma2_range.last().unwrap(),
-        log_theta_range[0], log_theta_range.last().unwrap());
+        log_sigma2_range[0], log_sigma2_range.last().expect("Range should have at least one element"),
+        log_theta_range[0], log_theta_range.last().expect("Range should have at least one element"));
     eprintln!("Training points: {}, dim: {}", n, dim);
     eprintln!("Output: {}", outfile);
 }

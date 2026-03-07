@@ -55,7 +55,7 @@ fn main() {
 
     // Output JSONL
     let outfile = "mb_minimize_comparison.jsonl";
-    let mut f = std::fs::File::create(outfile).unwrap();
+    let mut f = std::fs::File::create(outfile).expect("Failed to create output file");
 
     for (i, e) in gp_result.energies.iter().enumerate() {
         writeln!(
@@ -63,7 +63,7 @@ fn main() {
             r#"{{"method":"gp_minimize","step":{},"energy":{},"oracle_calls":{}}}"#,
             i, e, i + 1
         )
-        .unwrap();
+        .expect("Operation failed");
     }
 
     for (i, e) in direct_energies.iter().enumerate() {
@@ -72,7 +72,7 @@ fn main() {
             r#"{{"method":"direct_minimize","step":{},"energy":{},"oracle_calls":{}}}"#,
             i, e, i + 1
         )
-        .unwrap();
+        .expect("Operation failed");
     }
 
     let (min_idx, dist_to_min) = MULLER_BROWN_MINIMA
@@ -88,8 +88,8 @@ fn main() {
                 .sqrt();
             (i, d)
         })
-        .min_by(|a, b| a.1.partial_cmp(&b.1).unwrap())
-        .unwrap();
+        .min_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal))
+        .expect("Operation failed");
 
     eprintln!(
         "GP minimize: {} oracle calls, final E = {:.4}, converged = {}, nearest_min = {} (d={:.4})",

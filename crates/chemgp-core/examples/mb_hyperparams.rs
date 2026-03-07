@@ -48,7 +48,7 @@ fn main() {
             r#"{{"type":"train_point","x":{},"y":{},"energy":{}}}"#,
             x, y_slice, e
         )
-        .unwrap();
+        .expect("Operation failed");
     }
 
     // For each combo, build GP with fixed params and predict
@@ -77,7 +77,7 @@ fn main() {
                     r#"{{"type":"prediction","sigma_f2":{},"ell":{},"x":{},"gp_mean":{},"gp_var":{},"true_e":{}}}"#,
                     sigma_f2, ell, x, gp_mean, gp_var, true_e
                 )
-                .unwrap();
+                .expect("Operation failed");
             }
 
             eprintln!("  sigma_f2={}, ell={} done", sigma_f2, ell);

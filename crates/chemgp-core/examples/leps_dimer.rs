@@ -119,7 +119,7 @@ fn main() {
 
     // Write comparison data
     let outfile = "leps_dimer_comparison.jsonl";
-    let mut f = std::fs::File::create(outfile).unwrap();
+    let mut f = std::fs::File::create(outfile).expect("Failed to create output file");
 
     for (i, (&e, &fv)) in std_result
         .history
@@ -136,7 +136,7 @@ fn main() {
             fv,
             std_result.history.oracle_calls[i]
         )
-        .unwrap();
+        .expect("Operation failed");
     }
 
     for (i, (&e, &fv)) in dimer_result
@@ -155,7 +155,7 @@ fn main() {
             dimer_result.history.oracle_calls[i],
             dimer_result.history.sigma_perp[i]
         )
-        .unwrap();
+        .expect("Operation failed");
     }
 
     for (i, (&e, &fv)) in otgpd_result
@@ -174,7 +174,7 @@ fn main() {
             otgpd_result.history.oracle_calls[i],
             otgpd_result.history.sigma_perp[i]
         )
-        .unwrap();
+        .expect("Operation failed");
     }
 
     writeln!(
@@ -182,7 +182,7 @@ fn main() {
         r#"{{"summary":true,"standard_calls":{},"dimer_calls":{},"otgpd_calls":{}}}"#,
         std_result.oracle_calls, dimer_result.oracle_calls, otgpd_result.oracle_calls
     )
-    .unwrap();
+    .expect("Operation failed");
 
     eprintln!(
         "\nSummary: Standard={} calls, GP-Dimer={} calls, OTGPD={} calls",

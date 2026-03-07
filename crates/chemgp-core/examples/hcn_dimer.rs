@@ -98,7 +98,7 @@ fn main() {
     let run_otgpd = method == "otgpd" || method == "all";
 
     let outfile = "hcn_dimer_comparison.jsonl";
-    let mut f = std::fs::File::create(outfile).unwrap();
+    let mut f = std::fs::File::create(outfile).expect("Failed to create output file");
 
     // --- GP-Dimer ---
     if run_dimer {
@@ -143,7 +143,7 @@ fn main() {
                 r#"{{"method":"gp_dimer","step":{},"energy":{},"force":{},"oracle_calls":{},"sigma_perp":{}}}"#,
                 i, e, ft, oc, sp
             )
-            .unwrap();
+            .expect("Operation failed");
         }
     }
 
@@ -199,7 +199,7 @@ fn main() {
                 r#"{{"method":"otgpd","step":{},"energy":{},"force":{},"oracle_calls":{},"sigma_perp":{}}}"#,
                 i, e, ft, oc, sp
             )
-            .unwrap();
+            .expect("Operation failed");
         }
     }
 

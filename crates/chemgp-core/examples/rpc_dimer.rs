@@ -165,7 +165,7 @@ fn main() {
     }
 
     let outfile = "rpc_dimer.jsonl";
-    let mut f = std::fs::File::create(outfile).unwrap();
+    let mut f = std::fs::File::create(outfile).expect("Failed to create output file");
 
     // --- Standard Dimer ---
     if run_std {
@@ -199,7 +199,7 @@ fn main() {
                 r#"{{"method":"standard_dimer","step":{},"energy":{},"force":{},"oracle_calls":{}}}"#,
                 i, e, ft, oc
             )
-            .unwrap();
+            .expect("Operation failed");
         }
     }
 
@@ -241,7 +241,7 @@ fn main() {
                 r#"{{"method":"gp_dimer","step":{},"energy":{},"force":{},"oracle_calls":{},"sigma_perp":{}}}"#,
                 i, e, ft, oc, sp
             )
-            .unwrap();
+            .expect("Operation failed");
         }
     }
 
@@ -286,7 +286,7 @@ fn main() {
                 r#"{{"method":"otgpd","step":{},"energy":{},"force":{},"oracle_calls":{},"sigma_perp":{}}}"#,
                 i, e, ft, oc, sp
             )
-            .unwrap();
+            .expect("Operation failed");
         }
     }
 

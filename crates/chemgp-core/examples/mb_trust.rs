@@ -44,7 +44,7 @@ fn main() {
 
     // Trust metadata
     let trust_radius = 0.4;
-    writeln!(w, r#"{{"type":"trust_meta","trust_radius":{}}}"#, trust_radius).unwrap();
+    writeln!(w, r#"{{"type":"trust_meta","trust_radius":{}}}"#, trust_radius).expect("Failed to write to output file");
 
     // Training points
     for &x in &train_x {
@@ -54,7 +54,7 @@ fn main() {
             r#"{{"type":"train_point","x":{},"energy":{}}}"#,
             x, e
         )
-        .unwrap();
+        .expect("Operation failed");
     }
 
     // Predictions
@@ -69,7 +69,7 @@ fn main() {
             r#"{{"type":"prediction","x":{},"gp_mean":{},"gp_var":{},"true_e":{}}}"#,
             x, gp_mean, gp_var, true_e
         )
-        .unwrap();
+        .expect("Operation failed");
     }
 
     eprintln!("Output: {}", outfile);

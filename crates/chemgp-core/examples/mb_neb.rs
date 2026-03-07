@@ -35,7 +35,7 @@ fn main() {
     );
 
     let outfile = "mb_neb.jsonl";
-    let mut f = std::fs::File::create(outfile).unwrap();
+    let mut f = std::fs::File::create(outfile).expect("Failed to create output file");
 
     // Grid metadata
     let nx = 200;
@@ -49,7 +49,7 @@ fn main() {
         r#"{{"type":"grid_meta","nx":{},"ny":{},"x_min":{},"x_max":{},"y_min":{},"y_max":{}}}"#,
         nx, ny, x_min, x_max, y_min, y_max
     )
-    .unwrap();
+    .expect("Operation failed");
 
     // Grid points
     for iy in 0..ny {
@@ -62,7 +62,7 @@ fn main() {
                 r#"{{"type":"grid","ix":{},"iy":{},"x":{},"y":{},"energy":{}}}"#,
                 ix, iy, x, y, e
             )
-            .unwrap();
+            .expect("Operation failed");
         }
     }
 
@@ -74,7 +74,7 @@ fn main() {
             r#"{{"type":"minimum","id":{},"x":{},"y":{},"energy":{}}}"#,
             i, m[0], m[1], e
         )
-        .unwrap();
+        .expect("Operation failed");
     }
     for (i, s) in MULLER_BROWN_SADDLES.iter().enumerate() {
         let (e, _) = muller_brown_energy_gradient(s);
@@ -83,7 +83,7 @@ fn main() {
             r#"{{"type":"saddle","id":{},"x":{},"y":{},"energy":{}}}"#,
             i, s[0], s[1], e
         )
-        .unwrap();
+        .expect("Operation failed");
     }
 
     // NEB path
@@ -94,7 +94,7 @@ fn main() {
             r#"{{"type":"neb_path","image":{},"x":{},"y":{},"energy":{}}}"#,
             i, img[0], img[1], e
         )
-        .unwrap();
+        .expect("Operation failed");
     }
 
     // Endpoints
@@ -103,13 +103,13 @@ fn main() {
         r#"{{"type":"endpoint","label":"A","x":{},"y":{}}}"#,
         x_start[0], x_start[1]
     )
-    .unwrap();
+    .expect("Operation failed");
     writeln!(
         f,
         r#"{{"type":"endpoint","label":"B","x":{},"y":{}}}"#,
         x_end[0], x_end[1]
     )
-    .unwrap();
+    .expect("Operation failed");
 
     // Climbing image index
     writeln!(
@@ -117,7 +117,7 @@ fn main() {
         r#"{{"type":"climbing_image","image":{}}}"#,
         result.max_energy_image
     )
-    .unwrap();
+    .expect("Operation failed");
 
     // Convergence history
     for (i, (&mf, &oc)) in result
@@ -132,7 +132,7 @@ fn main() {
             r#"{{"method":"neb","step":{},"max_force":{},"oracle_calls":{}}}"#,
             i, mf, oc
         )
-        .unwrap();
+        .expect("Operation failed");
     }
 
     eprintln!("Output: {}", outfile);

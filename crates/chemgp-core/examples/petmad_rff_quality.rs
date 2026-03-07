@@ -135,7 +135,7 @@ fn main() {
     let mut w = BufWriter::new(file);
 
     writeln!(w, r#"{{"type":"exact_gp","system":"C2H4NO","n_atoms":{},"n_features":{},"n_train":{},"n_test":{},"energy_mae":{},"gradient_mae":{}}}"#,
-        n_atoms, td.dim, n_train, n_test, exact_e_mae, exact_g_mae).unwrap();
+        n_atoms, td.dim, n_train, n_test, exact_e_mae, exact_g_mae).expect("Failed to write to output file");
 
     // RFF at various D_rff
     for &d_rff in &[10, 25, 50, 75, 100, 150, 200, 300, 400, 500, 750, 1000, 1500, 2000] {
@@ -169,7 +169,7 @@ fn main() {
         let vs_gp_g: f64 = rff_vs_gp_g_errors.iter().sum::<f64>() / n_test as f64;
 
         writeln!(w, r#"{{"type":"rff","system":"C2H4NO","d_rff":{},"energy_mae_vs_true":{},"gradient_mae_vs_true":{},"energy_mae_vs_gp":{},"gradient_mae_vs_gp":{}}}"#,
-            d_rff, e_mae, g_mae, vs_gp_e, vs_gp_g).unwrap();
+            d_rff, e_mae, g_mae, vs_gp_e, vs_gp_g).expect("Failed to write to output file");
         eprintln!("D_rff={:>4}: e_mae={:.6}, g_mae={:.6} (vs GP: e={:.6}, g={:.6})",
             d_rff, e_mae, g_mae, vs_gp_e, vs_gp_g);
     }

@@ -77,15 +77,15 @@ const Y_MAX: f64 = 2.0;
 /// Write header (grid_meta + stationary points) to a JSONL writer.
 fn write_header(w: &mut BufWriter<File>) {
     writeln!(w, r#"{{"type":"grid_meta","nx":{},"ny":{},"x_min":{},"x_max":{},"y_min":{},"y_max":{}}}"#,
-        NX, NY, X_MIN, X_MAX, Y_MIN, Y_MAX).unwrap();
+        NX, NY, X_MIN, X_MAX, Y_MIN, Y_MAX).expect("Failed to write to output file");
 
     for (i, (mx, my)) in MINIMA.iter().enumerate() {
         let (e, _) = muller_brown_energy_gradient(&[*mx, *my]);
-        writeln!(w, r#"{{"type":"minimum","id":{},"x":{},"y":{},"energy":{}}}"#, i, mx, my, e).unwrap();
+        writeln!(w, r#"{{"type":"minimum","id":{},"x":{},"y":{},"energy":{}}}"#, i, mx, my, e).expect("Failed to write to output file");
     }
     for (i, (sx, sy)) in SADDLES.iter().enumerate() {
         let (e, _) = muller_brown_energy_gradient(&[*sx, *sy]);
-        writeln!(w, r#"{{"type":"saddle","id":{},"x":{},"y":{},"energy":{}}}"#, i, sx, sy, e).unwrap();
+        writeln!(w, r#"{{"type":"saddle","id":{},"x":{},"y":{},"energy":{}}}"#, i, sx, sy, e).expect("Failed to write to output file");
     }
 }
 
@@ -95,7 +95,7 @@ fn evaluate_gp(w: &mut BufWriter<File>, td: &TrainingData, n_train: usize) {
     for i in 0..td.npoints() {
         let col = td.col(i);
         writeln!(w, r#"{{"type":"train_point","n_train":{},"x":{},"y":{},"energy":{}}}"#,
-            n_train, col[0], col[1], td.energies[i]).unwrap();
+            n_train, col[0], col[1], td.energies[i]).expect("Failed to write to output file");
     }
 
     // Initialize and train GP
@@ -120,7 +120,7 @@ fn evaluate_gp(w: &mut BufWriter<File>, td: &TrainingData, n_train: usize) {
             let gp_var_e = var_vals[0];
 
             writeln!(w, r#"{{"type":"grid","n_train":{},"ix":{},"iy":{},"x":{},"y":{},"true_e":{},"gp_e":{},"gp_var":{}}}"#,
-                n_train, ix, iy, x_val, y_val, true_e, gp_e, gp_var_e).unwrap();
+                n_train, ix, iy, x_val, y_val, true_e, gp_e, gp_var_e).expect("Failed to write to output file");
         }
     }
 }

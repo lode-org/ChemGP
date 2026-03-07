@@ -134,7 +134,7 @@ fn main() {
 
     // Write JSONL
     let outfile = "petmad_minimize_comparison.jsonl";
-    let mut f = std::fs::File::create(outfile).unwrap();
+    let mut f = std::fs::File::create(outfile).expect("Failed to create output file");
 
     for (i, e) in gp_result.energies.iter().enumerate() {
         writeln!(
@@ -144,7 +144,7 @@ fn main() {
             e,
             i + 1
         )
-        .unwrap();
+        .expect("Operation failed");
     }
 
     for (i, e) in direct_energies.iter().enumerate() {
@@ -155,7 +155,7 @@ fn main() {
             e,
             i + 1
         )
-        .unwrap();
+        .expect("Operation failed");
     }
 
     writeln!(
@@ -167,7 +167,7 @@ fn main() {
         direct_calls,
         direct_energies.last().unwrap_or(&f64::NAN)
     )
-    .unwrap();
+    .expect("Operation failed");
 
     eprintln!("Output: {}", outfile);
 }

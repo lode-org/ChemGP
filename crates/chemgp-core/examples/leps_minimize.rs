@@ -58,18 +58,18 @@ fn main() {
 
     // Output JSONL
     let outfile = "leps_minimize_comparison.jsonl";
-    let mut f = std::fs::File::create(outfile).unwrap();
+    let mut f = std::fs::File::create(outfile).expect("Failed to create output file");
 
     // GP trajectory
     for (i, (e, max_f)) in gp_result.energies.iter().zip(gp_forces.iter()).enumerate() {
         writeln!(f, r#"{{"method":"gp_minimize","step":{},"energy":{},"max_fatom":{},"oracle_calls":{}}}"#,
-            i, e, max_f, i + 1).unwrap();
+            i, e, max_f, i + 1).expect("Failed to write to output file");
     }
 
     // Direct trajectory
     for (i, (e, max_f)) in direct_energies.iter().zip(direct_forces.iter()).enumerate() {
         writeln!(f, r#"{{"method":"direct_minimize","step":{},"energy":{},"max_fatom":{},"oracle_calls":{}}}"#,
-            i, e, max_f, i + 1).unwrap();
+            i, e, max_f, i + 1).expect("Failed to write to output file");
     }
 
     eprintln!("GP minimize: {} oracle calls, final E = {:.6}, converged = {}",

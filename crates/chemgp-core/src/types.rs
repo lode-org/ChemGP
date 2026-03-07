@@ -333,8 +333,8 @@ mod tests {
     #[test]
     fn test_training_data() {
         let mut td = TrainingData::new(3);
-        td.add_point(&[1.0, 2.0, 3.0], 0.5, &[0.1, 0.2, 0.3]).unwrap();
-        td.add_point(&[4.0, 5.0, 6.0], 1.5, &[0.4, 0.5, 0.6]).unwrap();
+        td.add_point(&[1.0, 2.0, 3.0], 0.5, &[0.1, 0.2, 0.3]).expect("test setup: add_point should succeed with valid data");
+        td.add_point(&[4.0, 5.0, 6.0], 1.5, &[0.4, 0.5, 0.6]).expect("test setup: add_point should succeed with valid data");
         assert_eq!(td.npoints(), 2);
         assert_eq!(td.col(0), &[1.0, 2.0, 3.0]);
         assert_eq!(td.col(1), &[4.0, 5.0, 6.0]);
@@ -343,8 +343,8 @@ mod tests {
     #[test]
     fn test_normalize() {
         let mut td = TrainingData::new(2);
-        td.add_point(&[0.0, 0.0], 1.0, &[0.1, 0.2]).unwrap();
-        td.add_point(&[1.0, 1.0], 3.0, &[0.3, 0.4]).unwrap();
+        td.add_point(&[0.0, 0.0], 1.0, &[0.1, 0.2]).expect("test setup: add_point should succeed with valid data");
+        td.add_point(&[1.0, 1.0], 3.0, &[0.3, 0.4]).expect("test setup: add_point should succeed with valid data");
         let (y, mean, std) = td.normalize();
         assert!((mean - 2.0).abs() < 1e-10);
         assert!(std > 0.0);
