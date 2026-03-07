@@ -203,7 +203,8 @@ pub fn gp_minimize(
         };
         let kern = kern.with_params(clamped_sv, clamped_ls);
 
-        let mut gp_sub = GPModel::new(kern, &td_sub, y_sub, 1e-6, 1e-4, 1e-6)
+        let mut gp_sub = // Match C++ gpr_optim defaults
+        GPModel::new(kern, &td_sub, y_sub, 1e-7, 1e-5, 0.0)
             .expect("GPModel::new failed: invalid training data or kernel params");
         gp_sub.const_sigma2 = cfg.const_sigma2;
         train_model(&mut gp_sub, train_iters, cfg.verbose);
