@@ -216,9 +216,8 @@ pub fn gp_minimize(
             .energies
             .iter()
             .enumerate()
-            .min_by(|(_, a), (_, b)| a.partial_cmp(b).unwrap())
-            .map(|(i, _)| i)
-            .unwrap();
+            .min_by(|(_, a), (_, b)| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal))
+            .map(|(i, _)| i).unwrap_or(0)  // Safe fallback: use first point;
         let x_start = if td.energies[best_idx] < *all_energies.last().unwrap_or(&f64::INFINITY) {
             td.col(best_idx).to_vec()
         } else {
@@ -379,9 +378,9 @@ pub fn gp_minimize(
                 .min_by(|&i, &j| {
                     let di = trust_distance(cfg.trust_metric, &cfg.atom_types, &x_curr, td.col(i));
                     let dj = trust_distance(cfg.trust_metric, &cfg.atom_types, &x_curr, td.col(j));
-                    di.partial_cmp(&dj).unwrap()
+                    di.partial_cmp(&dj).unwrap_or(std::cmp::Ordering::Equal)
                 })
-                .unwrap();
+                .unwrap_or(0);  // Safe: range is 0..npoints()
             let nearest = td.col(nearest_idx).to_vec();
             let disp: Vec<f64> = x_curr
                 .iter()
@@ -432,9 +431,8 @@ pub fn gp_minimize(
                 .energies
                 .iter()
                 .enumerate()
-                .min_by(|(_, a), (_, b)| a.partial_cmp(b).unwrap())
-                .map(|(i, _)| i)
-                .unwrap();
+                .min_by(|(_, a), (_, b)| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal))
+                .map(|(i, _)| i).unwrap_or(0)  // Safe fallback: use first point;
             let mut rng = rand::rng();
             x_curr = td.col(best_idx).to_vec();
             for j in 0..d {
@@ -448,9 +446,8 @@ pub fn gp_minimize(
             .energies
             .iter()
             .enumerate()
-            .min_by(|(_, a), (_, b)| a.partial_cmp(b).unwrap())
-            .map(|(i, _)| i)
-            .unwrap();
+            .min_by(|(_, a), (_, b)| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal))
+            .map(|(i, _)| i).unwrap_or(0)  // Safe fallback: use first point;
         let e_best = td.energies[best_idx];
         let regress_tol = if cfg.energy_regression_tol > 0.0 {
             cfg.energy_regression_tol
