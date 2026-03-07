@@ -100,13 +100,12 @@ pub fn build_pred_model(
     seed: u64,
     const_sigma2: f64,
 ) -> PredModel {
-    // C++ gpr_optim defaults: noise_e=1e-7, noise_g=1e-5, jitter=0 for molecular systems
-        build_pred_model_full(kernel, td, rff_features, seed, const_sigma2, 1e-7, 1e-5, 0.0)
+    build_pred_model_full(kernel, td, rff_features, seed, const_sigma2, 1e-6, 1e-4, 1e-6)
 }
 
 /// Build a PredModel with explicit noise and jitter.
 ///
-/// Defaults match C++ gpr_optim: noise_e=1e-7, noise_g=1e-5, jitter=0.0
+/// C++ gpr_optim defaults: noise_e=1e-7, noise_g=1e-5, jitter=0 for molecular systems.
 pub fn build_pred_model_full(
     kernel: &Kernel,
     td: &TrainingData,
