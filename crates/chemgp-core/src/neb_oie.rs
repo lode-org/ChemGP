@@ -618,15 +618,15 @@ pub fn gp_neb_oie(
     let mut oracle_calls = 2;
 
     let mut td = TrainingData::new(d);
-    td.add_point(x_start, e_start, &g_start);
-    td.add_point(x_end, e_end, &g_end);
+    td.add_point(x_start, e_start, &g_start).expect("add_point failed: invalid data");
+    td.add_point(x_end, e_end, &g_end).expect("add_point failed: invalid data");
 
     // Virtual Hessian points
     if cfg.num_hess_iter > 0 {
         let hpts = get_hessian_points(x_start, x_end, cfg.eps_hess);
         for pt in &hpts {
             let (e, g) = oracle(pt);
-            td.add_point(pt, e, &g);
+            td.add_point(pt, e, &g).expect("add_point failed: invalid data");
             oracle_calls += 1;
         }
     }
@@ -656,7 +656,7 @@ pub fn gp_neb_oie(
             energies[i] = e;
             gradients[i] = g.clone();
             uneval[i] = false;
-            td.add_point(&images[i], e, &g);
+            td.add_point(&images[i], e, &g).expect("add_point failed: invalid data");
         }
         if cfg.verbose {
             eprintln!(
@@ -671,7 +671,8 @@ pub fn gp_neb_oie(
     let mut y_init: Vec<f64> = td.energies.iter().map(|e| e - e_ref_init).collect();
     y_init.extend_from_slice(&td.gradients);
     let kern_init = init_kernel(&td, kernel);
-    let mut gp_init = GPModel::new(kern_init, &td, y_init, 1e-6, 1e-4, 1e-6);
+    let mut gp_init = GPModel::new(kern_init, &td, y_init, 1e-6, 1e-4, 1e-6)
+        .expect("GPModel::new failed: invalid training data or kernel params");
     gp_init.const_sigma2 = cfg.const_sigma2;
     train_model(&mut gp_init, cfg.gp_train_iter, cfg.verbose);
 
@@ -786,7 +787,7 @@ pub fn gp_neb_oie(
             gradients[idx] = g.clone();
             uneval[idx] = false;
 
-            td.add_point(&images[idx], e, &g);
+            td.add_point(&images[idx], e, &g).expect("add_point failed: invalid data");
         }
 
         // Budget exhaustion check
@@ -866,7 +867,8 @@ pub fn gp_neb_oie(
             Some(k) => k.clone(),
         };
 
-        let mut gp_sub = GPModel::new(kern, &td_use, y_sub, 1e-6, 1e-4, 1e-6);
+        let mut gp_sub = GPModel::new(kern, &td_use, y_sub, 1e-6, 1e-4, 1e-6)
+            .expect("GPModel::new failed: invalid training data or kernel params");
         gp_sub.const_sigma2 = cfg.const_sigma2;
         train_model(&mut gp_sub, train_iters, cfg.verbose);
         prev_kern = Some(gp_sub.kernel.clone());

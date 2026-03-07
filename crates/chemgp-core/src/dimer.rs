@@ -527,12 +527,12 @@ pub fn gp_dimer(
 
         // Evaluate midpoint
         let (e, g) = oracle(x_init);
-        td.add_point(x_init, e, &g);
+        td.add_point(x_init, e, &g).expect("add_point failed: invalid data");
 
         // Evaluate image1 along initial orientation (C++ always evaluates this)
         let (r1_init, _) = dimer_images(&state);
         let (e1, g1) = oracle(&r1_init);
-        td.add_point(&r1_init, e1, &g1);
+        td.add_point(&r1_init, e1, &g1).expect("add_point failed: invalid data");
 
         // Optional perturbations
         let mut rng = rand::rng();
@@ -543,7 +543,7 @@ pub fn gp_dimer(
             let x_p: Vec<f64> = x_init.iter().zip(perturb.iter()).map(|(a, b)| a + b).collect();
             let (e_p, g_p) = oracle(&x_p);
             if e_p.is_finite() && e_p < 1e6 {
-                td.add_point(&x_p, e_p, &g_p);
+                td.add_point(&x_p, e_p, &g_p).expect("add_point failed: invalid data");
             }
         }
     }
@@ -621,7 +621,8 @@ pub fn gp_dimer(
             Some(k) => k.clone(),
         };
 
-        let mut gp_sub = GPModel::new(kern, &td_sub, y_sub.clone(), cfg.noise_e, cfg.noise_g, cfg.jitter);
+        let mut gp_sub = GPModel::new(kern, &td_sub, y_sub.clone(), cfg.noise_e, cfg.noise_g, cfg.jitter)
+            .expect("GPModel::new failed: invalid training data or kernel params");
         // Dynamic constSigma2 (MATLAB atomic_GP_dimer.m:453): max(1, mean_y^2)
         // Uses SHIFTED energies (y_sub[0..n]), not raw.
         let const_sigma2 = if cfg.const_sigma2 > 0.0 {
@@ -815,7 +816,7 @@ pub fn gp_dimer(
         // GP rotation and GP curvature are used for orient and curvature tracking.
         let (e_true, g_true) = oracle(&state.r);
         oracle_calls += 1;
-        td.add_point(&state.r, e_true, &g_true);
+        td.add_point(&state.r, e_true, &g_true).expect("add_point failed: invalid data");
 
         let f_trans_true = translational_force(&g_true, &state.orient);
         let f_norm_true = vec_norm(&f_trans_true);
