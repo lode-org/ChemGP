@@ -792,9 +792,9 @@ pub fn gp_dimer(
                 .min_by(|&a, &b| {
                     let da = trust_distance(cfg.trust_metric, &cfg.atom_types, &state.r, td.col(a));
                     let db = trust_distance(cfg.trust_metric, &cfg.atom_types, &state.r, td.col(b));
-                    da.partial_cmp(&db).unwrap()
+                    da.partial_cmp(&db).unwrap_or(std::cmp::Ordering::Equal)
                 })
-                .unwrap();
+                .unwrap_or(0);  // Safe fallback
             let nearest = td.col(nearest_idx).to_vec();
             let disp: Vec<f64> = state.r.iter().zip(nearest.iter()).map(|(a, b)| a - b).collect();
             state.r = nearest

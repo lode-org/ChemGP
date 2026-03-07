@@ -200,7 +200,7 @@ fn select_image(
                 .max_by(|&a, &b| {
                     grad_unc(a).partial_cmp(&grad_unc(b)).unwrap()
                 })
-                .unwrap();
+                .unwrap_or(0);  // Safe fallback
         }
     }
 
@@ -212,7 +212,7 @@ fn select_image(
                 .max_by(|&a, &b| {
                     let (_, va) = cached_model.predict_with_variance(&images[a]);
                     let (_, vb) = cached_model.predict_with_variance(&images[b]);
-                    va[0].partial_cmp(&vb[0]).unwrap()
+                    va[0].partial_cmp(&vb[0]).unwrap_or(std::cmp::Ordering::Equal)
                 })
                 .unwrap_or(1)
         }
@@ -223,7 +223,7 @@ fn select_image(
                 .max_by(|&a, &b| {
                     let fa = image_force_norm(&cached_forces.forces[a], d);
                     let fb = image_force_norm(&cached_forces.forces[b], d);
-                    fa.partial_cmp(&fb).unwrap()
+                    fa.partial_cmp(&fb).unwrap_or(std::cmp::Ordering::Equal)
                 })
                 .unwrap_or(1)
         }
@@ -534,9 +534,9 @@ fn oie_inner_relax(
                 let p = model.predict(&gp_images[b]);
                 p[0] + e_ref
             };
-            ea.partial_cmp(&eb).unwrap()
+            ea.partial_cmp(&eb).unwrap_or(std::cmp::Ordering::Equal)
         })
-        .unwrap_or(1);
+        .unwrap_or(0);  // Safe fallback
 
     (gp_images, ci_idx, early_stop_image)
 }
@@ -568,9 +568,9 @@ fn emd_trust_clip(images: &mut [Vec<f64>], td: &TrainingData, cfg: &NEBConfig) {
                 .min_by(|&a, &b| {
                     let da = trust_distance(cfg.trust_metric, &cfg.atom_types, &images[i], td.col(a));
                     let db = trust_distance(cfg.trust_metric, &cfg.atom_types, &images[i], td.col(b));
-                    da.partial_cmp(&db).unwrap()
+                    da.partial_cmp(&db).unwrap_or(std::cmp::Ordering::Equal)
                 })
-                .unwrap();
+                .unwrap_or(0);  // Safe fallback
             let nearest = td.col(nearest_idx).to_vec();
             let disp: Vec<f64> = images[i].iter().zip(nearest.iter()).map(|(a, b)| a - b).collect();
             images[i] = nearest
@@ -725,8 +725,8 @@ pub fn gp_neb_oie(
         } else if eval_next_ci {
             // Priority 2: climbing image (highest energy)
             i_eval = (1..n - 1)
-                .max_by(|&a, &b| energies[a].partial_cmp(&energies[b]).unwrap())
-                .unwrap_or(1);
+                .max_by(|&a, &b| energies[a].partial_cmp(&energies[b]).unwrap_or(std::cmp::Ordering::Equal))
+                .unwrap_or(0);  // Safe fallback
             eval_next_ci = false;
         } else {
             // Priority 3: acquisition strategy
@@ -757,7 +757,7 @@ pub fn gp_neb_oie(
                 })
                 .collect();
             // Sort by uncertainty descending (evaluate most uncertain first)
-            candidates.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap());
+            candidates.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
 
             let mut set: Vec<usize> = candidates
                 .iter()
@@ -956,8 +956,8 @@ pub fn gp_neb_oie(
 
         // ---- STEP 4: Decide whether to relax (MATLAB lines 282-298) ----
         let i_ci = (1..n - 1)
-            .max_by(|&a, &b| energies[a].partial_cmp(&energies[b]).unwrap())
-            .unwrap_or(1);
+            .max_by(|&a, &b| energies[a].partial_cmp(&energies[b]).unwrap_or(std::cmp::Ordering::Equal))
+            .unwrap_or(0);  // Safe fallback
 
         let mut start_relax = false;
 
@@ -1087,8 +1087,8 @@ pub fn gp_neb_oie(
     }
 
     let i_max = (1..n - 1)
-        .max_by(|&a, &b| energies[a].partial_cmp(&energies[b]).unwrap())
-        .unwrap_or(1);
+        .max_by(|&a, &b| energies[a].partial_cmp(&energies[b]).unwrap_or(std::cmp::Ordering::Equal))
+        .unwrap_or(0);  // Safe fallback
 
     NEBResult {
         path,

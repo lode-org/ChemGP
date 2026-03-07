@@ -365,8 +365,8 @@ pub fn compute_all_neb_forces(path: &NEBPath, cfg: &NEBConfig, ci_on: bool) -> N
 
     // Highest energy intermediate image
     let i_max = (1..n - 1)
-        .max_by(|&a, &b| path.energies[a].partial_cmp(&path.energies[b]).unwrap())
-        .unwrap_or(1);
+        .max_by(|&a, &b| path.energies[a].partial_cmp(&path.energies[b]).unwrap_or(std::cmp::Ordering::Equal))
+        .unwrap_or(0);  // Safe fallback
 
     let mut max_f_norm = 0.0f64;
     let mut ci_f_norm = 0.0f64;
