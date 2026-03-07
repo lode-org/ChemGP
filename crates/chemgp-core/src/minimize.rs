@@ -301,14 +301,15 @@ pub fn gp_minimize(
 
             // Step size: L-BFGS direction is curvature-scaled, so use
             // alpha=1.0 by default, clamp displacement to trust_radius.
-            // For steepest descent (no pairs), cap step to avoid overshoot.
+            // For steepest descent (no pairs), use trust_radius / (2 * |dir|).
+            // Trust radius provides the upper bound; no additional cap needed.
             let dir_norm: f64 = dir.iter().map(|x| x * x).sum::<f64>().sqrt();
             let step_size = if lbfgs.count > 0 {
                 // L-BFGS: trust the direction, clip by trust radius
                 (1.0f64).min(cfg.trust_radius / (dir_norm + 1e-30))
             } else {
                 // Steepest descent: step = trust_radius / (2 * |dir|)
-                (cfg.trust_radius * 0.5 / (dir_norm + 1e-30)).min(0.1 / g_norm)
+                cfg.trust_radius * 0.5 / (dir_norm + 1e-30)
             };
             for j in 0..d {
                 x_opt[j] += step_size * dir[j];
