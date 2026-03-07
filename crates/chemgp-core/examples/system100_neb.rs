@@ -364,7 +364,7 @@ fn main() {
     }
 
     // --- Write JSONL ---
-    let mut f = std::fs::File::create(&args.output).unwrap();
+    let mut f = std::fs::File::create(&args.output).expect("Failed to create output file");
 
     // Helper to write convergence records (includes CI force when available)
     let write_convergence = |f: &mut std::fs::File, method: &str, result: &NEBResult| {
@@ -373,7 +373,7 @@ fn main() {
         {
             let ci_f = result.history.ci_force.get(i).copied().unwrap_or(f64::NAN);
             writeln!(f, r#"{{"method":"{}","step":{},"max_force":{},"ci_force":{},"oracle_calls":{}}}"#,
-                method, i, mf, ci_f, oc).unwrap();
+                method, i, mf, ci_f, oc).expect("Failed to write to output file");
         }
     };
 
@@ -400,7 +400,7 @@ fn main() {
         .or(aie_result.as_ref());
     if let Some(ref r) = best_gp {
         for (img, e) in r.path.energies.iter().enumerate() {
-            writeln!(f, r#"{{"type":"path_energy","image":{},"energy":{}}}"#, img, e).unwrap();
+            writeln!(f, r#"{{"type":"path_energy","image":{},"energy":{}}}"#, img, e).expect("Failed to write to output file");
         }
     }
 
@@ -410,13 +410,13 @@ fn main() {
         aie_result.as_ref().map_or(0, |r| r.oracle_calls),
         oie_result.as_ref().map_or(0, |r| r.oracle_calls),
         oie_enh_result.as_ref().map_or(0, |r| r.oracle_calls),
-    ).unwrap();
+    ).expect("Operation failed");
     for (name, ref r) in &compare_results {
         writeln!(f, r#"{{"summary_acq":"{}","calls":{},"converged":{},"final_max_f":{},"final_ci_f":{}}}"#,
             name, r.oracle_calls, r.converged,
             r.history.max_force.last().unwrap_or(&f64::NAN),
             r.history.ci_force.last().unwrap_or(&f64::NAN),
-        ).unwrap();
+        ).expect("Operation failed");
     }
 
     eprintln!("\n=== Summary ===");

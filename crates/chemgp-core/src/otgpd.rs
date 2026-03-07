@@ -518,7 +518,7 @@ pub fn otgpd(
         // Restart from latest converged state (C++ defineStartPath)
         if let Some(ref rc) = r_latest_conv {
             r = rc.clone();
-            orient = orient_latest_conv.as_ref().unwrap().clone();
+            orient = orient_latest_conv.as_ref().expect("orient_latest_conv should be Some after convergence").clone();
         } else {
             r = r_init.clone();
             orient = orient_init.clone();

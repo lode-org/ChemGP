@@ -243,14 +243,14 @@ fn main() {
 
     // Write JSONL
     let outfile = "hcn_neb_comparison.jsonl";
-    let mut f = std::fs::File::create(outfile).unwrap();
+    let mut f = std::fs::File::create(outfile).expect("Failed to create output file");
 
     if let Some(ref r) = neb_result {
         for (i, ((&mf, &cf), &oc)) in r.history.max_force.iter()
             .zip(r.history.ci_force.iter())
             .zip(r.history.oracle_calls.iter()).enumerate()
         {
-            writeln!(f, r#"{{"method":"neb","step":{},"max_force":{},"ci_force":{},"oracle_calls":{}}}"#, i, mf, cf, oc).unwrap();
+            writeln!(f, r#"{{"method":"neb","step":{},"max_force":{},"ci_force":{},"oracle_calls":{}}}"#, i, mf, cf, oc).expect("Failed to write to output file");
         }
     }
     if let Some(ref r) = aie_result {
@@ -258,7 +258,7 @@ fn main() {
             .zip(r.history.ci_force.iter())
             .zip(r.history.oracle_calls.iter()).enumerate()
         {
-            writeln!(f, r#"{{"method":"gp_neb_aie","step":{},"max_force":{},"ci_force":{},"oracle_calls":{}}}"#, i, mf, cf, oc).unwrap();
+            writeln!(f, r#"{{"method":"gp_neb_aie","step":{},"max_force":{},"ci_force":{},"oracle_calls":{}}}"#, i, mf, cf, oc).expect("Failed to write to output file");
         }
     }
     if let Some(ref r) = oie_result {
@@ -266,7 +266,7 @@ fn main() {
             .zip(r.history.ci_force.iter())
             .zip(r.history.oracle_calls.iter()).enumerate()
         {
-            writeln!(f, r#"{{"method":"gp_neb_oie","step":{},"max_force":{},"ci_force":{},"oracle_calls":{}}}"#, i, mf, cf, oc).unwrap();
+            writeln!(f, r#"{{"method":"gp_neb_oie","step":{},"max_force":{},"ci_force":{},"oracle_calls":{}}}"#, i, mf, cf, oc).expect("Failed to write to output file");
         }
     }
 
@@ -280,7 +280,7 @@ fn main() {
         if let Some(ref r) = res {
             for (img, e) in r.path.energies.iter().enumerate() {
                 writeln!(f, r#"{{"type":"path_energy","method":"{}","image":{},"energy":{}}}"#,
-                    label, img, e - e_ref).unwrap();
+                    label, img, e - e_ref).expect("Failed to write to output file");
             }
         }
     }

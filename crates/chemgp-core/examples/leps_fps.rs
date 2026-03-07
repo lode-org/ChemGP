@@ -69,14 +69,14 @@ fn main() {
 
     // Write JSONL
     let outfile = "leps_fps.jsonl";
-    let mut f = std::fs::File::create(outfile).unwrap();
+    let mut f = std::fs::File::create(outfile).expect("Failed to create output file");
 
     writeln!(
         f,
         r#"{{"type":"fps_meta","n_candidates":{},"n_selected":{},"feature_dim":{}}}"#,
         n_cand, selected_idx.len(), dim
     )
-    .unwrap();
+    .expect("Operation failed");
 
     for (idx, (cand, &sel)) in candidates.iter().zip(is_selected.iter()).enumerate() {
         // Compute rAB, rBC for labeling
@@ -91,7 +91,7 @@ fn main() {
             r#"{{"type":"candidate","idx":{},"selected":{},"rAB":{},"rBC":{},"energy":{},"features":[{}]}}"#,
             idx, sel, rab, rbc, e, feat_str.join(",")
         )
-        .unwrap();
+        .expect("Operation failed");
     }
 
     eprintln!("Output: {}", outfile);

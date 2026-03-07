@@ -124,7 +124,7 @@ fn main() {
 
     // Write comparison data
     let outfile = "mb_dimer_comparison.jsonl";
-    let mut f = std::fs::File::create(outfile).unwrap();
+    let mut f = std::fs::File::create(outfile).expect("Failed to create output file");
 
     for (i, ((&e, &fv), &oc)) in std_result
         .history
@@ -139,7 +139,7 @@ fn main() {
             r#"{{"method":"standard_dimer","step":{},"energy":{},"force":{},"oracle_calls":{}}}"#,
             i, e, fv, oc
         )
-        .unwrap();
+        .expect("Operation failed");
     }
 
     for (i, ((&e, &fv), &oc)) in dimer_result
@@ -155,7 +155,7 @@ fn main() {
             r#"{{"method":"gp_dimer","step":{},"energy":{},"force":{},"oracle_calls":{}}}"#,
             i, e, fv, oc
         )
-        .unwrap();
+        .expect("Operation failed");
     }
 
     writeln!(
@@ -163,7 +163,7 @@ fn main() {
         r#"{{"summary":true,"standard_calls":{},"dimer_calls":{}}}"#,
         std_result.oracle_calls, dimer_result.oracle_calls
     )
-    .unwrap();
+    .expect("Operation failed");
 
     eprintln!("Output: {}", outfile);
 }

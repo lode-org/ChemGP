@@ -95,7 +95,7 @@ fn main() {
         }).sum::<f64>() / true_gradients.len() as f64;
 
     writeln!(w, r#"{{"type":"exact_gp","energy_mae":{},"gradient_mae":{}}}"#,
-        exact_e_mae, exact_g_mae).unwrap();
+        exact_e_mae, exact_g_mae).expect("Failed to write to output file");
     println!("Exact GP: energy MAE = {:.6}, gradient MAE = {:.6}", exact_e_mae, exact_g_mae);
 
     // Evaluate RFF at various D_rff
@@ -130,7 +130,7 @@ fn main() {
         let vs_gp_g: f64 = rff_vs_gp_g_errors.iter().sum::<f64>() / rff_vs_gp_g_errors.len() as f64;
 
         writeln!(w, r#"{{"type":"rff","d_rff":{},"energy_mae_vs_true":{},"gradient_mae_vs_true":{},"energy_mae_vs_gp":{},"gradient_mae_vs_gp":{}}}"#,
-            d_rff, e_mae, g_mae, vs_gp_e, vs_gp_g).unwrap();
+            d_rff, e_mae, g_mae, vs_gp_e, vs_gp_g).expect("Failed to write to output file");
         println!("D_rff={:>3}: energy MAE = {:.6}, gradient MAE = {:.6}", d_rff, e_mae, g_mae);
     }
 

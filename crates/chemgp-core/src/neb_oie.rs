@@ -198,7 +198,7 @@ fn select_image(
                 .iter()
                 .copied()
                 .max_by(|&a, &b| {
-                    grad_unc(a).partial_cmp(&grad_unc(b)).unwrap()
+                    grad_unc(a).partial_cmp(&grad_unc(b)).unwrap_or(std::cmp::Ordering::Equal)
                 })
                 .unwrap_or(0);  // Safe fallback
         }

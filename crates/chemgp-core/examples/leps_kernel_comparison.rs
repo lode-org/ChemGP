@@ -18,7 +18,7 @@ fn main() {
     let x_init = LEPS_REACTANT.to_vec();
 
     let outfile = "leps_kernel_comparison.jsonl";
-    let mut f = std::fs::File::create(outfile).unwrap();
+    let mut f = std::fs::File::create(outfile).expect("Failed to create output file");
 
     // --- MolInvDistSE (invariant kernel) ---
     let kernel_mol = Kernel::MolInvDist(MolInvDistSE::isotropic(1.0, 1.0, vec![]));
@@ -39,7 +39,7 @@ fn main() {
 
     for (i, (e, max_f)) in result_mol.energies.iter().zip(mol_forces.iter()).enumerate() {
         writeln!(f, r#"{{"kernel":"MolInvDistSE","step":{},"energy":{},"max_fatom":{},"oracle_calls":{}}}"#,
-            i, e, max_f, i + 1).unwrap();
+            i, e, max_f, i + 1).expect("Failed to write to output file");
     }
 
     eprintln!("MolInvDistSE: {} oracle calls, E = {:.6}, converged = {}",
@@ -67,7 +67,7 @@ fn main() {
 
     for (i, (e, max_f)) in result_cart.energies.iter().zip(cart_forces.iter()).enumerate() {
         writeln!(f, r#"{{"kernel":"CartesianSE","step":{},"energy":{},"max_fatom":{},"oracle_calls":{}}}"#,
-            i, e, max_f, i + 1).unwrap();
+            i, e, max_f, i + 1).expect("Failed to write to output file");
     }
 
     eprintln!("CartesianSE:  {} oracle calls, E = {:.6}, converged = {}",

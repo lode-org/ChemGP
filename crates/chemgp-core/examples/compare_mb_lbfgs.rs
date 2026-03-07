@@ -69,8 +69,8 @@ fn run_lbfgs_mb(x_init: &[f64], trust_radius: f64, with_cap: bool, max_iter: usi
             let d: f64 = x.iter().zip(m.iter()).map(|(a, b)| (a - b).powi(2)).sum::<f64>().sqrt();
             (i, d)
         })
-        .min_by(|a, b| a.1.partial_cmp(&b.1).unwrap())
-        .unwrap();
+        .min_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal))
+        .expect("Operation failed");
     
     println!("  Converged to minimum {} (distance = {:.4})", min_idx, dist);
     
