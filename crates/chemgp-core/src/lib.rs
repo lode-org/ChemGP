@@ -1,3 +1,4 @@
+pub mod error;
 pub mod invdist;
 pub mod kernel;
 pub mod types;

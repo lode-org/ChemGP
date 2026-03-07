@@ -2,6 +2,7 @@
 //!
 //! Ports `types.jl`.
 
+use crate::error::{validate, GpError, GpResult};
 use crate::kernel::Kernel;
 
 /// Container for the growing dataset of oracle evaluations.
@@ -20,13 +21,21 @@ pub struct TrainingData {
 }
 
 impl TrainingData {
-    pub fn new(dim: usize) -> Self {
-        Self {
+    /// Create new empty TrainingData with dimension check.
+    ///
+    /// # Errors
+    ///
+    /// Returns `Err` if dim is 0 (invalid dimension).
+    pub fn new(dim: usize) -> GpResult<Self> {
+        if dim == 0 {
+            return Err(GpError::DimensionMismatch { expected: 1, actual: 0 });
+        }
+        Ok(Self {
             data: Vec::new(),
             dim,
             energies: Vec::new(),
             gradients: Vec::new(),
-        }
+        })
     }
 
     pub fn npoints(&self) -> usize {
@@ -37,13 +46,27 @@ impl TrainingData {
         }
     }
 
-    /// Add a single oracle evaluation.
-    pub fn add_point(&mut self, x: &[f64], energy: f64, gradient: &[f64]) {
-        assert_eq!(x.len(), self.dim);
-        assert_eq!(gradient.len(), self.dim);
+    /// Add a single oracle evaluation with validation.
+    ///
+    /// # Errors
+    ///
+    /// Returns `Err` if x or gradient dimensions don't match,
+    /// or if any values are non-finite.
+    pub fn add_point(&mut self, x: &[f64], energy: f64, gradient: &[f64]) -> GpResult<()> {
+        validate::validate_dimension(self.dim, x.len())?;
+        validate::validate_dimension(self.dim, gradient.len())?;
+        validate::validate_finite_slice(x)?;
+        validate::validate_finite_slice(gradient)?;
+        if !energy.is_finite() {
+            return Err(GpError::NonFiniteEnergy {
+                index: self.npoints(),
+                value: energy,
+            });
+        }
         self.data.extend_from_slice(x);
         self.energies.push(energy);
         self.gradients.extend_from_slice(gradient);
+        Ok(())
     }
 
     /// Get column i (the i-th configuration).
@@ -76,9 +99,13 @@ impl TrainingData {
         (y_full, y_mean, y_std)
     }
 
-    /// Extract a subset by indices.
+    /// Extract a subset by indices with pre-allocation for efficiency.
     pub fn extract_subset(&self, indices: &[usize]) -> TrainingData {
-        let mut sub = TrainingData::new(self.dim);
+        let mut sub = TrainingData::new(self.dim).expect("extract_subset: invalid dim");
+        // Pre-allocate to avoid repeated reallocations
+        sub.data.reserve(indices.len() * self.dim);
+        sub.energies.reserve(indices.len());
+        sub.gradients.reserve(indices.len() * self.dim);
         for &i in indices {
             sub.data.extend_from_slice(self.col(i));
             sub.energies.push(self.energies[i]);
@@ -119,6 +146,11 @@ pub struct GPModel {
 }
 
 impl GPModel {
+    /// Create a new GP model with validation.
+    ///
+    /// # Errors
+    ///
+    /// Returns `Err` if training data is empty, or if any values are non-finite.
     pub fn new(
         kernel: Kernel,
         td: &TrainingData,
@@ -126,14 +158,46 @@ impl GPModel {
         noise_var: f64,
         grad_noise_var: f64,
         jitter: f64,
-    ) -> Self {
+    ) -> GpResult<Self> {
+        // Validate training data
+        if td.npoints() == 0 {
+            return Err(GpError::EmptyTrainingData);
+        }
+        
+        // Validate y targets
+        if y.is_empty() {
+            return Err(GpError::EmptyTargets);
+        }
+        for (i, &val) in y.iter().enumerate() {
+            if !val.is_finite() {
+                return Err(GpError::NonFiniteTargets { index: i, value: val });
+            }
+        }
+        
+        // Validate kernel parameters
+        let sigma2 = kernel.signal_variance();
+        if sigma2 <= 0.0 || !sigma2.is_finite() {
+            return Err(GpError::InvalidKernelParams {
+                param: "signal_variance".to_string(),
+                value: sigma2,
+            });
+        }
+        for (i, &ls) in kernel.inv_lengthscales().iter().enumerate() {
+            if ls <= 0.0 || !ls.is_finite() {
+                return Err(GpError::InvalidKernelParams {
+                    param: format!("inv_lengthscale[{}]", i),
+                    value: ls,
+                });
+            }
+        }
+
         let dim = td.dim;
         let n_train = td.npoints();
         // Constant kernel: off by default (0.0). Set to 1.0 for molecular
         // systems to match C++ gpr_optim ConstantCF. Callers override via
         // gp.const_sigma2 = config.const_sigma2 after construction.
         let const_sigma2 = 0.0;
-        Self {
+        Ok(Self {
             kernel,
             x_data: td.data.clone(),
             dim,
@@ -147,7 +211,7 @@ impl GPModel {
             prior_dof: 0.0,
             prior_s2: 1.0,
             prior_mu: 0.0,
-        }
+        })
     }
 
     /// Get training column i.
@@ -268,9 +332,9 @@ mod tests {
 
     #[test]
     fn test_training_data() {
-        let mut td = TrainingData::new(3);
-        td.add_point(&[1.0, 2.0, 3.0], 0.5, &[0.1, 0.2, 0.3]);
-        td.add_point(&[4.0, 5.0, 6.0], 1.5, &[0.4, 0.5, 0.6]);
+        let mut td = TrainingData::new(3).unwrap();
+        td.add_point(&[1.0, 2.0, 3.0], 0.5, &[0.1, 0.2, 0.3]).unwrap();
+        td.add_point(&[4.0, 5.0, 6.0], 1.5, &[0.4, 0.5, 0.6]).unwrap();
         assert_eq!(td.npoints(), 2);
         assert_eq!(td.col(0), &[1.0, 2.0, 3.0]);
         assert_eq!(td.col(1), &[4.0, 5.0, 6.0]);
@@ -278,12 +342,31 @@ mod tests {
 
     #[test]
     fn test_normalize() {
-        let mut td = TrainingData::new(2);
-        td.add_point(&[0.0, 0.0], 1.0, &[0.1, 0.2]);
-        td.add_point(&[1.0, 1.0], 3.0, &[0.3, 0.4]);
+        let mut td = TrainingData::new(2).unwrap();
+        td.add_point(&[0.0, 0.0], 1.0, &[0.1, 0.2]).unwrap();
+        td.add_point(&[1.0, 1.0], 3.0, &[0.3, 0.4]).unwrap();
         let (y, mean, std) = td.normalize();
         assert!((mean - 2.0).abs() < 1e-10);
         assert!(std > 0.0);
         assert_eq!(y.len(), 6); // 2 energies + 4 gradients
+    }
+
+    #[test]
+    fn test_validation_errors() {
+        // Test empty dimension
+        assert!(matches!(TrainingData::new(0), Err(GpError::DimensionMismatch { .. })));
+        
+        // Test NaN rejection
+        let mut td = TrainingData::new(2).unwrap();
+        assert!(matches!(
+            td.add_point(&[f64::NAN, 1.0], 0.5, &[0.1, 0.2]),
+            Err(GpError::NonFiniteData { .. })
+        ));
+        
+        // Test dimension mismatch
+        assert!(matches!(
+            td.add_point(&[1.0], 0.5, &[0.1, 0.2]),
+            Err(GpError::DimensionMismatch { .. })
+        ));
     }
 }
