@@ -671,8 +671,7 @@ pub fn gp_neb_oie(
     let mut y_init: Vec<f64> = td.energies.iter().map(|e| e - e_ref_init).collect();
     y_init.extend_from_slice(&td.gradients);
     let kern_init = init_kernel(&td, kernel);
-    let mut gp_init = // Match C++ gpr_optim defaults
-    GPModel::new(kern_init, &td, y_init, 1e-7, 1e-5, 0.0)
+    let mut gp_init = GPModel::new(kern_init, &td, y_init, 1e-6, 1e-4, 1e-6)
         .expect("GPModel::new failed: invalid training data or kernel params");
     gp_init.const_sigma2 = cfg.const_sigma2;
     train_model(&mut gp_init, cfg.gp_train_iter, cfg.verbose);
@@ -868,8 +867,7 @@ pub fn gp_neb_oie(
             Some(k) => k.clone(),
         };
 
-        let mut gp_sub = // Match C++ gpr_optim defaults
-        GPModel::new(kern, &td_use, y_sub, 1e-7, 1e-5, 0.0)
+        let mut gp_sub = GPModel::new(kern, &td_use, y_sub, 1e-6, 1e-4, 1e-6)
             .expect("GPModel::new failed: invalid training data or kernel params");
         gp_sub.const_sigma2 = cfg.const_sigma2;
         train_model(&mut gp_sub, train_iters, cfg.verbose);
