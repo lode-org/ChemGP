@@ -37,9 +37,8 @@ where
         let best_idx = min_dists
             .iter()
             .enumerate()
-            .max_by(|(_, a), (_, b)| a.partial_cmp(b).unwrap())
-            .map(|(i, _)| i)
-            .unwrap();
+            .max_by(|(_, a), (_, b)| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal))
+            .map(|(i, _)| i).unwrap_or(0);  // Safe fallback
 
         if min_dists[best_idx] <= 0.0 || min_dists[best_idx] == f64::NEG_INFINITY {
             break;
@@ -144,7 +143,7 @@ where
     let mut dists: Vec<(usize, f64)> = (0..n)
         .map(|i| (i, distance_fn(td.col(i), x_current)))
         .collect();
-    dists.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap());
+    dists.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal));
 
     let keep_idx: Vec<usize> = {
         let mut v: Vec<usize> = dists[..max_points].iter().map(|(i, _)| *i).collect();

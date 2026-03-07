@@ -225,8 +225,8 @@ pub fn neb_optimize(
     }
 
     let i_max = (1..n - 1)
-        .max_by(|&a, &b| energies[a].partial_cmp(&energies[b]).unwrap())
-        .unwrap_or(1);
+        .max_by(|&a, &b| energies[a].partial_cmp(&energies[b]).unwrap_or(std::cmp::Ordering::Equal))
+        .unwrap_or(0);  // Safe fallback
 
     NEBResult {
         path,
@@ -454,8 +454,8 @@ pub fn gp_neb_aie(
     }
 
     let i_max = (1..n - 1)
-        .max_by(|&a, &b| energies[a].partial_cmp(&energies[b]).unwrap())
-        .unwrap_or(1);
+        .max_by(|&a, &b| energies[a].partial_cmp(&energies[b]).unwrap_or(std::cmp::Ordering::Equal))
+        .unwrap_or(0);  // Safe fallback
 
     NEBResult {
         path,
@@ -595,9 +595,9 @@ fn emd_trust_clip(images: &mut [Vec<f64>], td: &TrainingData, cfg: &NEBConfig) {
                 .min_by(|&a, &b| {
                     let da = trust_distance(cfg.trust_metric, &cfg.atom_types, &images[i], td.col(a));
                     let db = trust_distance(cfg.trust_metric, &cfg.atom_types, &images[i], td.col(b));
-                    da.partial_cmp(&db).unwrap()
+                    da.partial_cmp(&db).unwrap_or(std::cmp::Ordering::Equal)
                 })
-                .unwrap();
+                .unwrap_or(0);  // Safe fallback
             let nearest = td.col(nearest_idx).to_vec();
             let disp: Vec<f64> = images[i]
                 .iter()
@@ -640,7 +640,7 @@ pub(crate) fn bead_local_subset(
         let mut dists: Vec<(usize, f64)> = (0..n)
             .map(|j| (j, trust_distance(metric, atom_types, img, td.col(j))))
             .collect();
-        dists.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap());
+        dists.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal));
         for &(idx, _) in dists.iter().take(k_per_bead) {
             keep.insert(idx);
         }
