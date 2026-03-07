@@ -123,7 +123,7 @@ pub fn gp_minimize(
         }
 
         let (e, g) = oracle(x_init);
-        td.add_point(x_init, e, &g);
+        td.add_point(x_init, e, &g).expect("add_point failed: invalid data");
         trajectory.push(x_init.to_vec());
         all_energies.push(e);
 
@@ -135,7 +135,7 @@ pub fn gp_minimize(
             let x_p: Vec<f64> = x_init.iter().zip(perturb.iter()).map(|(a, b)| a + b).collect();
             let (e_p, g_p) = oracle(&x_p);
             if e_p.is_finite() && e_p < 1e6 {
-                td.add_point(&x_p, e_p, &g_p);
+                td.add_point(&x_p, e_p, &g_p).expect("add_point failed: invalid data");
                 trajectory.push(x_p);
                 all_energies.push(e_p);
             }
@@ -203,7 +203,8 @@ pub fn gp_minimize(
         };
         let kern = kern.with_params(clamped_sv, clamped_ls);
 
-        let mut gp_sub = GPModel::new(kern, &td_sub, y_sub, 1e-6, 1e-4, 1e-6);
+        let mut gp_sub = GPModel::new(kern, &td_sub, y_sub, 1e-6, 1e-4, 1e-6)
+            .expect("GPModel::new failed: invalid training data or kernel params");
         gp_sub.const_sigma2 = cfg.const_sigma2;
         train_model(&mut gp_sub, train_iters, cfg.verbose);
         prev_kern = Some(gp_sub.kernel.clone());
@@ -217,7 +218,7 @@ pub fn gp_minimize(
             .iter()
             .enumerate()
             .min_by(|(_, a), (_, b)| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal))
-            .map(|(i, _)| i).unwrap_or(0)  // Safe fallback: use first point;
+            .map(|(i, _)| i).unwrap_or(0);  // Safe fallback: use first point
         let x_start = if td.energies[best_idx] < *all_energies.last().unwrap_or(&f64::INFINITY) {
             td.col(best_idx).to_vec()
         } else {
@@ -432,7 +433,7 @@ pub fn gp_minimize(
                 .iter()
                 .enumerate()
                 .min_by(|(_, a), (_, b)| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal))
-                .map(|(i, _)| i).unwrap_or(0)  // Safe fallback: use first point;
+                .map(|(i, _)| i).unwrap_or(0);  // Safe fallback: use first point
             let mut rng = rand::rng();
             x_curr = td.col(best_idx).to_vec();
             for j in 0..d {
@@ -447,7 +448,7 @@ pub fn gp_minimize(
             .iter()
             .enumerate()
             .min_by(|(_, a), (_, b)| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal))
-            .map(|(i, _)| i).unwrap_or(0)  // Safe fallback: use first point;
+            .map(|(i, _)| i).unwrap_or(0);  // Safe fallback: use first point
         let e_best = td.energies[best_idx];
         let regress_tol = if cfg.energy_regression_tol > 0.0 {
             cfg.energy_regression_tol
@@ -467,14 +468,14 @@ pub fn gp_minimize(
         if e_true > e_best + regress_tol && g_norm > cfg.conv_tol * 10.0 {
             trajectory.push(x_curr.clone());
             all_energies.push(e_true);
-            td.add_point(&x_curr, e_true, &g_true);
+            td.add_point(&x_curr, e_true, &g_true).expect("add_point failed: invalid data");
             x_curr = td.col(best_idx).to_vec();
             continue;
         }
 
         trajectory.push(x_curr.clone());
         all_energies.push(e_true);
-        td.add_point(&x_curr, e_true, &g_true);
+        td.add_point(&x_curr, e_true, &g_true).expect("add_point failed: invalid data");
 
         if cfg.max_training_points > 0 {
             let dist_fn = |a: &[f64], b: &[f64]| euclidean_distance(a, b);

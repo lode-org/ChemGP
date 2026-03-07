@@ -257,8 +257,8 @@ pub fn gp_neb_aie(
     let mut oracle_calls = 2;
 
     let mut td = TrainingData::new(d);
-    td.add_point(x_start, e_start, &g_start);
-    td.add_point(x_end, e_end, &g_end);
+    td.add_point(x_start, e_start, &g_start).expect("add_point failed: invalid data");
+    td.add_point(x_end, e_end, &g_end).expect("add_point failed: invalid data");
 
     // Virtual Hessian points
     let mut hess_calls = 0;
@@ -289,7 +289,7 @@ pub fn gp_neb_aie(
         let (e, g) = oracle(&images[i]);
         energies[i] = e;
         gradients[i] = g.clone();
-        td.add_point(&images[i], e, &g);
+        td.add_point(&images[i], e, &g).expect("add_point failed: invalid data");
         oracle_calls += 1;
     }
 
@@ -408,7 +408,8 @@ pub fn gp_neb_aie(
             Some(k) => k.clone(),
         };
 
-        let mut gp_sub = GPModel::new(kern, &td_use, y_sub, 1e-6, 1e-4, 1e-6);
+        let mut gp_sub = GPModel::new(kern, &td_use, y_sub, 1e-6, 1e-4, 1e-6)
+            .expect("GPModel::new failed: invalid training data or kernel params");
         gp_sub.const_sigma2 = cfg.const_sigma2;
         train_model(&mut gp_sub, train_iters, cfg.verbose);
         prev_kern = Some(gp_sub.kernel.clone());
@@ -444,7 +445,7 @@ pub fn gp_neb_aie(
             energies[i] = e;
             gradients[i] = g.clone();
             oracle_calls += 1;
-            td.add_point(&images[i], e, &g);
+            td.add_point(&images[i], e, &g).expect("add_point failed: invalid data");
         }
 
         path.images = images.clone();

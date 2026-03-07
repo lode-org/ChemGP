@@ -23,19 +23,19 @@ pub struct TrainingData {
 impl TrainingData {
     /// Create new empty TrainingData with dimension check.
     ///
-    /// # Errors
+    /// # Panics
     ///
-    /// Returns `Err` if dim is 0 (invalid dimension).
-    pub fn new(dim: usize) -> GpResult<Self> {
+    /// Panics if dim is 0 (invalid dimension).
+    pub fn new(dim: usize) -> Self {
         if dim == 0 {
-            return Err(GpError::DimensionMismatch { expected: 1, actual: 0 });
+            panic!("TrainingData::new: dimension cannot be 0");
         }
-        Ok(Self {
+        Self {
             data: Vec::new(),
             dim,
             energies: Vec::new(),
             gradients: Vec::new(),
-        })
+        }
     }
 
     pub fn npoints(&self) -> usize {
@@ -101,7 +101,7 @@ impl TrainingData {
 
     /// Extract a subset by indices with pre-allocation for efficiency.
     pub fn extract_subset(&self, indices: &[usize]) -> TrainingData {
-        let mut sub = TrainingData::new(self.dim).expect("extract_subset: invalid dim");
+        let mut sub = TrainingData::new(self.dim);
         // Pre-allocate to avoid repeated reallocations
         sub.data.reserve(indices.len() * self.dim);
         sub.energies.reserve(indices.len());
@@ -332,7 +332,7 @@ mod tests {
 
     #[test]
     fn test_training_data() {
-        let mut td = TrainingData::new(3).unwrap();
+        let mut td = TrainingData::new(3);
         td.add_point(&[1.0, 2.0, 3.0], 0.5, &[0.1, 0.2, 0.3]).unwrap();
         td.add_point(&[4.0, 5.0, 6.0], 1.5, &[0.4, 0.5, 0.6]).unwrap();
         assert_eq!(td.npoints(), 2);
@@ -342,7 +342,7 @@ mod tests {
 
     #[test]
     fn test_normalize() {
-        let mut td = TrainingData::new(2).unwrap();
+        let mut td = TrainingData::new(2);
         td.add_point(&[0.0, 0.0], 1.0, &[0.1, 0.2]).unwrap();
         td.add_point(&[1.0, 1.0], 3.0, &[0.3, 0.4]).unwrap();
         let (y, mean, std) = td.normalize();
@@ -352,12 +352,13 @@ mod tests {
     }
 
     #[test]
-    fn test_validation_errors() {
-        // Test empty dimension
-        assert!(matches!(TrainingData::new(0), Err(GpError::DimensionMismatch { .. })));
+    #[should_panic(expected = "dimension cannot be 0")]
+    fn test_validation_zero_dim_panics() {
+        // Test empty dimension causes panic
+        let _td = TrainingData::new(0);
         
         // Test NaN rejection
-        let mut td = TrainingData::new(2).unwrap();
+        let mut td = TrainingData::new(2);
         assert!(matches!(
             td.add_point(&[f64::NAN, 1.0], 0.5, &[0.1, 0.2]),
             Err(GpError::NonFiniteData { .. })

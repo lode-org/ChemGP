@@ -350,7 +350,7 @@ pub fn otgpd(
     // Initial data generation (C++ AtomicDimer::execute pattern)
     // 1. Evaluate midpoint
     let (e_r, g_r) = oracle(&r);
-    td.add_point(&r, e_r, &g_r);
+    td.add_point(&r, e_r, &g_r).expect("add_point failed: invalid data");
     oracle_calls += 1;
 
     // Optional random perturbations (off by default for molecular systems)
@@ -363,7 +363,7 @@ pub fn otgpd(
             let x_p: Vec<f64> = r.iter().zip(perturb.iter()).map(|(a, b)| a + b).collect();
             let (e_p, g_p) = oracle(&x_p);
             if e_p.is_finite() && e_p < 1e6 {
-                td.add_point(&x_p, e_p, &g_p);
+                td.add_point(&x_p, e_p, &g_p).expect("add_point failed: invalid data");
                 oracle_calls += 1;
             }
         }
@@ -373,7 +373,7 @@ pub fn otgpd(
     let r1: Vec<f64> = r.iter().zip(orient.iter())
         .map(|(r, o)| r + cfg.dimer_sep * o).collect();
     let (e_r1, g_r1) = oracle(&r1);
-    td.add_point(&r1, e_r1, &g_r1);
+    td.add_point(&r1, e_r1, &g_r1).expect("add_point failed: invalid data");
     oracle_calls += 1;
 
     // Cache midpoint gradient for initial rotation (midpoint position is fixed)
@@ -402,7 +402,7 @@ pub fn otgpd(
                 .map(|(rv, o)| rv + cfg.dimer_sep * o).collect();
             let (e1_cur, g1_cur) = oracle(&r1_cur);
             oracle_calls += 1;
-            td.add_point(&r1_cur, e1_cur, &g1_cur);
+            td.add_point(&r1_cur, e1_cur, &g1_cur).expect("add_point failed: invalid data");
             g1_cached = g1_cur;
 
             // Rotate using Kastner-Sherwood parabolic fit
@@ -425,7 +425,7 @@ pub fn otgpd(
                 .map(|(rv, o)| rv + cfg.dimer_sep * o).collect();
             let (e1_trial, g1_trial) = oracle(&r1_trial);
             oracle_calls += 1;
-            td.add_point(&r1_trial, e1_trial, &g1_trial);
+            td.add_point(&r1_trial, e1_trial, &g1_trial).expect("add_point failed: invalid data");
 
             let c_trial = curvature(&g0_cached, &g1_trial, &orient_trial, cfg.dimer_sep);
 
@@ -479,7 +479,7 @@ pub fn otgpd(
             .map(|(rv, o)| rv + cfg.dimer_sep * o).collect();
         let (e1_final, g1_final) = oracle(&r1_final);
         oracle_calls += 1;
-        td.add_point(&r1_final, e1_final, &g1_final);
+        td.add_point(&r1_final, e1_final, &g1_final).expect("add_point failed: invalid data");
         g1_cached = g1_final;
     }
 
@@ -560,7 +560,8 @@ pub fn otgpd(
             Some(k) => k.clone(),
         };
 
-        let mut gp_sub = GPModel::new(kern, &td_sub, y_sub.clone(), cfg.noise_e, cfg.noise_g, cfg.jitter);
+        let mut gp_sub = GPModel::new(kern, &td_sub, y_sub.clone(), cfg.noise_e, cfg.noise_g, cfg.jitter)
+            .expect("GPModel::new failed: invalid training data or kernel params");
         // Dynamic constSigma2 (MATLAB atomic_GP_dimer.m:453): max(1, mean_y^2)
         // Uses SHIFTED energies (y_sub[0..n]), not raw. Raw energies at -43 eV would
         // give const_sigma2 = 1849 and corrupt the covariance matrix.
@@ -770,7 +771,7 @@ pub fn otgpd(
         // Oracle evaluation
         let (e_true, g_true) = oracle(&r);
         oracle_calls += 1;
-        td.add_point(&r, e_true, &g_true);
+        td.add_point(&r, e_true, &g_true).expect("add_point failed: invalid data");
         latest_g_inf = g_true.iter().map(|x| x.abs()).fold(0.0f64, f64::max);
 
         let mut c_true = f64::NAN;
@@ -779,7 +780,7 @@ pub fn otgpd(
                 .map(|(r, o)| r + cfg.dimer_sep * o).collect();
             let (e_r1, g_r1) = oracle(&r1_cur);
             oracle_calls += 1;
-            td.add_point(&r1_cur, e_r1, &g_r1);
+            td.add_point(&r1_cur, e_r1, &g_r1).expect("add_point failed: invalid data");
             // True rotation (Kastner-Sherwood ImprovedDimer) at evaluated position.
             // GP cannot resolve curvature at dimer_sep ~ 0.01A; oracle-based
             // rotation is essential for molecular systems.
@@ -802,7 +803,7 @@ pub fn otgpd(
                     .map(|(rv, o)| rv + cfg.dimer_sep * o).collect();
                 let (e1_trial, g1_trial) = oracle(&r1_trial);
                 oracle_calls += 1;
-                td.add_point(&r1_trial, e1_trial, &g1_trial);
+                td.add_point(&r1_trial, e1_trial, &g1_trial).expect("add_point failed: invalid data");
 
                 // Parabolic fit for optimal rotation angle
                 let f_rot_trial = rotational_force(&g_true, &g1_trial, &tau_trial, cfg.dimer_sep);

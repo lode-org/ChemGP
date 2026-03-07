@@ -136,7 +136,8 @@ pub fn build_pred_model_full(
     } else {
         let mut y_gp: Vec<f64> = td.energies.iter().map(|e| e - e_ref).collect();
         y_gp.extend_from_slice(&td.gradients);
-        let mut gp_model = GPModel::new(kernel.clone(), td, y_gp, noise_e, noise_g, jitter);
+        let mut gp_model = GPModel::new(kernel.clone(), td, y_gp, noise_e, noise_g, jitter)
+            .expect("GPModel::new failed: invalid training data or kernel params");
         gp_model.const_sigma2 = const_sigma2;
         let cached = CachedGpModel::from_gp(&gp_model);
         PredModel::Gp(cached)
