@@ -14,7 +14,7 @@ use std::io::Write;
 
 use clap::{Parser, ValueEnum};
 
-use chemgp_core::io::read_con;
+use chemgp_core::io::{read_con, write_con, write_neb_dat, MolConfig};
 use chemgp_core::kernel::{Kernel, MolInvDistSE};
 use chemgp_core::minimize::{gp_minimize, MinimizationConfig};
 use chemgp_core::neb::{gp_neb_aie, neb_optimize, NEBResult};
@@ -401,6 +401,52 @@ fn main() {
     if let Some(ref r) = best_gp {
         for (img, e) in r.path.energies.iter().enumerate() {
             writeln!(f, r#"{{"type":"path_energy","image":{},"energy":{}}}"#, img, e).expect("Failed to write to output file");
+        }
+    }
+
+    // Write .con + .dat for rgpycrumbs
+    let cell = reactant.cell;
+    let write_path = |label: &str, r: &NEBResult| {
+        let configs: Vec<MolConfig> = r.path.images.iter().zip(r.path.energies.iter())
+            .map(|(pos, &e)| MolConfig {
+                positions: pos.clone(),
+                atomic_numbers: atomic_numbers.clone(),
+                energy: Some(e),
+                forces: None,
+                cell,
+            })
+            .collect();
+
+        let con_path = format!("system100_neb_path_{}.con", label);
+        write_con(&con_path, &configs).unwrap_or_else(|e| eprintln!("  warn: {}", e));
+
+        let dat_path = format!("system100_neb_{}.dat", label);
+        write_neb_dat(&dat_path, &r.path.images, &r.path.energies, &r.path.gradients)
+            .unwrap_or_else(|e| eprintln!("  warn: {}", e));
+
+        eprintln!("  wrote {} + {}", con_path, dat_path);
+
+        // Write SP .con (highest-energy image = climbing image saddle)
+        let sp_idx = r.path.energies.iter()
+            .enumerate()
+            .max_by(|(_, a), (_, b)| a.partial_cmp(b).unwrap())
+            .map(|(i, _)| i)
+            .unwrap_or(r.path.images.len() / 2);
+        let sp_config = vec![MolConfig {
+            positions: r.path.images[sp_idx].clone(),
+            atomic_numbers: atomic_numbers.clone(),
+            energy: Some(r.path.energies[sp_idx]),
+            forces: None,
+            cell,
+        }];
+        let sp_path = format!("system100_neb_sp_{}.con", label);
+        write_con(&sp_path, &sp_config).unwrap_or_else(|e| eprintln!("  warn: {}", e));
+        eprintln!("  wrote {} (image {})", sp_path, sp_idx);
+    };
+
+    for (label, res) in [("neb", &neb_result), ("aie", &aie_result), ("oie", &oie_result), ("oie_enh", &oie_enh_result)] {
+        if let Some(ref r) = res {
+            write_path(label, r);
         }
     }
 

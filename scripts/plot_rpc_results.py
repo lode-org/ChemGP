@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
-"""Plot RPC-based optimization results (PET-MAD minimize, HCN NEB).
+"""Plot RPC-based optimization results (PET-MAD minimize, System100 NEB).
 
 Generates:
     petmad_minimize_convergence.pdf  GP vs direct GD convergence
-    hcn_neb_convergence.pdf          NEB vs GP-NEB convergence
+    system100_neb_convergence.pdf          NEB vs GP-NEB convergence
 
 Usage:
     cargo run --release --features rgpot --example petmad_minimize
-    cargo run --release --features rgpot --example hcn_neb
+    cargo run --release --features rgpot --example system100_neb
     python scripts/plot_rpc_results.py
 """
 
@@ -80,10 +80,10 @@ def plot_petmad_minimize(path="petmad_minimize_comparison.jsonl"):
     fig.tight_layout()
 
 
-def plot_hcn_neb(path="hcn_neb_comparison.jsonl"):
-    """NEB convergence and energy profile on HCN -> HNC."""
+def plot_system100_neb(path="system100_neb_comparison.jsonl"):
+    """NEB convergence and energy profile on N2O + C2H4 Cycloaddition."""
     if not Path(path).exists():
-        print(f"No {path}, skipping HCN NEB plot", file=sys.stderr)
+        print(f"No {path}, skipping System100 NEB plot", file=sys.stderr)
         return
 
     convergence = []
@@ -164,15 +164,15 @@ def plot_hcn_neb(path="hcn_neb_comparison.jsonl"):
         ax2.axhline(0, color="k", linewidth=0.5, linestyle="--", alpha=0.3)
         ax2.legend(frameon=False, fontsize=8)
 
-    fig.suptitle("HCN -> HNC Isomerization (PET-MAD)", fontsize=13)
+    fig.suptitle("N2O + C2H4 Cycloaddition Isomerization (PET-MAD)", fontsize=13)
     fig.tight_layout()
 
     OUTDIR.mkdir(parents=True, exist_ok=True)
-    fig.savefig(OUTDIR / "hcn_neb_convergence.pdf")
+    fig.savefig(OUTDIR / "system100_neb_convergence.pdf")
     plt.close(fig)
-    print(f"Wrote {OUTDIR / 'hcn_neb_convergence.pdf'}")
+    print(f"Wrote {OUTDIR / 'system100_neb_convergence.pdf'}")
 
 
 if __name__ == "__main__":
     plot_petmad_minimize()
-    plot_hcn_neb()
+    plot_system100_neb()

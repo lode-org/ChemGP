@@ -43,17 +43,16 @@ STANDALONE = {
     "mb_minimize":        "mb_minimize_comparison.jsonl",
     "mb_dimer":           "mb_dimer_comparison.jsonl",
     "mb_neb":             "mb_neb.jsonl",
-    "mb_gp_quality":      "mb_gp_quality.jsonl",
     "mb_hyperparams":     "mb_hyperparams.jsonl",
     "mb_trust":           "mb_trust.jsonl",
 }
 
 # RPC examples: {example_name: (features, extra_args, jsonl_output)}
+# system100_neb has its own rule (produces .con/.dat side effects)
 RPC = {
     "petmad_minimize":    ("rgpot",    "",                "petmad_minimize_comparison.jsonl"),
     "rpc_dimer":          ("io,rgpot", "",                "rpc_dimer.jsonl"),
     "petmad_rff_quality": ("io,rgpot", "",                "petmad_rff_quality.jsonl"),
-    "hcn_neb":            ("io,rgpot", "-- --method all", "hcn_neb_comparison.jsonl"),
 }
 
 # H5 files produced by the converter
@@ -64,7 +63,7 @@ H5_STANDALONE = [
 ]
 H5_RPC = [
     "petmad_minimize.h5", "petmad_rff.h5", "rpc_dimer.h5",
-    "hcn_convergence.h5", "hcn_neb.h5",
+    "system100_convergence.h5", "system100_neb.h5",
 ]
 
 # PDF outputs (must match figures.toml entries)
@@ -76,12 +75,12 @@ PDF_STANDALONE = [
 ]
 PDF_RPC = [
     "petmad_minimize_convergence.pdf", "petmad_rff_quality.pdf",
-    "rpc_dimer_convergence.pdf", "hcn_convergence.pdf", "hcn_neb_profile.pdf",
+    "rpc_dimer_convergence.pdf", "system100_convergence.pdf", "system100_neb_profile.pdf",
 ]
 
 # Landscape figures (from .con/.dat, not HDF5)
 PDF_LANDSCAPE = [
-    "hcn_neb_landscape.pdf",
+    "system100_neb_landscape.pdf",
 ]
 
 ALL_PDFS = PDF_STANDALONE + PDF_RPC + PDF_LANDSCAPE
@@ -117,13 +116,18 @@ rule run_standalone:
     params:
         ex=lambda wc: next(k for k, v in STANDALONE.items() if v == wc.jsonl),
     shell:
-        "cd {ROOT} && cargo run --release --example {params.ex} 2> {log}"
+        "cd {ROOT} && unset CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_LINKER && "
+        "cargo run --release --example {params.ex} 2> {log}"
 
-# mb_gp_quality also writes mb_gp_scattered.jsonl as a side-effect
-rule scattered_sideeffect:
-    input: os.path.join(ROOT, "mb_gp_quality.jsonl")
-    output: os.path.join(ROOT, "mb_gp_scattered.jsonl")
-    shell: "test -f {output}"  # already produced
+# mb_gp_quality produces both clustered and scattered JSONL
+rule run_mb_gp_quality:
+    output:
+        os.path.join(ROOT, "mb_gp_quality.jsonl"),
+        os.path.join(ROOT, "mb_gp_scattered.jsonl"),
+    log: os.path.join(LOGDIR, "mb_gp_quality.jsonl.log")
+    shell:
+        "cd {ROOT} && unset CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_LINKER && "
+        "cargo run --release --example mb_gp_quality 2> {log}"
 
 rule run_rpc:
     output: os.path.join(ROOT, "{jsonl}")
@@ -136,6 +140,7 @@ rule run_rpc:
         extra=lambda wc: next(v[1] for v in RPC.values() if v[2] == wc.jsonl),
     resources:
         rpc_slot=1,  # serialize access to RPC server
+        cargo_slot=1,
     run:
         if not check_rpc_server():
             raise RuntimeError(
@@ -143,7 +148,10 @@ rule run_rpc:
                 "Start it with: pixi run -e rpc serve-petmad"
             )
         shell(
-            "cd {ROOT} && cargo run --release --features {params.feat} "
+            "cd {ROOT} && unset CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_LINKER && "
+            "CC=/usr/bin/cc CXX=/usr/bin/c++ "
+            "CMAKE_POLICY_VERSION_MINIMUM=3.5 "
+            "cargo run --release --features {params.feat} "
             "--example {params.ex} {params.extra} 2> {log}"
         )
 
@@ -158,6 +166,7 @@ rule run_rpc:
 rule h5_standalone:
     input:
         expand(os.path.join(ROOT, "{j}"), j=STANDALONE.values()),
+        os.path.join(ROOT, "mb_gp_quality.jsonl"),
         os.path.join(ROOT, "mb_gp_scattered.jsonl"),
     output:
         expand(os.path.join(OUTDIR, "{h}"), h=H5_STANDALONE),
@@ -167,6 +176,7 @@ rule h5_standalone:
 rule h5_rpc:
     input:
         expand(os.path.join(ROOT, "{j}"), j=[v[2] for v in RPC.values()]),
+        os.path.join(ROOT, "system100_neb_comparison.jsonl"),
         # Converter also needs standalone JSONL present
         expand(os.path.join(ROOT, "{j}"), j=STANDALONE.values()),
         os.path.join(ROOT, "mb_gp_scattered.jsonl"),
@@ -204,31 +214,46 @@ rule pdfs_rpc:
         "batch --config {input.toml}"
 
 
-# hcn_neb produces .con/.dat/.sp.con as side effects of the JSONL
-rule hcn_neb_sideeffects:
-    input: os.path.join(ROOT, "hcn_neb_comparison.jsonl")
+# system100_neb: dedicated rule listing ALL outputs (JSONL + .con + .dat + .sp.con)
+rule run_system100_neb:
     output:
-        expand(os.path.join(ROOT, "hcn_neb_{suffix}"),
-               suffix=["oie.dat", "neb.dat", "aie.dat",
-                        "path_oie.con", "path_neb.con", "path_aie.con",
-                        "sp_oie.con", "sp_neb.con", "sp_aie.con"]),
-    shell: "test -f {output[0]}"  # already produced by hcn_neb
+        os.path.join(ROOT, "system100_neb_comparison.jsonl"),
+        expand(os.path.join(ROOT, "system100_neb_{m}.dat"), m=["neb", "aie", "oie", "oie_enh"]),
+        expand(os.path.join(ROOT, "system100_neb_path_{m}.con"), m=["neb", "aie", "oie", "oie_enh"]),
+        expand(os.path.join(ROOT, "system100_neb_sp_{m}.con"), m=["neb", "aie", "oie", "oie_enh"]),
+    log: os.path.join(LOGDIR, "system100_neb_comparison.jsonl.log")
+    resources:
+        rpc_slot=1,
+        cargo_slot=1,
+    run:
+        if not check_rpc_server():
+            raise RuntimeError(
+                "RPC server not running on localhost:12345. "
+                "Start it with: pixi run -e rpc serve-petmad"
+            )
+        shell(
+            "cd {ROOT} && unset CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_LINKER && "
+            "CC=/usr/bin/cc CXX=/usr/bin/c++ "
+            "CMAKE_POLICY_VERSION_MINIMUM=3.5 "
+            "cargo run --release --features io,rgpot,cli "
+            "--example system100_neb -- --method all 2> {log}"
+        )
 
 # ============================================================
 # Stage 3b: NEB landscape (from .con/.dat via plt-gp landscape)
 # ============================================================
 
-rule hcn_landscape:
+rule system100_landscape:
     input:
-        dat=os.path.join(ROOT, "hcn_neb_oie.dat"),
-        con=os.path.join(ROOT, "hcn_neb_path_oie.con"),
-        sp_neb=os.path.join(ROOT, "hcn_neb_sp_neb.con"),
-        sp_aie=os.path.join(ROOT, "hcn_neb_sp_aie.con"),
-        augment_dat=os.path.join(ROOT, "hcn_neb_neb.dat"),
-        augment_con=os.path.join(ROOT, "hcn_neb_path_neb.con"),
+        dat=os.path.join(ROOT, "system100_neb_oie.dat"),
+        con=os.path.join(ROOT, "system100_neb_path_oie.con"),
+        sp_neb=os.path.join(ROOT, "system100_neb_sp_neb.con"),
+        sp_aie=os.path.join(ROOT, "system100_neb_sp_aie.con"),
+        augment_dat=os.path.join(ROOT, "system100_neb_neb.dat"),
+        augment_con=os.path.join(ROOT, "system100_neb_path_neb.con"),
         toml=TOML,
     output:
-        os.path.join(OUTDIR, "hcn_neb_landscape.pdf"),
+        os.path.join(OUTDIR, "system100_neb_landscape.pdf"),
     resources:
         rpc_slot=1,
     shell:
