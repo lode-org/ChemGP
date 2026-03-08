@@ -1,0 +1,180 @@
+[build-system]
+build-backend = "hatchling.build"
+requires      = [ "hatch-vcs", "hatchling" ]
+
+[tool.hatch.build.hooks.vcs]
+version-file = "_version.py"
+
+[tool.hatch.build]
+include = [ "rgpycrumbs/**/*.py", "rgpycrumbs/*.py", "/tests" ]
+
+
+[project]
+authors = [ { name = "Rohit Goswami", email = "rgoswami@ieee.org" } ]
+classifiers = [
+  "Development Status :: 4 - Beta",
+  "Programming Language :: Python",
+  "Programming Language :: Python :: 3 :: Only",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: Implementation :: CPython",
+]
+dependencies = [ "click>=8.1", "numpy>=1.24", "rich>=13.0" ]
+description = "A dispatcher-based analytical and computational suite for chemical physics"
+dynamic = [ "version" ]
+keywords = [ "compchem", "analysis", "surfaces", "interpolation" ]
+license = { text = "MIT" }
+name = "rgpycrumbs"
+readme = "README.md"
+requires-python = ">=3.10"
+
+[project.optional-dependencies]
+# [all] pre-installs pip-available optional deps as a convenience.
+# Conda-only packages (tblite, ovito, ira_mod) still require pixi.
+# Without extras, deps auto-resolve on first use when RGPYCRUMBS_AUTO_DEPS=1.
+all           = [ "ase>=3.22", "scipy>=1.11", "jax[cpu]>=0.4" ]
+analysis      = [ "ase>=3.22", "scipy>=1.11" ]
+interpolation = [ "scipy>=1.11" ]
+surfaces      = [ "jax>=0.4" ]
+# ira_mod is conda-only (via pixi); not a pip-installable extra
+lint = [ "ruff>=0.1.6" ]
+test = [ "pytest>=9.0", "pytest-cov>=4.1.0", "pychum", "chemparseplot" ]
+
+[project.scripts]
+rgpycrumbs = "rgpycrumbs.cli:main"
+
+[project.urls]
+Documentation = "https://rgpycrumbs.rgoswami.me"
+Issues        = "https://github.com/HaoZeke/rgpycrumbs/issues"
+Source        = "https://github.com/HaoZeke/rgpycrumbs"
+
+[tool.hatch.version]
+source = "vcs"
+
+[tool.ruff]
+line-length    = 90
+target-version = "py312"
+[tool.ruff.lint]
+allowed-confusables = [ "K", "X", "Y", "A", "B" ]
+extend-ignore = [
+  "N806",   # Allow Uppercase variables in functions (for Math/Matrices)
+  "FBT002", # Allow boolean positional defaults (if you prefer them)
+  # Implicitly concatenated string literals on one line
+  "ISC001",
+  # Allow non-abstract empty methods in abstract base classes
+  "B027",
+  # Allow boolean positional values in function calls, like `dict.get(... True)`
+  "FBT003",
+  # Ignore checks for possible passwords
+  "S105",
+  "S106",
+  "S107",
+  # Ignore complexity
+  "C901",
+  "PLR0911",
+  "PLR0912",
+  "PLR0913",
+  "PLR0915",
+  # Reasonable for me
+  "N806",    # I use ModelClass in the name
+  "N803",    # Allow uppercase argument names (K, D_plus_1) for matrices/math
+  "N806",    # Allow uppercase variables in functions (K, X)
+  "FBT001",  # Allow boolean positional arguments (is_dev=True)
+  "FBT002",  # Allow boolean default positional arguments
+  "EM101",   # Allow string literals in exceptions (too pedantic for scripts)
+  "EM102",   # Allow f-strings in exceptions
+  "T201",    # Allow 'print' (you're writing CLI tools/scripts)
+  "S101",    # Allow 'assert' (standard in tests and JIT-friendly code)
+  "PLR2004", # Allow "Magic values" (2, 7, 5 are often physical/grid constants)
+  "E501",    # Let the formatter handle line length, don't error on it
+]
+select = [
+  "A",
+  "ARG",
+  "B",
+  "C",
+  "DTZ",
+  "E",
+  "EM",
+  "F",
+  "FBT",
+  "I",
+  "ICN",
+  "ISC",
+  "N",
+  "PLC",
+  "PLE",
+  "PLR",
+  "PLW",
+  "Q",
+  "RUF",
+  "S",
+  "T",
+  "TID",
+  "UP",
+  "W",
+  "YTT",
+]
+unfixable = [
+  # Don't touch unused imports
+  "F401",
+]
+
+[tool.ruff.lint.isort]
+known-first-party = [ "rgpycrumbs" ]
+
+[tool.ruff.lint.flake8-tidy-imports]
+ban-relative-imports = "all"
+
+[tool.ruff.lint.per-file-ignores]
+# Tests can use magic values, assertions, and local/unused relative imports
+"__init__.py" = [ "F401", "PLC0415" ] # __init__.py can import without use
+"benchmarks/**/*" = [
+  "RUF012",
+  "ARG002",
+  "PLC0415",
+] # ASV convention: mutable class attrs, framework-injected args, deferred imports
+"docs/source/conf.py" = [ "A001" ] # Sphinx requires 'copyright' variable
+"rgpycrumbs/_aux.py" = [ "PLW0603" ] # global for _cuda_available cache
+"rgpycrumbs/eon/ptmdisp.py" = [
+  "E402",    # Module level import not at top (for warnings suppression)
+  "PLC0415", # Local import (for the Viewport GUI)
+]
+"rgpycrumbs/geom/analysis.py" = [
+  "PLC0415",
+] # deferred imports for ensure_import
+"rgpycrumbs/interpolation.py" = [
+  "PLC0415",
+] # deferred imports for ensure_import
+"surfaces.py" = [ "ARG001", "ARG002" ] # Jax seems to like this
+"tests/**/*" = [ "PLR2004", "S101", "TID252", "PLC0415" ]
+
+[tool.coverage.run]
+branch      = true
+omit        = [ "_version.py" ]
+parallel    = true
+source_pkgs = [ "rgpycrumbs" ]
+
+[tool.coverage.paths]
+rgpycrumbs = [ "rgpycrumbs" ]
+tests      = [ "tests" ]
+
+[tool.coverage.report]
+exclude_lines = [ "no cov", "if __name__ == .__main__.:", "if TYPE_CHECKING:" ]
+
+[tool.pytest]
+addopts = [ "-ra", "-q" ]
+markers = [
+  "fragments: mark a test as needing the fragments environment (run with '-m fragments').",
+  "pure: mark a test as needing only the test environment (run with '-m pure').",
+  "ptm: mark a test as needing only the ptm environment (run with '-m ptm').",
+  "eon: mark a test as needing only the eon environment (run with '-m eon').",
+  "align: mark a test as needing only the align environment (run with '-m align').",
+  "interpolation: mark a test as needing scipy (run with '-m interpolation').",
+  "surfaces: mark a test as needing jax (run with '-m surfaces').",
+  "ira: mark a test as needing ira_mod (run with '-m ira').",
+  "slow: mark tests as slow (deselect with '-m \"not slow\"').",
+]
+minversion = "9.0"
+testpaths = [ "tests" ]
