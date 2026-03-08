@@ -226,7 +226,7 @@ pub fn neb_optimize(
 
     let i_max = (1..n - 1)
         .max_by(|&a, &b| energies[a].partial_cmp(&energies[b]).unwrap_or(std::cmp::Ordering::Equal))
-        .unwrap_or(0);  // Safe fallback
+        .unwrap_or(1);  // Must be intermediate image (not endpoint)
 
     NEBResult {
         path,
@@ -455,7 +455,7 @@ pub fn gp_neb_aie(
 
     let i_max = (1..n - 1)
         .max_by(|&a, &b| energies[a].partial_cmp(&energies[b]).unwrap_or(std::cmp::Ordering::Equal))
-        .unwrap_or(0);  // Safe fallback
+        .unwrap_or(1);  // Must be intermediate image (not endpoint)
 
     NEBResult {
         path,

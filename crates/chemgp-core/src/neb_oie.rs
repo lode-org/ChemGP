@@ -200,7 +200,7 @@ fn select_image(
                 .max_by(|&a, &b| {
                     grad_unc(a).partial_cmp(&grad_unc(b)).unwrap_or(std::cmp::Ordering::Equal)
                 })
-                .unwrap_or(0);  // Safe fallback
+                .unwrap_or(1);  // Must be intermediate image (not endpoint)
         }
     }
 
@@ -536,7 +536,7 @@ fn oie_inner_relax(
             };
             ea.partial_cmp(&eb).unwrap_or(std::cmp::Ordering::Equal)
         })
-        .unwrap_or(0);  // Safe fallback
+        .unwrap_or(1);  // Must be intermediate image (not endpoint)
 
     (gp_images, ci_idx, early_stop_image)
 }
@@ -726,7 +726,7 @@ pub fn gp_neb_oie(
             // Priority 2: climbing image (highest energy)
             i_eval = (1..n - 1)
                 .max_by(|&a, &b| energies[a].partial_cmp(&energies[b]).unwrap_or(std::cmp::Ordering::Equal))
-                .unwrap_or(0);  // Safe fallback
+                .unwrap_or(1);  // Must be intermediate image (not endpoint)
             eval_next_ci = false;
         } else {
             // Priority 3: acquisition strategy
@@ -957,7 +957,7 @@ pub fn gp_neb_oie(
         // ---- STEP 4: Decide whether to relax (MATLAB lines 282-298) ----
         let i_ci = (1..n - 1)
             .max_by(|&a, &b| energies[a].partial_cmp(&energies[b]).unwrap_or(std::cmp::Ordering::Equal))
-            .unwrap_or(0);  // Safe fallback
+            .unwrap_or(1);  // Must be intermediate image (not endpoint)
 
         let mut start_relax = false;
 
@@ -1088,7 +1088,7 @@ pub fn gp_neb_oie(
 
     let i_max = (1..n - 1)
         .max_by(|&a, &b| energies[a].partial_cmp(&energies[b]).unwrap_or(std::cmp::Ordering::Equal))
-        .unwrap_or(0);  // Safe fallback
+        .unwrap_or(1);  // Must be intermediate image (not endpoint)
 
     NEBResult {
         path,
