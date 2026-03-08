@@ -4,6 +4,7 @@
 //!
 //! Reference: Goswami et al., J. Chem. Theory Comput. (2025).
 
+use crate::hod::{HodConfig, HodState};
 use crate::idpp::{idpp_interpolation, sidpp_interpolation};
 use crate::kernel::Kernel;
 use crate::neb_path::{
@@ -11,6 +12,7 @@ use crate::neb_path::{
 };
 use crate::optim_step::OptimState;
 use crate::predict::{build_pred_model, PredModel};
+use crate::sampling::select_optim_subset;
 use crate::train::{adaptive_train_iters, train_model};
 use crate::trust::{clip_images_to_trust, trust_distance, TrustClipParams, TrustMetric};
 use crate::types::{init_kernel, GPModel, TrainingData};
@@ -317,6 +319,13 @@ pub fn gp_neb_aie(
     let mut baseline_force = 0.0;
     let mut stagnation_count = 0;
     let mut prev_max_f = f64::NEG_INFINITY;
+    let mut hod_state = HodState::new(cfg.fps_history);
+    let hod_cfg = HodConfig {
+        monitoring_window: cfg.hod_monitoring_window,
+        flip_threshold: cfg.hod_flip_threshold,
+        history_increment: cfg.hod_history_increment,
+        max_history: cfg.hod_max_history,
+    };
 
     for outer_iter in 0..cfg.max_outer_iter {
         // Compute true forces
@@ -375,10 +384,20 @@ pub fn gp_neb_aie(
             break;
         }
 
-        // Train GP (per-bead subset when max_gp_points > 0)
-        let td_use = if cfg.max_gp_points > 0 && td.npoints() > cfg.max_gp_points {
-            // Per-bead nearest-neighbor subset
-            bead_local_subset(&td, cfg.max_gp_points, &images, cfg.trust_metric, &cfg.atom_types)
+        // FPS subset for hyperparameter training (HOD may grow this).
+        let fps_size = if cfg.use_hod {
+            hod_state.current_fps_history.max(cfg.max_gp_points)
+        } else {
+            cfg.max_gp_points
+        };
+        let td_use = if fps_size > 0 && td.npoints() > fps_size {
+            let dist_fn = |a: &[f64], b: &[f64]| -> f64 {
+                trust_distance(cfg.trust_metric, &cfg.atom_types, a, b)
+            };
+            let sub_idx = select_optim_subset(
+                &td, &images[n / 2], fps_size, cfg.fps_latest_points, &dist_fn,
+            );
+            td.extract_subset(&sub_idx)
         } else {
             td.clone()
         };
@@ -406,6 +425,18 @@ pub fn gp_neb_aie(
             .expect("GPModel::new failed: invalid training data or kernel params");
         gp_sub.const_sigma2 = cfg.const_sigma2;
         train_model(&mut gp_sub, train_iters, cfg.verbose);
+
+        // HOD: detect hyperparameter oscillation and grow FPS subset
+        if cfg.use_hod {
+            let grew = hod_state.check(&gp_sub, &hod_cfg);
+            if grew && cfg.verbose {
+                eprintln!(
+                    "  HOD: oscillation detected, FPS subset grown to {}",
+                    hod_state.current_fps_history,
+                );
+            }
+        }
+
         prev_kern = Some(gp_sub.kernel.clone());
 
         // Build prediction model: RFF (fast) or exact GP (small data)
@@ -568,6 +599,7 @@ fn gp_inner_relax(
     (gp_images, early_stopped)
 }
 
+#[allow(dead_code)]
 /// Per-bead nearest-neighbor subset selection for NEB.
 pub(crate) fn bead_local_subset(
     td: &TrainingData,
