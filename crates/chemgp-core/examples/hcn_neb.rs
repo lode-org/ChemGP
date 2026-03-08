@@ -167,9 +167,9 @@ fn main() {
         aie_cfg.max_move = 0.1;
         aie_cfg.lbfgs_memory = 20;
         aie_cfg.initializer = "sidpp".to_string();
-        aie_cfg.gp_train_iter = 100;
-        aie_cfg.max_gp_points = 50;
-        aie_cfg.rff_features = 500;
+        aie_cfg.gp_train_iter = 50;
+        aie_cfg.max_gp_points = 30;
+        aie_cfg.rff_features = 300;
         aie_cfg.fps_history = 30;
         aie_cfg.fps_latest_points = 3;
         aie_cfg.trust_radius = 0.05;
@@ -197,7 +197,7 @@ fn main() {
         oie_cfg.images = n_img;
         oie_cfg.max_outer_iter = 200;
         oie_cfg.max_neb_oracle_calls = 150;
-        oie_cfg.max_iter = 5;
+        oie_cfg.max_iter = 20;
         oie_cfg.conv_tol = 0.1;
         oie_cfg.climbing_image = true;
         oie_cfg.ci_activation_tol = 0.5;
@@ -208,15 +208,15 @@ fn main() {
         oie_cfg.ew_k_max = 9.72;
         oie_cfg.max_move = 0.05;
         oie_cfg.initializer = "sidpp".to_string();
-        oie_cfg.gp_train_iter = 100;
-        oie_cfg.max_gp_points = 50;
-        oie_cfg.rff_features = 500;
+        oie_cfg.gp_train_iter = 50;
+        oie_cfg.max_gp_points = 30;
+        oie_cfg.rff_features = 300;
         oie_cfg.ci_force_tol = -1.0;
         oie_cfg.inner_ci_threshold = 0.5;
         oie_cfg.gp_tol_divisor = 10;
         oie_cfg.max_step_frac = 0.1;
         oie_cfg.bond_stretch_limit = 2.0 / 3.0;
-        oie_cfg.lcb_kappa = 2.0;
+        oie_cfg.lcb_kappa = 0.0;
         oie_cfg.fps_history = 30;
         oie_cfg.fps_latest_points = 3;
         oie_cfg.trust_radius = 0.05;
@@ -314,9 +314,13 @@ fn main() {
         }
     }
 
+    // Summary record with convergence threshold (AIE/OIE use 0.1, NEB uses 0.0514221)
     let neb_c = neb_result.as_ref().map_or(0, |r| r.oracle_calls);
     let aie_c = aie_result.as_ref().map_or(0, |r| r.oracle_calls);
     let oie_c = oie_result.as_ref().map_or(0, |r| r.oracle_calls);
+    writeln!(f, r#"{{"summary":true,"neb_calls":{},"aie_calls":{},"oie_calls":{},"conv_tol":0.1}}"#,
+        neb_c, aie_c, oie_c).expect("Failed to write to output file");
+
     eprintln!("\nSummary: NEB={} calls, AIE={} calls, OIE={} calls", neb_c, aie_c, oie_c);
     eprintln!("Output: {}", outfile);
 }
