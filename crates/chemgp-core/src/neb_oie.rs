@@ -48,12 +48,22 @@ fn oie_effective_ci_tol(cfg: &NEBConfig) -> f64 {
     }
 }
 
-/// Adaptive inner GP convergence threshold.
+/// Adaptive inner GP convergence threshold with gradual tightening.
+///
+/// Early iterations (CI force >> tol): use divisor=2 to avoid overshooting
+/// on the imperfect GP surface. As CI force approaches tol, ramp up to the
+/// configured gp_tol_divisor for tight final convergence.
 fn oie_gp_tol(cfg: &NEBConfig, smallest_acc_force: f64) -> f64 {
     let ci_tol = oie_effective_ci_tol(cfg);
     let floor_tol = cfg.conv_tol.min(ci_tol) / 10.0;
     if cfg.gp_tol_divisor > 0 && smallest_acc_force.is_finite() {
-        (smallest_acc_force / cfg.gp_tol_divisor as f64).max(floor_tol)
+        // Gradual tightening: interpolate divisor from 2 to gp_tol_divisor
+        // based on proximity to convergence (ratio of force to tolerance).
+        let ratio = (smallest_acc_force / ci_tol).clamp(1.0, 10.0);
+        // ratio=10 (far) -> divisor=2; ratio=1 (close) -> divisor=configured
+        let t = 1.0 - (ratio - 1.0) / 9.0; // 0 when far, 1 when close
+        let eff_divisor = 2.0 + t * (cfg.gp_tol_divisor as f64 - 2.0);
+        (smallest_acc_force / eff_divisor).max(floor_tol)
     } else {
         floor_tol
     }

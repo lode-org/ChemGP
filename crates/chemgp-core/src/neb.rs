@@ -443,8 +443,13 @@ pub fn gp_neb_aie(
         let e_ref_full = td.energies[0];
         let pred_model = build_pred_model(&gp_sub.kernel, &td, cfg.rff_features, 42, cfg.const_sigma2);
 
-        // Inner loop: relax on GP/RFF surface
-        let gp_tol = (neb_forces.max_f / 10.0)
+        // Inner loop: relax on GP/RFF surface with gradual tightening.
+        // Far from convergence (ratio>>1): divisor=2 to avoid overshooting GP.
+        // Near convergence (ratio~1): divisor ramps to 10 for tight final fit.
+        let ratio = (neb_forces.max_f / cfg.conv_tol).clamp(1.0, 10.0);
+        let t = 1.0 - (ratio - 1.0) / 9.0;
+        let eff_divisor = 2.0 + t * 8.0;
+        let gp_tol = (neb_forces.max_f / eff_divisor)
             .min(cfg.conv_tol)
             .max(cfg.conv_tol / 10.0);
         let (new_images, _early_stopped) = gp_inner_relax(
