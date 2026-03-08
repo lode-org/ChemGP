@@ -42,7 +42,7 @@ fn generate_clustered(n: usize) -> TrainingData {
         let (x, y) = seeds[i];
         let xy = [x, y];
         let (e, g) = muller_brown_energy_gradient(&xy);
-        td.add_point(&xy, e, &g);
+        let _ = td.add_point(&xy, e, &g);
     }
     td
 }
@@ -61,7 +61,7 @@ fn generate_scattered(n: usize, x_min: f64, x_max: f64, y_min: f64, y_max: f64) 
         let y = y_min + (y_max - y_min) * u2;
         let xy = [x, y];
         let (e, g) = muller_brown_energy_gradient(&xy);
-        td.add_point(&xy, e, &g);
+        let _ = td.add_point(&xy, e, &g);
     }
     td
 }
@@ -102,7 +102,7 @@ fn evaluate_gp(w: &mut BufWriter<File>, td: &TrainingData, n_train: usize) {
     let kernel = Kernel::Cartesian(CartesianSE::new(100.0, 2.0));
     let kernel = init_kernel(td, &kernel);
     let (y, _mean, _std) = td.normalize();
-    let mut gp = GPModel::new(kernel.clone(), td, y, 1e-6, 1e-4, 1e-6);
+    let mut gp = GPModel::new(kernel.clone(), td, y, 1e-6, 1e-4, 1e-6).expect("GPModel::new failed");
     train_model(&mut gp, 100, false);
 
     // Build prediction model

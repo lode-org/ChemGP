@@ -38,7 +38,7 @@ fn main() {
             x[4] += p * 0.1;
         }
         let (e, g) = leps_energy_gradient(&x);
-        td.add_point(&x, e, &g);
+        let _ = td.add_point(&x, e, &g);
     }
 
     println!("Training data: {} points, dim={}", td.npoints(), td.dim);
@@ -47,7 +47,8 @@ fn main() {
     let kernel = Kernel::MolInvDist(MolInvDistSE::isotropic(1.0, 1.0, vec![]));
     let kernel = init_kernel(&td, &kernel);
     let (y, _mean, _std) = td.normalize();
-    let mut gp = GPModel::new(kernel.clone(), &td, y.clone(), 1e-6, 1e-4, 1e-6);
+    let mut gp = GPModel::new(kernel.clone(), &td, y.clone(), 1e-6, 1e-4, 1e-6)
+        .expect("Failed to create GP model");
     train_model(&mut gp, 100, false);
 
     // Build exact GP prediction model
