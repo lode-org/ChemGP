@@ -43,10 +43,6 @@ name = "rpc_dimer"
 required-features = ["io", "rgpot"]
 
 [[example]]
-name = "hcn_neb"
-required-features = ["io", "rgpot"]
-
-[[example]]
 name = "petmad_rff_quality"
 required-features = ["io", "rgpot"]
 

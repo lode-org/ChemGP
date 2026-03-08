@@ -748,12 +748,12 @@ def convert_rpc_dimer():
     print(f"  wrote {dst}")
 
 
-def convert_hcn_convergence():
-    """hcn_neb_comparison.jsonl -> hcn_convergence.h5
+def convert_system100_convergence():
+    """system100_neb_comparison.jsonl -> system100_convergence.h5
 
     table {oracle_calls, max_force, method}
     """
-    src = ROOT / "hcn_neb_comparison.jsonl"
+    src = ROOT / "system100_neb_comparison.jsonl"
     if not src.exists():
         print(f"  skip (no {src.name})", file=sys.stderr)
         return
@@ -768,7 +768,7 @@ def convert_hcn_convergence():
         print("  skip (no convergence records)", file=sys.stderr)
         return
 
-    dst = OUTDIR / "hcn_convergence.h5"
+    dst = OUTDIR / "system100_convergence.h5"
     with h5py.File(dst, "w") as f:
         cols = {
             "oracle_calls": [r["oracle_calls"] for r in records],
@@ -783,12 +783,12 @@ def convert_hcn_convergence():
     print(f"  wrote {dst}")
 
 
-def convert_hcn_neb_profile():
-    """hcn_neb_comparison.jsonl -> hcn_neb.h5
+def convert_system100_neb_profile():
+    """system100_neb_comparison.jsonl -> system100_neb.h5
 
     table {image, energy, method}
     """
-    src = ROOT / "hcn_neb_comparison.jsonl"
+    src = ROOT / "system100_neb_comparison.jsonl"
     if not src.exists():
         print(f"  skip (no {src.name})", file=sys.stderr)
         return
@@ -810,7 +810,7 @@ def convert_hcn_neb_profile():
             energies.append(r["energy"] - e_ref)
             methods.append(label(method_key))
 
-    dst = OUTDIR / "hcn_neb.h5"
+    dst = OUTDIR / "system100_neb.h5"
     with h5py.File(dst, "w") as f:
         h5_write_table(f, "table", {
             "image": images,
@@ -859,11 +859,11 @@ def main():
     print("rpc_dimer:")
     convert_rpc_dimer()
 
-    # HCN (partial if run was incomplete)
-    print("hcn_convergence:")
-    convert_hcn_convergence()
-    print("hcn_neb:")
-    convert_hcn_neb_profile()
+    # System100 (partial if run was incomplete)
+    print("system100_convergence:")
+    convert_system100_convergence()
+    print("system100_neb:")
+    convert_system100_neb_profile()
 
     print("\nDone.")
 

@@ -141,7 +141,7 @@ Run Rust examples directly:
 cargo run --release --example leps_neb
 
 # RPC (server required)
-cargo run --release --features io,rgpot --example hcn_neb -- --method oie
+cargo run --release --features io,rgpot --example system100_neb -- --method oie
 ```
 
 ### pixi task reference
@@ -184,7 +184,7 @@ cargo run --release --features io,rgpot --example hcn_neb -- --method oie
 | `petmad_minimize` | `rgpot` | `petmad_minimize_comparison.jsonl` |
 | `rpc_dimer` | `io,rgpot` | `rpc_dimer.jsonl` |
 | `petmad_rff_quality` | `io,rgpot` | `petmad_rff_quality.jsonl` |
-| `hcn_neb` | `io,rgpot` | `hcn_neb_comparison.jsonl` |
+| `system100_neb` | `io,rgpot` | `system100_neb_comparison.jsonl` |
 
 ## Figure inventory
 
@@ -212,14 +212,14 @@ cargo run --release --features io,rgpot --example hcn_neb -- --method oie
 | `petmad_minimize_convergence.pdf` | `petmad_minimize.h5` | convergence |
 | `petmad_rff_quality.pdf` | `petmad_rff.h5` | rff |
 | `rpc_dimer_convergence.pdf` | `rpc_dimer.h5` | convergence |
-| `hcn_convergence.pdf` | `hcn_convergence.h5` | convergence |
-| `hcn_neb_profile.pdf` | `hcn_neb.h5` | profile |
+| `system100_convergence.pdf` | `system100_convergence.h5` | convergence |
+| `system100_neb_profile.pdf` | `system100_neb.h5` | profile |
 
 ### Landscape PDFs (1)
 
 | PDF | Source | Plot type |
 |-----|--------|-----------|
-| `hcn_neb_landscape.pdf` | `hcn_neb_oie.dat` + `hcn_neb_path_oie.con` | landscape |
+| `system100_neb_landscape.pdf` | `system100_neb_oie.dat` + `system100_neb_path_oie.con` | landscape |
 
 ## How to add a new figure
 

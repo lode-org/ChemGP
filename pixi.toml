@@ -130,7 +130,7 @@ cmd = """
 cargo run --release --features rgpot --example petmad_minimize && \
 cargo run --release --features io,rgpot --example rpc_dimer && \
 cargo run --release --features io,rgpot --example petmad_rff_quality && \
-cargo run --release --features io,rgpot --example hcn_neb -- --method all
+cargo run --release --features io,rgpot,cli --example system100_neb -- --method all
 """
 
 [feature.rpc.tasks.rpc-figures]
