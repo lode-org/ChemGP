@@ -1,0 +1,159 @@
+# -*- mode:snakemake; -*-
+"""ChemGP tutorial figure generation workflow.
+
+Produces all tutorial figures from Rust example JSONL -> HDF5 -> PDF.
+Run: pixi run -e dev snakemake -c1
+"""
+from pathlib import Path
+
+
+configfile: "workflow/config.yml"
+
+
+OUTDIR = Path(config["output_dir"])
+JSONL_DIR = Path(".")  # Rust examples write to repo root
+H5_DIR = OUTDIR
+FIG_DIR = OUTDIR
+
+# --- Analytical surface examples (no RPC needed) ---
+ANALYTICAL_EXAMPLES = [
+    "leps_minimize",
+    "leps_dimer",
+    "leps_neb",
+    "leps_rff_quality",
+    "leps_nll_landscape",
+    "leps_fps",
+    "mb_minimize",
+    "mb_gp_quality",
+    "mb_neb",
+    "mb_dimer",
+    "mb_hyperparams",
+    "mb_trust",
+]
+
+# --- RPC examples (need serve-petmad running) ---
+RPC_EXAMPLES = [
+    "petmad_minimize",
+    "rpc_dimer",
+    "hcn_neb",
+    "petmad_rff_quality",
+]
+
+# Figures produced by the batch runner (from figures.toml)
+BATCH_FIGURES = [
+    "leps_minimize_convergence.pdf",
+    "petmad_minimize_convergence.pdf",
+    "hcn_convergence.pdf",
+    "rpc_dimer_convergence.pdf",
+    "leps_aie_oie.pdf",
+    "leps_neb.pdf",
+    "mb_neb.pdf",
+    "mb_gp_progression.pdf",
+    "mb_gp_progression_scattered.pdf",
+    "leps_rff_quality.pdf",
+    "petmad_rff_quality.pdf",
+    "leps_nll_landscape.pdf",
+    "mb_hyperparams.pdf",
+    "mb_trust_region.pdf",
+    "mb_variance.pdf",
+    "leps_fps.pdf",
+    "hcn_neb_profile.pdf",
+]
+
+# Landscape figure (via plt-neb, separate from batch)
+LANDSCAPE_FIGURES = [
+    "hcn_neb_landscape.pdf",
+]
+
+
+rule all:
+    """Generate all tutorial figures."""
+    input:
+        expand(str(FIG_DIR / "{fig}"), fig=BATCH_FIGURES + LANDSCAPE_FIGURES),
+
+
+rule analytical_examples:
+    """Run all analytical surface Rust examples (no RPC)."""
+    output:
+        touch(".analytical_examples.done"),
+    shell:
+        """
+        for ex in {ANALYTICAL_EXAMPLES}; do
+            echo "=== Running $ex ==="
+            cargo run --release --example "$ex" || true
+        done
+        """
+
+
+rule rpc_examples:
+    """Run RPC examples (requires pixi run -e rpc serve-petmad in another terminal)."""
+    output:
+        touch(".rpc_examples.done"),
+    shell:
+        """
+        for ex in {RPC_EXAMPLES}; do
+            echo "=== Running $ex ==="
+            cargo run --release --features io,rgpot --example "$ex" -- --method all || true
+        done
+        """
+
+
+rule jsonl_to_h5:
+    """Convert all JSONL outputs to HDF5."""
+    input:
+        ".analytical_examples.done",
+        ".rpc_examples.done",
+        script="scripts/jsonl_to_h5.py",
+    output:
+        touch(".h5_conversion.done"),
+    shell:
+        "python {input.script}"
+
+
+rule batch_figures:
+    """Generate all HDF5-based figures via plt-gp batch."""
+    input:
+        ".h5_conversion.done",
+        config="scripts/figures/tutorial/figures.toml",
+    output:
+        expand(str(FIG_DIR / "{fig}"), fig=BATCH_FIGURES),
+    shell:
+        "python -m rgpycrumbs.chemgp.plt_gp batch --config {input.config}"
+
+
+rule hcn_landscape:
+    """Generate HCN NEB 2D reaction landscape via plt-neb."""
+    input:
+        ".rpc_examples.done",
+        dat="hcn_neb_oie.dat",
+        con="hcn_neb_path_oie.con",
+    output:
+        str(FIG_DIR / "hcn_neb_landscape.pdf"),
+    shell:
+        """
+        python external/rgpycrumbs/rgpycrumbs/eon/plt_neb.py \
+            --source eon \
+            --input-dat-pattern "hcn_neb_oie.dat" \
+            --input-path-pattern "hcn_neb_path_oie.con" \
+            --plot-type landscape \
+            --landscape-mode surface \
+            --surface-type grad_imq \
+            --output-file {output} \
+            --dpi 300
+        """
+
+
+rule png_for_sphinx:
+    """Convert all PDFs to PNG for Sphinx docs."""
+    input:
+        expand(str(FIG_DIR / "{fig}"), fig=BATCH_FIGURES + LANDSCAPE_FIGURES),
+    output:
+        touch(".png_conversion.done"),
+    shell:
+        """
+        mkdir -p docs/source/_static/figures
+        for f in {input}; do
+            base=$(basename "$f" .pdf)
+            pdftoppm -png -r 300 -singlefile "$f" "docs/source/_static/figures/$base"
+        done
+        """
