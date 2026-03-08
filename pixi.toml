@@ -59,8 +59,12 @@ npx html-minifier-terser \
 rust = ">=1.75"
 
 [feature.dev.pypi-dependencies]
-matplotlib = ">=3.8, <4"
-h5py       = ">=3.10, <4"
+matplotlib    = ">=3.8, <4"
+h5py          = ">=3.10, <4"
+plotnine      = ">=0.14, <1"
+polars        = ">=1.0, <2"
+rgpycrumbs    = { path = "../../../Python/rgpycrumbs", editable = true }
+chemparseplot = { path = "../../../Python/chemparseplot", editable = true }
 
 [feature.dev.tasks.test]
 cmd = "cargo test -p chemgp-core"
@@ -88,7 +92,7 @@ cmd = "python scripts/jsonl_to_h5.py"
 depends-on = ["examples"]
 
 [feature.dev.tasks.figures]
-cmd = "julia --project=scripts/figures/tutorial -- scripts/figures/tutorial/run_plotters.jl"
+cmd = "rgpycrumbs chemgp plt-gp batch --config scripts/figures/tutorial/figures.toml"
 
 [feature.rpc.dependencies]
 eon  = ">=2.11.1,<3"
