@@ -102,7 +102,13 @@ cmd = "python scripts/jsonl_to_h5.py"
 depends-on = ["examples"]
 
 [feature.dev.tasks.figures]
-cmd = "rgpycrumbs --dev chemgp plt-gp batch --config scripts/figures/tutorial/figures.toml"
+cmd = "snakemake -j12 standalone_pngs -s scripts/figures/Snakefile"
+
+[feature.dev.tasks.figures-rpc]
+cmd = "snakemake -j1 rpc_pdfs -s scripts/figures/Snakefile --resources rpc_slot=1"
+
+[feature.dev.tasks.figures-all]
+cmd = "snakemake -j12 -s scripts/figures/Snakefile --resources rpc_slot=1"
 
 [feature.rpc.dependencies]
 eon  = ">=2.11.1,<3"
