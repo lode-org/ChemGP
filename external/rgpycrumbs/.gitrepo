@@ -1,0 +1,12 @@
+; DO NOT EDIT (unless you know what you are doing)
+;
+; This subdirectory is a git "subrepo", and this file is maintained by the
+; git-subrepo command. See https://github.com/ingydotnet/git-subrepo#readme
+;
+[subrepo]
+	remote = git@github.com:HaoZeke/rgpycrumbs.git
+	branch = feat/chemgp-jsonl-parser
+	commit = 19bf3d4ca605d7edc96356740753998e4ca682d2
+	parent = d05c7e942098356e42ca9a7d4f5fd1ae996adc45
+	method = merge
+	cmdver = 0.4.9
