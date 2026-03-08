@@ -88,14 +88,7 @@ cmd = "python scripts/jsonl_to_h5.py"
 depends-on = ["examples"]
 
 [feature.dev.tasks.figures]
-cmd = """
-PROJ=scripts/figures/tutorial && \
-for p in $PROJ/plotters/plot_*.jl; do \
-  echo "Running $p..." && \
-  julia --project=$PROJ -- "$p" || exit 1; \
-done
-"""
-depends-on = ["jsonl2h5"]
+cmd = "julia --project=scripts/figures/tutorial -- scripts/figures/tutorial/run_plotters.jl"
 
 [feature.rpc.dependencies]
 eon  = ">=2.11.1,<3"
@@ -103,6 +96,7 @@ rust = ">=1.75"
 
 [feature.rpc.pypi-dependencies]
 matplotlib = ">=3.8, <4"
+ase        = ">=3.22"
 
 [feature.rpc.tasks.serve-lj]
 cmd = "eonclient -p lj --serve-port 12345"
@@ -112,7 +106,6 @@ cmd = "eonclient -p metatomic --config petmad_hcn.ini --serve-port 12345"
 
 [feature.rpc.tasks.rpc-examples]
 cmd = """
-TMPDIR=.cache/.tmpclaude \
 cargo run --release --features rgpot --example petmad_minimize && \
 cargo run --release --features io,rgpot --example hcn_neb
 """
@@ -122,9 +115,10 @@ cmd = "python scripts/plot_rpc_results.py"
 depends-on = ["rpc-examples"]
 
 [feature.rpc.tasks.rpc-smoke]
-cmd = "TMPDIR=.cache/.tmpclaude cargo run --release --features rgpot --example rpc_smoke_test"
+cmd = "cargo run --release --features rgpot --example rpc_smoke_test"
 
 [environments]
 docs = ["docs"]
 dev  = ["dev"]
 rpc  = ["rpc"]
+
