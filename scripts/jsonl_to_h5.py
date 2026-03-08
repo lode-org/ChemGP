@@ -444,6 +444,28 @@ def convert_leps_minimize():
     print(f"  wrote {dst}")
 
 
+def convert_petmad_minimize():
+    """petmad_minimize_comparison.jsonl -> petmad_minimize.h5
+
+    table {oracle_calls, max_fatom, method}
+    """
+    src = ROOT / "petmad_minimize_comparison.jsonl"
+    if not src.exists():
+        print(f"  skip (no {src.name})", file=sys.stderr)
+        return
+
+    records = [r for r in read_jsonl(src) if "method" in r and not r.get("summary")]
+
+    dst = OUTDIR / "petmad_minimize.h5"
+    with h5py.File(dst, "w") as f:
+        h5_write_table(f, "table", {
+            "oracle_calls": [r["oracle_calls"] for r in records],
+            "max_fatom": [r.get("max_fatom", 0.0) for r in records],
+            "method": [label(r["method"]) for r in records],
+        })
+    print(f"  wrote {dst}")
+
+
 def convert_leps_neb():
     """leps_neb_comparison.jsonl -> leps_neb.h5 + leps_aie_oie.h5"""
     src = ROOT / "leps_neb_comparison.jsonl"
@@ -633,8 +655,12 @@ def convert_leps_nll():
         print("  skip (no records)", file=sys.stderr)
         return
 
-    ls2_vals = sorted(set(r["log_sigma2"] for r in records))
-    lt_vals = sorted(set(r["log_theta"] for r in records))
+    # Separate SCG optimum record from grid data
+    scg_opt = next((r for r in records if r.get("type") == "scg_optimum"), None)
+    grid_recs = [r for r in records if "nll" in r]
+
+    ls2_vals = sorted(set(r["log_sigma2"] for r in grid_recs))
+    lt_vals = sorted(set(r["log_theta"] for r in grid_recs))
     nx, ny = len(ls2_vals), len(lt_vals)
 
     ls2_idx = {v: i for i, v in enumerate(ls2_vals)}
@@ -642,7 +668,7 @@ def convert_leps_nll():
 
     nll_grid = np.full((nx, ny), np.nan)
     grad_grid = np.full((nx, ny), np.nan)
-    for r in records:
+    for r in grid_recs:
         ix = ls2_idx[r["log_sigma2"]]
         iy = lt_idx[r["log_theta"]]
         nll_grid[ix, iy] = r["nll"]
@@ -651,14 +677,18 @@ def convert_leps_nll():
     ls2_range = (ls2_vals[0], ls2_vals[-1])
     lt_range = (lt_vals[0], lt_vals[-1])
 
-    # Find MAP optimum (minimum finite NLL)
-    finite_mask = np.isfinite(nll_grid)
-    if np.any(finite_mask):
-        min_idx = np.unravel_index(np.nanargmin(nll_grid), nll_grid.shape)
-        opt_ls2 = ls2_vals[min_idx[0]]
-        opt_lt = lt_vals[min_idx[1]]
+    # Use SCG optimum if available, otherwise fall back to grid minimum
+    if scg_opt:
+        opt_ls2 = scg_opt["log_sigma2"]
+        opt_lt = scg_opt["log_theta"]
     else:
-        opt_ls2, opt_lt = 0.0, 0.0
+        finite_mask = np.isfinite(nll_grid)
+        if np.any(finite_mask):
+            min_idx = np.unravel_index(np.nanargmin(nll_grid), nll_grid.shape)
+            opt_ls2 = ls2_vals[min_idx[0]]
+            opt_lt = lt_vals[min_idx[1]]
+        else:
+            opt_ls2, opt_lt = 0.0, 0.0
 
     dst = OUTDIR / "leps_nll.h5"
     with h5py.File(dst, "w") as f:
@@ -770,6 +800,8 @@ def main():
     print("leps_nll:")
     convert_leps_nll()
 
+    print("petmad_minimize:")
+    convert_petmad_minimize()
     print("petmad_rff:")
     convert_petmad_rff()
 
