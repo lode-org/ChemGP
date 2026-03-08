@@ -14,8 +14,11 @@ use crate::kernel::Kernel;
 use crate::lbfgs::LbfgsHistory;
 use crate::predict::{build_pred_model_full, PredModel};
 use crate::sampling::select_optim_subset;
-use crate::train::train_model;
-use crate::trust::{adaptive_trust_threshold, trust_distance, trust_min_distance, TrustMetric};
+use crate::train::{adaptive_train_iters, train_model};
+use crate::trust::{
+    adaptive_trust_threshold, clip_point_to_trust, trust_distance, trust_min_distance,
+    TrustClipParams, TrustMetric,
+};
 use crate::types::{GPModel, TrainingData};
 use crate::StopReason;
 use rand::Rng;
@@ -605,11 +608,7 @@ pub fn gp_dimer(
         };
 
         // Train GP
-        let train_iters = if prev_kern.is_none() {
-            cfg.gp_train_iter
-        } else {
-            (cfg.gp_train_iter / 3).max(50)
-        };
+        let train_iters = adaptive_train_iters(cfg.gp_train_iter, prev_kern.is_none());
 
         let e_ref_sub = td_sub.energies[0];
         let mut y_sub: Vec<f64> = td_sub.energies.iter().map(|e| e - e_ref_sub).collect();
@@ -769,41 +768,18 @@ pub fn gp_dimer(
         }
 
         // Post-inner EMD trust clip
-        let dimer_thresh = adaptive_trust_threshold(
-            cfg.trust_radius,
-            td.npoints(),
-            n_atoms,
-            cfg.use_adaptive_threshold,
-            cfg.adaptive_t_min,
-            cfg.adaptive_delta_t,
-            cfg.adaptive_n_half,
-            cfg.adaptive_a,
-            cfg.adaptive_floor,
-        );
-        let dimer_td = trust_min_distance(
-            &state.r,
-            &td.data,
-            d,
-            td.npoints(),
-            cfg.trust_metric,
-            &cfg.atom_types,
-        );
-        if dimer_td > dimer_thresh {
-            let nearest_idx = (0..td.npoints())
-                .min_by(|&a, &b| {
-                    let da = trust_distance(cfg.trust_metric, &cfg.atom_types, &state.r, td.col(a));
-                    let db = trust_distance(cfg.trust_metric, &cfg.atom_types, &state.r, td.col(b));
-                    da.partial_cmp(&db).unwrap_or(std::cmp::Ordering::Equal)
-                })
-                .unwrap_or(0);  // Safe fallback
-            let nearest = td.col(nearest_idx).to_vec();
-            let disp: Vec<f64> = state.r.iter().zip(nearest.iter()).map(|(a, b)| a - b).collect();
-            state.r = nearest
-                .iter()
-                .zip(disp.iter())
-                .map(|(a, b)| a + b * (dimer_thresh / dimer_td * 0.95))
-                .collect();
-        }
+        let trust_params = TrustClipParams {
+            trust_radius: cfg.trust_radius,
+            trust_metric: cfg.trust_metric,
+            atom_types: &cfg.atom_types,
+            use_adaptive: cfg.use_adaptive_threshold,
+            adaptive_t_min: cfg.adaptive_t_min,
+            adaptive_delta_t: cfg.adaptive_delta_t,
+            adaptive_n_half: cfg.adaptive_n_half,
+            adaptive_a: cfg.adaptive_a,
+            adaptive_floor: cfg.adaptive_floor,
+        };
+        clip_point_to_trust(&mut state.r, &td, &trust_params);
 
         // Compute sigma_perp before oracle for history recording
         let sp_at_r = if cfg.lcb_kappa > 0.0 || cfg.unc_convergence > 0.0 {

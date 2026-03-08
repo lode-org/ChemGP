@@ -6,6 +6,29 @@ use crate::nll::nll_and_grad;
 use crate::scg::{scg_optimize, ScgConfig};
 use crate::types::GPModel;
 
+/// Adaptive GP training iteration count.
+///
+/// First iteration uses full budget; subsequent iterations use 1/3 (min 50)
+/// since hyperparameters are warm-started from the previous kernel.
+pub fn adaptive_train_iters(base_iters: usize, is_first: bool) -> usize {
+    if is_first {
+        base_iters
+    } else {
+        (base_iters / 3).max(50)
+    }
+}
+
+/// Prepare GP training targets: energy-shifted energies + gradient observations.
+///
+/// Returns `(y_sub, e_ref)` where `y_sub = [e_0 - e_ref, e_1 - e_ref, ..., g_0, g_1, ...]`
+/// and `e_ref = td.energies[0]`.
+pub fn prepare_training_targets(td: &crate::types::TrainingData) -> (Vec<f64>, f64) {
+    let e_ref = td.energies[0];
+    let mut y: Vec<f64> = td.energies.iter().map(|e| e - e_ref).collect();
+    y.extend_from_slice(&td.gradients);
+    (y, e_ref)
+}
+
 /// Train GP model hyperparameters using SCG with MAP NLL.
 ///
 /// Optimizes signal_variance and inv_lengthscales in log-space,

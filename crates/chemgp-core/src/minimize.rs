@@ -7,10 +7,9 @@ use crate::kernel::Kernel;
 use crate::optim_step::clip_to_max_move;
 use crate::predict::build_pred_model;
 use crate::sampling::{prune_training_data, select_optim_subset};
-use crate::train::train_model;
+use crate::train::{adaptive_train_iters, train_model};
 use crate::trust::{
-    adaptive_trust_threshold, remove_rigid_body_modes, trust_distance, trust_min_distance,
-    TrustMetric,
+    clip_point_to_trust, remove_rigid_body_modes, trust_distance, TrustClipParams, TrustMetric,
 };
 use crate::types::{init_kernel, GPModel, TrainingData};
 use crate::StopReason;
@@ -168,11 +167,7 @@ pub fn gp_minimize(
             td.clone()
         };
 
-        let train_iters = if prev_kern.is_none() {
-            cfg.gp_train_iter
-        } else {
-            (cfg.gp_train_iter / 3).max(50)
-        };
+        let train_iters = adaptive_train_iters(cfg.gp_train_iter, prev_kern.is_none());
 
         // Train on subset
         let e_ref_sub = td_sub.energies[0];
@@ -353,48 +348,18 @@ pub fn gp_minimize(
 
         // Trust clip
         let n_atoms = d / 3;
-        let thresh = adaptive_trust_threshold(
-            cfg.trust_radius,
-            td.npoints(),
-            n_atoms,
-            cfg.use_adaptive_threshold,
-            cfg.adaptive_t_min,
-            cfg.adaptive_delta_t,
-            cfg.adaptive_n_half,
-            cfg.adaptive_a,
-            cfg.adaptive_floor,
-        );
-
-        let d_trust = trust_min_distance(
-            &x_curr,
-            &td.data,
-            d,
-            td.npoints(),
-            cfg.trust_metric,
-            &cfg.atom_types,
-        );
-
-        if d_trust > thresh {
-            let nearest_idx = (0..td.npoints())
-                .min_by(|&i, &j| {
-                    let di = trust_distance(cfg.trust_metric, &cfg.atom_types, &x_curr, td.col(i));
-                    let dj = trust_distance(cfg.trust_metric, &cfg.atom_types, &x_curr, td.col(j));
-                    di.partial_cmp(&dj).unwrap_or(std::cmp::Ordering::Equal)
-                })
-                .unwrap_or(0);  // Safe: range is 0..npoints()
-            let nearest = td.col(nearest_idx).to_vec();
-            let disp: Vec<f64> = x_curr
-                .iter()
-                .zip(nearest.iter())
-                .map(|(a, b)| a - b)
-                .collect();
-            let scale = thresh / d_trust * 0.95;
-            x_curr = nearest
-                .iter()
-                .zip(disp.iter())
-                .map(|(a, b)| a + b * scale)
-                .collect();
-        }
+        let trust_params = TrustClipParams {
+            trust_radius: cfg.trust_radius,
+            trust_metric: cfg.trust_metric,
+            atom_types: &cfg.atom_types,
+            use_adaptive: cfg.use_adaptive_threshold,
+            adaptive_t_min: cfg.adaptive_t_min,
+            adaptive_delta_t: cfg.adaptive_delta_t,
+            adaptive_n_half: cfg.adaptive_n_half,
+            adaptive_a: cfg.adaptive_a,
+            adaptive_floor: cfg.adaptive_floor,
+        };
+        clip_point_to_trust(&mut x_curr, &td, &trust_params);
 
         // Step 4: Call oracle
         let (e_true, g_true) = oracle(&x_curr);

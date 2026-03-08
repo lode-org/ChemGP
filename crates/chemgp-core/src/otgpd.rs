@@ -15,10 +15,9 @@ use crate::kernel::Kernel;
 use crate::lbfgs::LbfgsHistory;
 use crate::predict::{build_pred_model_full, PredModel};
 use crate::sampling::{prune_training_data, select_optim_subset};
-use crate::train::train_model;
+use crate::train::{adaptive_train_iters, train_model};
 use crate::trust::{
-    adaptive_trust_threshold, remove_rigid_body_modes, trust_distance, trust_min_distance,
-    TrustMetric,
+    exceeds_trust_radius, remove_rigid_body_modes, trust_distance, TrustClipParams, TrustMetric,
 };
 use crate::types::{GPModel, TrainingData};
 use crate::StopReason;
@@ -543,11 +542,7 @@ pub fn otgpd(
             td.clone()
         };
 
-        let train_iters = if prev_kern.is_none() {
-            cfg.gp_train_iter
-        } else {
-            (cfg.gp_train_iter / 3).max(50)
-        };
+        let train_iters = adaptive_train_iters(cfg.gp_train_iter, prev_kern.is_none());
 
         let e_ref_sub = td_sub.energies[0];
         let mut y_sub: Vec<f64> = td_sub.energies.iter().map(|e| e - e_ref_sub).collect();
@@ -706,17 +701,18 @@ pub fn otgpd(
             // C++ rejects the step outright and breaks (does NOT clip to boundary).
             // The oracle evaluates at the last accepted position.
             if inner_iter > 0 {
-                let thresh = adaptive_trust_threshold(
-                    cfg.trust_radius, td.npoints(), n_atoms,
-                    cfg.use_adaptive_threshold,
-                    cfg.adaptive_t_min, cfg.adaptive_delta_t,
-                    cfg.adaptive_n_half, cfg.adaptive_a, cfg.adaptive_floor,
-                );
-                let dist = trust_min_distance(
-                    &r_new, &td.data, d, td.npoints(), cfg.trust_metric, &cfg.atom_types,
-                );
-
-                if dist > thresh {
+                let trust_params = TrustClipParams {
+                    trust_radius: cfg.trust_radius,
+                    trust_metric: cfg.trust_metric,
+                    atom_types: &cfg.atom_types,
+                    use_adaptive: cfg.use_adaptive_threshold,
+                    adaptive_t_min: cfg.adaptive_t_min,
+                    adaptive_delta_t: cfg.adaptive_delta_t,
+                    adaptive_n_half: cfg.adaptive_n_half,
+                    adaptive_a: cfg.adaptive_a,
+                    adaptive_floor: cfg.adaptive_floor,
+                };
+                if exceeds_trust_radius(&r_new, &td, &trust_params) {
                     // Reject step: keep r at last accepted position (do NOT clip)
                     break;
                 }
