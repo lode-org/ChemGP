@@ -97,6 +97,12 @@ fn main() {
             i, e, max_f, i + 1).expect("Failed to write to output file");
     }
 
+    // Summary
+    writeln!(f, r#"{{"summary":true,"gp_calls":{},"gp_energy":{},"gp_converged":{},"direct_calls":{},"direct_energy":{},"conv_tol":{}}}"#,
+        gp_result.oracle_calls, gp_result.e_final, gp_result.converged,
+        direct_calls, direct_energies.last().unwrap_or(&f64::NAN), gp_cfg.conv_tol)
+        .expect("Failed to write to output file");
+
     eprintln!("GP minimize: {} oracle calls, final E = {:.6}, converged = {}",
         gp_result.oracle_calls, gp_result.e_final, gp_result.converged);
     eprintln!("Direct minimize: {} oracle calls, final E = {:.6}",

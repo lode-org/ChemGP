@@ -75,6 +75,15 @@ fn main() {
         .expect("Operation failed");
     }
 
+    // Summary
+    writeln!(
+        f,
+        r#"{{"summary":true,"gp_calls":{},"gp_energy":{},"gp_converged":{},"direct_calls":{},"direct_energy":{},"conv_tol":{}}}"#,
+        gp_result.oracle_calls, gp_result.e_final, gp_result.converged,
+        direct_calls, direct_energies.last().unwrap_or(&f64::NAN), gp_cfg.conv_tol
+    )
+    .expect("Operation failed");
+
     let (min_idx, dist_to_min) = MULLER_BROWN_MINIMA
         .iter()
         .enumerate()

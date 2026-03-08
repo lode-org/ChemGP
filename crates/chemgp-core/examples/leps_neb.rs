@@ -101,8 +101,9 @@ fn main() {
     }
 
     // Summary
-    writeln!(f, r#"{{"summary":true,"neb_calls":{},"aie_calls":{},"oie_calls":{}}}"#,
-        neb_result.oracle_calls, aie_result.oracle_calls, oie_result.oracle_calls).expect("Failed to write to output file");
+    writeln!(f, r#"{{"summary":true,"neb_calls":{},"aie_calls":{},"oie_calls":{},"conv_tol":{}}}"#,
+        neb_result.oracle_calls, aie_result.oracle_calls, oie_result.oracle_calls,
+        neb_cfg.conv_tol).expect("Failed to write to output file");
 
     // LEPS energy grid in (rAB, rBC) space for contour plot
     let nx = 100;
@@ -132,6 +133,28 @@ fn main() {
         let rbc = img[6] - img[3]; // x_C - x_B
         writeln!(f, r#"{{"type":"neb_path","image":{},"rAB":{},"rBC":{}}}"#,
             i, rab, rbc).expect("Failed to write to output file");
+    }
+
+    // Saddle point: highest-energy interior image from converged path
+    {
+        let images = &best_result.path.images;
+        let n = images.len();
+        if n > 2 {
+            let mut best_e = f64::NEG_INFINITY;
+            let mut best_idx = 1;
+            for i in 1..n - 1 {
+                let (e, _) = leps_energy_gradient(&images[i]);
+                if e > best_e {
+                    best_e = e;
+                    best_idx = i;
+                }
+            }
+            let img = &images[best_idx];
+            let rab = img[3] - img[0];
+            let rbc = img[6] - img[3];
+            writeln!(f, r#"{{"type":"saddle","rAB":{},"rBC":{},"energy":{}}}"#,
+                rab, rbc, best_e).expect("Failed to write to output file");
+        }
     }
 
     // Endpoints

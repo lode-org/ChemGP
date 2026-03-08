@@ -160,8 +160,8 @@ fn main() {
 
     writeln!(
         f,
-        r#"{{"summary":true,"standard_calls":{},"dimer_calls":{}}}"#,
-        std_result.oracle_calls, dimer_result.oracle_calls
+        r#"{{"summary":true,"standard_calls":{},"dimer_calls":{},"conv_tol":{}}}"#,
+        std_result.oracle_calls, dimer_result.oracle_calls, t_conv
     )
     .expect("Operation failed");
 
