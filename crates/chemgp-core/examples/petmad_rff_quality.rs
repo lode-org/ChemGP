@@ -77,15 +77,15 @@ fn main() {
             x[j] += next_f64() * pert_scale;
         }
         let (e, g) = oracle(&x);
-        td.add_point(&x, e, &g);
+        let _ = td.add_point(&x, e, &g);
         train_points.push(x);
     }
     eprintln!("  {} training points evaluated", n_train);
 
     // Test points (different perturbations)
     let mut test_points = Vec::new();
-    let mut true_energies = Vec::new();
-    let mut true_gradients = Vec::new();
+    let mut true_energies: Vec<f64> = Vec::new();
+    let mut true_gradients: Vec<Vec<f64>> = Vec::new();
     for _ in 0..n_test {
         let mut x = base.clone();
         for j in 0..ndim {
@@ -104,13 +104,14 @@ fn main() {
     ));
     let kernel = init_kernel(&td, &kernel);
     let (y, _mean, _std) = td.normalize();
-    let mut gp = GPModel::new(kernel.clone(), &td, y.clone(), 1e-7, 1e-7, 1e-7);
+    let mut gp = GPModel::new(kernel.clone(), &td, y.clone(), 1e-7, 1e-7, 1e-7)
+        .expect("Failed to create GP model");
     train_model(&mut gp, 100, false);
 
     // Exact GP predictions
     let exact_pred = build_pred_model(&gp.kernel, &td, 0, 42, 0.0);
-    let mut exact_energies = Vec::new();
-    let mut exact_gradients = Vec::new();
+    let mut exact_energies: Vec<f64> = Vec::new();
+    let mut exact_gradients: Vec<Vec<f64>> = Vec::new();
     for x in &test_points {
         let pred = exact_pred.predict(x);
         let gp_e = pred[0] + td.energies[0];

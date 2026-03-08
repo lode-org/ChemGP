@@ -29,6 +29,17 @@ const SYSTEM100_POSITIONS: [f64; 27] = [
     -0.071749674,  -2.007402560, -0.930050720,
 ];
 
+fn max_atom_motion(d: &[f64]) -> f64 {
+    let n_atoms = d.len() / 3;
+    let mut max_disp = 0.0f64;
+    for a in 0..n_atoms {
+        let off = a * 3;
+        let disp: f64 = d[off..off + 3].iter().map(|v| v * v).sum::<f64>().sqrt();
+        max_disp = max_disp.max(disp);
+    }
+    max_disp
+}
+
 fn main() {
     let host = std::env::var("RGPOT_HOST").unwrap_or_else(|_| "localhost".into());
     let port: u16 = std::env::var("RGPOT_PORT")
@@ -84,88 +95,92 @@ fn main() {
         gp_result.oracle_calls, gp_result.e_final, gp_result.converged
     );
 
-    // Direct L-BFGS for comparison
+    // Compute max_fatom for GP trajectory
+    let mut gp_max_fatom: Vec<f64> = Vec::new();
+    for pt in &gp_result.trajectory {
+        let (_, g) = oracle(pt);
+        let max_f = g.iter().map(|v| v.abs()).fold(0.0f64, f64::max);
+        gp_max_fatom.push(max_f);
+    }
+
+    // Direct L-BFGS for comparison (uses crate's LbfgsHistory with proper gamma scaling)
     let mut x = x_init.clone();
-    let mut direct_energies = Vec::new();
+    let mut direct_data: Vec<(usize, f64, f64)> = Vec::new(); // (calls, energy, max_fatom)
     let mut direct_calls = 0;
-    let max_step = 0.1;
+    let max_move = 0.1;
     let mut lbfgs = LbfgsHistory::new(20);
     let mut prev_x: Option<Vec<f64>> = None;
     let mut prev_g: Option<Vec<f64>> = None;
 
     eprintln!("Running direct L-BFGS...");
     for _ in 0..200 {
-        let (e, g) = oracle(&x);
-        direct_energies.push(e);
+        let (e, f) = oracle(&x);
+        let max_fatom = f.iter().map(|v| v.abs()).fold(0.0f64, f64::max);
+        direct_data.push((direct_calls + 1, e, max_fatom));
         direct_calls += 1;
 
-        let g_norm: f64 = g.iter().map(|v| v * v).sum::<f64>().sqrt();
-        if g_norm < 0.01 {
+        if max_fatom < 0.01 {
             break;
         }
 
+        // gradient = -force
+        let grad: Vec<f64> = f.iter().map(|v| -v).collect();
+        let step = lbfgs.compute_direction(&grad);
+
         // Update L-BFGS history
-        if let (Some(xp), Some(gp)) = (&prev_x, &prev_g) {
-            let s: Vec<f64> = x.iter().zip(xp.iter()).map(|(a, b)| a - b).collect();
-            let y: Vec<f64> = g.iter().zip(gp.iter()).map(|(a, b)| a - b).collect();
+        if let (Some(ref px), Some(ref pg)) = (&prev_x, &prev_g) {
+            let s: Vec<f64> = x.iter().zip(px.iter()).map(|(a, b)| a - b).collect();
+            let y: Vec<f64> = grad.iter().zip(pg.iter()).map(|(a, b)| a - b).collect();
             lbfgs.push_pair(s, y);
         }
 
-        let d = lbfgs.compute_direction(&g);
-        let d_norm: f64 = d.iter().map(|v| v * v).sum::<f64>().sqrt();
-        let scale = if d_norm > max_step {
-            max_step / d_norm
+        prev_x = Some(x.clone());
+        prev_g = Some(grad);
+
+        // Clip step to max_move per atom
+        let max_disp = max_atom_motion(&step);
+        let scale = if max_disp > max_move {
+            max_move / max_disp
         } else {
             1.0
         };
 
-        prev_x = Some(x.clone());
-        prev_g = Some(g);
         for j in 0..x.len() {
-            x[j] += scale * d[j];
+            x[j] += scale * step[j];
         }
     }
-
-    eprintln!(
-        "  Direct L-BFGS: {} calls, final E = {:.6}",
-        direct_calls,
-        direct_energies.last().unwrap_or(&f64::NAN)
-    );
 
     // Write JSONL
     let outfile = "petmad_minimize_comparison.jsonl";
     let mut f = std::fs::File::create(outfile).expect("Failed to create output file");
 
-    for (i, e) in gp_result.energies.iter().enumerate() {
+    for (i, (e, max_f)) in gp_result.energies.iter().zip(gp_max_fatom.iter()).enumerate() {
         writeln!(
             f,
-            r#"{{"method":"gp_minimize","step":{},"energy":{},"oracle_calls":{}}}"#,
-            i,
-            e,
-            i + 1
+            r#"{{"method":"gp_minimize","step":{},"energy":{},"max_fatom":{},"oracle_calls":{}}}"#,
+            i, e, max_f, i + 1
         )
         .expect("Operation failed");
     }
 
-    for (i, e) in direct_energies.iter().enumerate() {
+    for (i, (oc, e, max_f)) in direct_data.iter().enumerate() {
         writeln!(
             f,
-            r#"{{"method":"direct_lbfgs","step":{},"energy":{},"oracle_calls":{}}}"#,
-            i,
-            e,
-            i + 1
+            r#"{{"method":"direct_lbfgs","step":{},"energy":{},"max_fatom":{},"oracle_calls":{}}}"#,
+            i, e, max_f, oc
         )
         .expect("Operation failed");
     }
 
     writeln!(
         f,
-        r#"{{"summary":true,"gp_calls":{},"gp_energy":{},"gp_converged":{},"direct_calls":{},"direct_energy":{}}}"#,
+        r#"{{"summary":true,"gp_calls":{},"gp_energy":{},"gp_converged":{},"direct_calls":{},"direct_energy":{},"direct_max_fatom":{}}}"#,
         gp_result.oracle_calls,
         gp_result.e_final,
         gp_result.converged,
         direct_calls,
-        direct_energies.last().unwrap_or(&f64::NAN)
+        direct_data.last().map(|d| d.1).unwrap_or(f64::NAN),
+        direct_data.last().map(|d| d.2).unwrap_or(f64::NAN)
     )
     .expect("Operation failed");
 
