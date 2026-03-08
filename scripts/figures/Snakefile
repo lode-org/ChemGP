@@ -204,6 +204,16 @@ rule pdfs_rpc:
         "batch --config {input.toml}"
 
 
+# hcn_neb produces .con/.dat/.sp.con as side effects of the JSONL
+rule hcn_neb_sideeffects:
+    input: os.path.join(ROOT, "hcn_neb_comparison.jsonl")
+    output:
+        expand(os.path.join(ROOT, "hcn_neb_{suffix}"),
+               suffix=["oie.dat", "neb.dat", "aie.dat",
+                        "path_oie.con", "path_neb.con", "path_aie.con",
+                        "sp_oie.con", "sp_neb.con", "sp_aie.con"]),
+    shell: "test -f {output[0]}"  # already produced by hcn_neb
+
 # ============================================================
 # Stage 3b: NEB landscape (from .con/.dat via plt-gp landscape)
 # ============================================================
@@ -212,6 +222,10 @@ rule hcn_landscape:
     input:
         dat=os.path.join(ROOT, "hcn_neb_oie.dat"),
         con=os.path.join(ROOT, "hcn_neb_path_oie.con"),
+        sp_neb=os.path.join(ROOT, "hcn_neb_sp_neb.con"),
+        sp_aie=os.path.join(ROOT, "hcn_neb_sp_aie.con"),
+        augment_dat=os.path.join(ROOT, "hcn_neb_neb.dat"),
+        augment_con=os.path.join(ROOT, "hcn_neb_path_neb.con"),
         toml=TOML,
     output:
         os.path.join(OUTDIR, "hcn_neb_landscape.pdf"),
