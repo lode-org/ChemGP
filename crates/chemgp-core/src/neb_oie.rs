@@ -530,6 +530,20 @@ fn oie_inner_relax(
                 break;
             }
         }
+
+        // Uncertainty gate: abort inner relaxation if GP becomes unreliable
+        // at the new positions. Prevents chasing noise on uncertain GP surface.
+        if cfg.unc_convergence > 0.0 && inner >= 1 {
+            let max_sigma = (1..n - 1)
+                .map(|i| {
+                    let (_, var) = model.predict_with_variance(&gp_images[i]);
+                    var[1..].iter().map(|v| v.max(0.0).sqrt()).fold(0.0f64, f64::max)
+                })
+                .fold(0.0f64, f64::max);
+            if max_sigma > cfg.unc_convergence {
+                break;
+            }
+        }
     }
 
     let ci_idx = (1..n - 1)
@@ -644,7 +658,12 @@ pub fn gp_neb_oie(
     train_model(&mut gp_init, cfg.gp_train_iter, cfg.verbose);
 
     // Build initial prediction model
-    let init_pred_model = build_pred_model(&gp_init.kernel, &td, cfg.rff_features, 42, cfg.const_sigma2);
+    // Initial prediction: use full td (small early on)
+    let init_pred_model = if cfg.rff_features > 0 {
+        build_pred_model(&gp_init.kernel, &td, cfg.rff_features, 42, cfg.const_sigma2)
+    } else {
+        build_pred_model(&gp_init.kernel, &td, 0, 42, cfg.const_sigma2)
+    };
 
     for i in 1..n - 1 {
         let preds = init_pred_model.predict(&images[i]);
@@ -713,17 +732,19 @@ pub fn gp_neb_oie(
             );
         }
 
-        // ---- STEP 2: Evaluate images with high GP uncertainty ----
-        // Adaptive evaluation: compute uncertainty at all intermediate images
-        // and evaluate any whose sigma exceeds the unc_convergence threshold.
-        // Early iterations: most images are uncertain -> evaluate many (like std NEB).
-        // Later: GP improves -> fewer images need evaluation -> efficient.
-        // Always includes the acquisition-selected image.
-        // Fallback: when unc_convergence=0, uses evals_per_iter (triplet or single).
+        // ---- STEP 2: Build eval set ----
+        // Three modes controlled by unc_convergence and evals_per_iter:
+        //
+        // 1. unc_convergence > 0: Adaptive batch evaluation. Evaluate all
+        //    images whose max gradient sigma exceeds threshold. Early on
+        //    most images are uncertain -> many evals (like standard NEB).
+        //    As GP improves -> fewer evals -> approaches true OIE.
+        //    Always includes acquisition-selected + CI when active.
+        //
+        // 2. evals_per_iter >= 3: Triplet mode {i-1, i, i+1}.
+        //
+        // 3. Otherwise: True OIE (1 image) + CI when active.
         let mut eval_set = if cfg.unc_convergence > 0.0 {
-            // Use max gradient uncertainty (not energy) -- NEB forces
-            // depend on gradient accuracy. GP can have low energy sigma
-            // but high gradient sigma, especially after images move.
             let mut candidates: Vec<(usize, f64)> = (1..n - 1)
                 .map(|i| {
                     let (_, var) = cached_model.predict_with_variance(&images[i]);
@@ -733,7 +754,6 @@ pub fn gp_neb_oie(
                     (i, sigma_g)
                 })
                 .collect();
-            // Sort by uncertainty descending (evaluate most uncertain first)
             candidates.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
 
             let mut set: Vec<usize> = candidates
@@ -742,14 +762,9 @@ pub fn gp_neb_oie(
                 .map(|&(i, _)| i)
                 .collect();
 
-            // Always include acquisition-selected image
             if !set.contains(&i_eval) {
                 set.push(i_eval);
             }
-            // When CI is configured, also include the CI image so it stays
-            // fresh alongside the acquisition-selected image.  Without
-            // this the CI drifts on stale GP forces from neighbors while
-            // the acquisition function chases other images.
             if cfg.climbing_image && cached_forces.ci_f >= ci_tol {
                 let i_ci = (1..n - 1)
                     .max_by(|&a, &b| {
@@ -766,7 +781,20 @@ pub fn gp_neb_oie(
         } else if cfg.evals_per_iter >= 3 {
             expand_to_triplet(i_eval, n)
         } else {
-            vec![i_eval]
+            let mut set = vec![i_eval];
+            if cfg.climbing_image && cached_forces.ci_f >= ci_tol {
+                let i_ci = (1..n - 1)
+                    .max_by(|&a, &b| {
+                        energies[a]
+                            .partial_cmp(&energies[b])
+                            .unwrap_or(std::cmp::Ordering::Equal)
+                    })
+                    .unwrap_or(1);
+                if i_ci != i_eval && !set.contains(&i_ci) {
+                    set.push(i_ci);
+                }
+            }
+            set
         };
 
         // Include acquisition-selected extra image when CI was forced
@@ -880,9 +908,22 @@ pub fn gp_neb_oie(
             }
         }
 
-        // Build prediction model on full data
+        // Build prediction model:
+        // - rff_features > 0: RFF approximation on full training data
+        // - max_pred_points > 0: exact GP on KNN per-bead subset
+        // - Otherwise: exact GP on full training data (Cholesky cost
+        //   acceptable for molecular NEB, ~O(n*28)^3 with n~100)
         let e_ref_full = td.energies[0];
-        let pred_model = build_pred_model(&gp_sub.kernel, &td, cfg.rff_features, 42, cfg.const_sigma2);
+        let pred_model = if cfg.rff_features > 0 {
+            build_pred_model(&gp_sub.kernel, &td, cfg.rff_features, 42, cfg.const_sigma2)
+        } else if cfg.max_pred_points > 0 && td.npoints() > cfg.max_pred_points {
+            let td_pred = crate::neb::bead_local_subset(
+                &td, cfg.max_pred_points, &images, cfg.trust_metric, &cfg.atom_types,
+            );
+            build_pred_model(&gp_sub.kernel, &td_pred, 0, 42, cfg.const_sigma2)
+        } else {
+            build_pred_model(&gp_sub.kernel, &td, 0, 42, cfg.const_sigma2)
+        };
 
         // Predict at unevaluated images
         for i in 1..n - 1 {

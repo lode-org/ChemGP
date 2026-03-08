@@ -289,6 +289,11 @@ pub struct NEBConfig {
     pub hod_history_increment: usize,
     /// HOD maximum FPS subset size.
     pub hod_max_history: usize,
+    /// Max training points for GP prediction subset (KNN per bead).
+    /// When > 0, selects nearest neighbors around each NEB image and
+    /// uses exact GP instead of RFF. 0 = use FPS training subset
+    /// (when rff_features=0) or full data (when rff_features > 0).
+    pub max_pred_points: usize,
     /// Constant kernel variance added to energy-energy block.
     /// Set to 1.0 for molecular systems (matches C++ ConstantCF).
     /// Default 0.0 (disabled, backward compatible for 2D surfaces).
@@ -351,6 +356,7 @@ impl Default for NEBConfig {
             hod_flip_threshold: 0.8,
             hod_history_increment: 2,
             hod_max_history: 30,
+            max_pred_points: 0,
             const_sigma2: 0.0,
             verbose: true,
         }
