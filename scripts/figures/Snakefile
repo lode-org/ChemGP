@@ -1,0 +1,217 @@
+# Snakemake workflow for ChemGP figure generation.
+#
+# Full pipeline: Rust examples -> JSONL -> HDF5 -> PDF -> PNG
+#
+# Usage:
+#   snakemake -j12 standalone_pngs -s scripts/figures/Snakefile  # standalone only
+#   snakemake -j1 rpc_pdfs -s scripts/figures/Snakefile          # RPC (sequential)
+#   snakemake -j12 -s scripts/figures/Snakefile                  # everything
+#
+# RPC examples require: pixi run -e rpc serve-petmad (port 12345)
+
+import os
+
+ROOT = os.path.abspath(os.path.join(workflow.basedir, "../.."))
+OUTDIR = os.path.join(ROOT, "scripts/figures/tutorial/output")
+FIGDIR = os.path.join(ROOT, "docs/source/_static/figures")
+TOML = os.path.join(ROOT, "scripts/figures/tutorial/figures.toml")
+H5SCRIPT = os.path.join(ROOT, "scripts/jsonl_to_h5.py")
+
+# ============================================================
+# Example registry
+# ============================================================
+
+# Standalone examples: {example_name: jsonl_output}
+STANDALONE = {
+    "leps_minimize":      "leps_minimize_comparison.jsonl",
+    "leps_dimer":         "leps_dimer_comparison.jsonl",
+    "leps_neb":           "leps_neb_comparison.jsonl",
+    "leps_rff_quality":   "leps_rff_quality.jsonl",
+    "leps_fps":           "leps_fps.jsonl",
+    "leps_nll_landscape": "leps_nll_landscape.jsonl",
+    "mb_minimize":        "mb_minimize_comparison.jsonl",
+    "mb_dimer":           "mb_dimer_comparison.jsonl",
+    "mb_neb":             "mb_neb.jsonl",
+    "mb_gp_quality":      "mb_gp_quality.jsonl",
+    "mb_hyperparams":     "mb_hyperparams.jsonl",
+    "mb_trust":           "mb_trust.jsonl",
+}
+
+# RPC examples: {example_name: (features, extra_args, jsonl_output)}
+RPC = {
+    "petmad_minimize":    ("rgpot",    "",                "petmad_minimize_comparison.jsonl"),
+    "rpc_dimer":          ("io,rgpot", "",                "rpc_dimer.jsonl"),
+    "petmad_rff_quality": ("io,rgpot", "",                "petmad_rff_quality.jsonl"),
+    "hcn_neb":            ("io,rgpot", "-- --method all", "hcn_neb_comparison.jsonl"),
+}
+
+# H5 files produced by the converter
+H5_STANDALONE = [
+    "leps_minimize.h5", "leps_neb.h5", "leps_aie_oie.h5", "leps_rff.h5",
+    "leps_fps.h5", "leps_nll.h5", "mb_dimer.h5", "mb_neb.h5", "mb_gp.h5",
+    "mb_gp_scattered.h5", "mb_hyperparams.h5", "mb_trust.h5", "mb_variance.h5",
+]
+H5_RPC = [
+    "petmad_minimize.h5", "petmad_rff.h5", "rpc_dimer.h5",
+    "hcn_convergence.h5", "hcn_neb.h5",
+]
+
+# PDF outputs (must match figures.toml entries)
+PDF_STANDALONE = [
+    "leps_minimize_convergence.pdf", "leps_neb.pdf", "leps_aie_oie.pdf",
+    "leps_rff_quality.pdf", "leps_fps.pdf", "leps_nll_landscape.pdf",
+    "mb_neb.pdf", "mb_gp_progression.pdf", "mb_gp_progression_scattered.pdf",
+    "mb_hyperparams.pdf", "mb_trust_region.pdf", "mb_variance.pdf",
+]
+PDF_RPC = [
+    "petmad_minimize_convergence.pdf", "petmad_rff_quality.pdf",
+    "rpc_dimer_convergence.pdf", "hcn_convergence.pdf", "hcn_neb_profile.pdf",
+]
+
+# Landscape figures (from .con/.dat, not HDF5)
+PDF_LANDSCAPE = [
+    "hcn_neb_landscape.pdf",
+]
+
+ALL_PDFS = PDF_STANDALONE + PDF_RPC + PDF_LANDSCAPE
+ALL_STEMS = [os.path.splitext(p)[0] for p in ALL_PDFS]
+
+# ============================================================
+# Targets
+# ============================================================
+
+rule default:
+    input:
+        expand(os.path.join(FIGDIR, "{s}.png"), s=ALL_STEMS),
+
+rule standalone_pngs:
+    input:
+        expand(os.path.join(FIGDIR, "{s}.png"),
+               s=[os.path.splitext(p)[0] for p in PDF_STANDALONE]),
+
+rule rpc_pdfs:
+    input:
+        expand(os.path.join(OUTDIR, "{p}"), p=PDF_RPC),
+
+
+# ============================================================
+# Stage 1: Rust examples -> JSONL
+# ============================================================
+
+rule run_standalone:
+    output: os.path.join(ROOT, "{jsonl}")
+    wildcard_constraints:
+        jsonl="|".join(re.escape(v) for v in STANDALONE.values())
+    params:
+        ex=lambda wc: next(k for k, v in STANDALONE.items() if v == wc.jsonl),
+    shell:
+        "cd {ROOT} && cargo run --release --example {params.ex}"
+
+# mb_gp_quality also writes mb_gp_scattered.jsonl as a side-effect
+rule scattered_sideeffect:
+    input: os.path.join(ROOT, "mb_gp_quality.jsonl")
+    output: os.path.join(ROOT, "mb_gp_scattered.jsonl")
+    shell: "test -f {output}"  # already produced
+
+rule run_rpc:
+    output: os.path.join(ROOT, "{jsonl}")
+    wildcard_constraints:
+        jsonl="|".join(re.escape(v[2]) for v in RPC.values())
+    params:
+        feat=lambda wc: next(v[0] for v in RPC.values() if v[2] == wc.jsonl),
+        ex=lambda wc: next(k for k, v in RPC.items() if v[2] == wc.jsonl),
+        extra=lambda wc: next(v[1] for v in RPC.values() if v[2] == wc.jsonl),
+    resources:
+        rpc_slot=1,  # serialize access to RPC server
+    shell:
+        "cd {ROOT} && cargo run --release --features {params.feat} "
+        "--example {params.ex} {params.extra}"
+
+
+# ============================================================
+# Stage 2: JSONL -> HDF5 (single converter invocation)
+# ============================================================
+
+# The converter reads ALL JSONL from ROOT and writes to OUTDIR.
+# Split into two rules so standalone can run without RPC data.
+
+rule h5_standalone:
+    input:
+        expand(os.path.join(ROOT, "{j}"), j=STANDALONE.values()),
+        os.path.join(ROOT, "mb_gp_scattered.jsonl"),
+    output:
+        expand(os.path.join(OUTDIR, "{h}"), h=H5_STANDALONE),
+    shell:
+        "cd {ROOT} && pixi run -e dev python {H5SCRIPT}"
+
+rule h5_rpc:
+    input:
+        expand(os.path.join(ROOT, "{j}"), j=[v[2] for v in RPC.values()]),
+        # Converter also needs standalone JSONL present
+        expand(os.path.join(ROOT, "{j}"), j=STANDALONE.values()),
+        os.path.join(ROOT, "mb_gp_scattered.jsonl"),
+    output:
+        expand(os.path.join(OUTDIR, "{h}"), h=H5_RPC),
+    shell:
+        "cd {ROOT} && pixi run -e dev python {H5SCRIPT}"
+
+
+# ============================================================
+# Stage 3: HDF5 -> PDF (rgpycrumbs plt-gp batch)
+# ============================================================
+
+# Batch generates all PDFs whose H5 inputs exist.
+# Standalone and RPC PDFs are separate rules for partial builds.
+
+rule pdfs_standalone:
+    input:
+        expand(os.path.join(OUTDIR, "{h}"), h=H5_STANDALONE),
+        toml=TOML,
+    output:
+        expand(os.path.join(OUTDIR, "{p}"), p=PDF_STANDALONE),
+    shell:
+        "cd {ROOT} && pixi run -e dev python -m rgpycrumbs.chemgp.plt_gp "
+        "batch --config {input.toml}"
+
+rule pdfs_rpc:
+    input:
+        expand(os.path.join(OUTDIR, "{h}"), h=H5_STANDALONE + H5_RPC),
+        toml=TOML,
+    output:
+        expand(os.path.join(OUTDIR, "{p}"), p=PDF_RPC),
+    shell:
+        "cd {ROOT} && pixi run -e dev python -m rgpycrumbs.chemgp.plt_gp "
+        "batch --config {input.toml}"
+
+
+# ============================================================
+# Stage 3b: NEB landscape (from .con/.dat via plt-gp landscape)
+# ============================================================
+
+rule hcn_landscape:
+    input:
+        dat=os.path.join(ROOT, "hcn_neb_oie.dat"),
+        con=os.path.join(ROOT, "hcn_neb_path_oie.con"),
+        toml=TOML,
+    output:
+        os.path.join(OUTDIR, "hcn_neb_landscape.pdf"),
+    resources:
+        rpc_slot=1,
+    shell:
+        "cd {ROOT} && pixi run -e dev python -m rgpycrumbs.chemgp.plt_gp "
+        "batch --config {input.toml}"
+
+
+# ============================================================
+# Stage 4: PDF -> PNG (for Sphinx docs)
+# ============================================================
+
+rule pdf_to_png:
+    input: os.path.join(OUTDIR, "{stem}.pdf")
+    output: os.path.join(FIGDIR, "{stem}.png")
+    shell:
+        "mkdir -p {FIGDIR} && "
+        "pdftoppm -png -r 300 -singlefile {input} {FIGDIR}/{wildcards.stem}"
+
+
+import re  # for wildcard_constraints
