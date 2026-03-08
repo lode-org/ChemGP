@@ -779,7 +779,7 @@ def convert_hcn_convergence():
         if "ci_force" in records[0]:
             cols["ci_force"] = [r.get("ci_force", r["max_force"]) for r in records]
         h5_write_table(f, "table", cols)
-        f.attrs["conv_tol"] = summary.get("conv_tol", 0.1)
+        f.attrs["conv_tol"] = summary.get("conv_tol", 0.15)
     print(f"  wrote {dst}")
 
 

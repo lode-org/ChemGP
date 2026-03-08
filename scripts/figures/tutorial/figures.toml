@@ -126,6 +126,13 @@ con_pattern = "hcn_neb_path_oie.con"
 output = "hcn_neb_landscape.pdf"
 surface_type = "grad_imq"
 landscape_mode = "surface"
+plot_structures = "crit_points"
+augment_dat = "hcn_neb_neb.dat"
+augment_con = "hcn_neb_path_neb.con"
+additional_con = [["hcn_neb_sp_neb.con", "Standard NEB"], ["hcn_neb_sp_aie.con", "GP-NEB AIE"]]
+zoom_ratio = 0.3
+ase_rotation = "0x,0y,0z"
+height = 6.5
 
 # --- Combined RFF (special: two inputs) ---
 # This requires custom handling; the batch runner will pass

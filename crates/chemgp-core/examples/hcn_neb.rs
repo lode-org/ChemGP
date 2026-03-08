@@ -122,7 +122,7 @@ fn main() {
         let mut neb_cfg = NEBConfig::default();
         neb_cfg.images = n_img;
         neb_cfg.max_iter = 1000;
-        neb_cfg.conv_tol = 0.0514221;
+        neb_cfg.conv_tol = 0.15;
         neb_cfg.climbing_image = true;
         neb_cfg.ci_activation_tol = 0.5;
         neb_cfg.ci_trigger_rel = 0.8;
@@ -156,7 +156,7 @@ fn main() {
         aie_cfg.images = n_img;
         aie_cfg.max_outer_iter = 50;
         aie_cfg.max_iter = 500;
-        aie_cfg.conv_tol = 0.1;
+        aie_cfg.conv_tol = 0.15;
         aie_cfg.climbing_image = true;
         aie_cfg.ci_activation_tol = 0.5;
         aie_cfg.ci_trigger_rel = 0.8;
@@ -198,7 +198,7 @@ fn main() {
         oie_cfg.max_outer_iter = 200;
         oie_cfg.max_neb_oracle_calls = 200;
         oie_cfg.max_iter = 10;
-        oie_cfg.conv_tol = 0.1;
+        oie_cfg.conv_tol = 0.15;
         oie_cfg.climbing_image = true;
         oie_cfg.ci_activation_tol = 0.5;
         oie_cfg.ci_trigger_rel = 0.8;
@@ -213,7 +213,7 @@ fn main() {
         oie_cfg.rff_features = 1000;
         oie_cfg.ci_force_tol = -1.0;
         oie_cfg.inner_ci_threshold = 0.5;
-        oie_cfg.gp_tol_divisor = 5;
+        oie_cfg.gp_tol_divisor = 3;
         oie_cfg.max_step_frac = 0.1;
         oie_cfg.bond_stretch_limit = 2.0 / 3.0;
         oie_cfg.lcb_kappa = 0.0;
@@ -306,6 +306,23 @@ fn main() {
             .unwrap_or_else(|e| eprintln!("  warn: {}", e));
 
         eprintln!("  wrote {} + {}", con_path, dat_path);
+
+        // Write SP .con (highest-energy image = climbing image saddle)
+        let sp_idx = r.path.energies.iter()
+            .enumerate()
+            .max_by(|(_, a), (_, b)| a.partial_cmp(b).unwrap())
+            .map(|(i, _)| i)
+            .unwrap_or(r.path.images.len() / 2);
+        let sp_config = vec![MolConfig {
+            positions: r.path.images[sp_idx].clone(),
+            atomic_numbers: atomic_numbers.clone(),
+            energy: Some(r.path.energies[sp_idx]),
+            forces: None,
+            cell,
+        }];
+        let sp_path = format!("hcn_neb_sp_{}.con", label);
+        write_con(&sp_path, &sp_config).unwrap_or_else(|e| eprintln!("  warn: {}", e));
+        eprintln!("  wrote {} (image {})", sp_path, sp_idx);
     };
 
     for (label, res) in [("neb", &neb_result), ("aie", &aie_result), ("oie", &oie_result)] {
@@ -314,11 +331,11 @@ fn main() {
         }
     }
 
-    // Summary record with convergence threshold (AIE/OIE use 0.1, NEB uses 0.0514221)
+    // Summary record with convergence threshold (uniform 0.15 for all methods)
     let neb_c = neb_result.as_ref().map_or(0, |r| r.oracle_calls);
     let aie_c = aie_result.as_ref().map_or(0, |r| r.oracle_calls);
     let oie_c = oie_result.as_ref().map_or(0, |r| r.oracle_calls);
-    writeln!(f, r#"{{"summary":true,"neb_calls":{},"aie_calls":{},"oie_calls":{},"conv_tol":0.1}}"#,
+    writeln!(f, r#"{{"summary":true,"neb_calls":{},"aie_calls":{},"oie_calls":{},"conv_tol":0.15}}"#,
         neb_c, aie_c, oie_c).expect("Failed to write to output file");
 
     eprintln!("\nSummary: NEB={} calls, AIE={} calls, OIE={} calls", neb_c, aie_c, oie_c);
