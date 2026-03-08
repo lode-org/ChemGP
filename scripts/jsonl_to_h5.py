@@ -314,7 +314,9 @@ def convert_mb_dimer():
         print(f"  skip (no {src.name})", file=sys.stderr)
         return
 
-    records = [r for r in read_jsonl(src) if "method" in r and not r.get("summary")]
+    all_records = read_jsonl(src)
+    records = [r for r in all_records if "method" in r and not r.get("summary")]
+    summary = next((r for r in all_records if r.get("summary")), {})
 
     dst = OUTDIR / "mb_dimer.h5"
     with h5py.File(dst, "w") as f:
@@ -323,6 +325,8 @@ def convert_mb_dimer():
             "force_norm": [r["force"] for r in records],
             "method": [label(r["method"]) for r in records],
         })
+        if "conv_tol" in summary:
+            f.attrs["conv_tol"] = summary["conv_tol"]
     print(f"  wrote {dst}")
 
 
@@ -432,7 +436,9 @@ def convert_leps_minimize():
         print(f"  skip (no {src.name})", file=sys.stderr)
         return
 
-    records = [r for r in read_jsonl(src) if "method" in r and not r.get("summary")]
+    all_records = read_jsonl(src)
+    records = [r for r in all_records if "method" in r and not r.get("summary")]
+    summary = next((r for r in all_records if r.get("summary")), {})
 
     dst = OUTDIR / "leps_minimize.h5"
     with h5py.File(dst, "w") as f:
@@ -441,6 +447,7 @@ def convert_leps_minimize():
             "max_fatom": [r.get("max_fatom", 0.0) for r in records],
             "method": [label(r["method"]) for r in records],
         })
+        f.attrs["conv_tol"] = summary.get("conv_tol", 0.01)
     print(f"  wrote {dst}")
 
 
@@ -454,7 +461,9 @@ def convert_petmad_minimize():
         print(f"  skip (no {src.name})", file=sys.stderr)
         return
 
-    records = [r for r in read_jsonl(src) if "method" in r and not r.get("summary")]
+    all_records = read_jsonl(src)
+    records = [r for r in all_records if "method" in r and not r.get("summary")]
+    summary = next((r for r in all_records if r.get("summary")), {})
 
     dst = OUTDIR / "petmad_minimize.h5"
     with h5py.File(dst, "w") as f:
@@ -463,6 +472,7 @@ def convert_petmad_minimize():
             "max_fatom": [r.get("max_fatom", 0.0) for r in records],
             "method": [label(r["method"]) for r in records],
         })
+        f.attrs["conv_tol"] = summary.get("conv_tol", 0.01)
     print(f"  wrote {dst}")
 
 
@@ -475,6 +485,7 @@ def convert_leps_neb():
 
     records = read_jsonl(src)
 
+    summary = next((r for r in records if r.get("summary")), {})
     grid_meta = None
     grid_data, neb_path, endpoints = [], [], []
     oc, mf, methods = [], [], []
@@ -504,6 +515,7 @@ def convert_leps_neb():
             "max_force": mf,
             "method": methods,
         })
+        f.attrs["conv_tol"] = summary.get("conv_tol", 0.1)
     print(f"  wrote {dst1}")
 
     # leps_neb.h5 (grid + path + endpoints)
@@ -524,6 +536,15 @@ def convert_leps_neb():
                     "rAB": [r["rAB"] for r in neb_path],
                     "rBC": [r["rBC"] for r in neb_path],
                 })
+
+            # Saddle points (from Rust example output)
+            saddles = [r for r in records if r.get("type") == "saddle"]
+            if saddles:
+                h5_write_points(f, "saddles", {
+                    "rAB": [s["rAB"] for s in saddles],
+                    "rBC": [s["rBC"] for s in saddles],
+                })
+
             if endpoints:
                 h5_write_points(f, "endpoints", {
                     "rAB": [r["rAB"] for r in endpoints],
@@ -701,6 +722,32 @@ def convert_leps_nll():
     print(f"  wrote {dst}")
 
 
+def convert_rpc_dimer():
+    """rpc_dimer.jsonl -> rpc_dimer.h5
+
+    table {oracle_calls, force_norm, method}
+    Molecular dimer saddle search (d_000 C3H5 via PET-MAD).
+    """
+    src = ROOT / "rpc_dimer.jsonl"
+    if not src.exists():
+        print(f"  skip (no {src.name})", file=sys.stderr)
+        return
+
+    all_records = read_jsonl(src)
+    records = [r for r in all_records if "method" in r and not r.get("summary")]
+    summary = next((r for r in all_records if r.get("summary")), {})
+
+    dst = OUTDIR / "rpc_dimer.h5"
+    with h5py.File(dst, "w") as f:
+        h5_write_table(f, "table", {
+            "oracle_calls": [r["oracle_calls"] for r in records],
+            "force_norm": [r["force"] for r in records],
+            "method": [label(r["method"]) for r in records],
+        })
+        f.attrs["conv_tol"] = summary.get("conv_tol", 0.01)
+    print(f"  wrote {dst}")
+
+
 def convert_hcn_convergence():
     """hcn_neb_comparison.jsonl -> hcn_convergence.h5
 
@@ -711,10 +758,12 @@ def convert_hcn_convergence():
         print(f"  skip (no {src.name})", file=sys.stderr)
         return
 
+    all_records = read_jsonl(src)
     records = [
-        r for r in read_jsonl(src)
+        r for r in all_records
         if "method" in r and not r.get("summary") and not r.get("type")
     ]
+    summary = next((r for r in all_records if r.get("summary")), {})
     if not records:
         print("  skip (no convergence records)", file=sys.stderr)
         return
@@ -730,6 +779,7 @@ def convert_hcn_convergence():
         if "ci_force" in records[0]:
             cols["ci_force"] = [r.get("ci_force", r["max_force"]) for r in records]
         h5_write_table(f, "table", cols)
+        f.attrs["conv_tol"] = summary.get("conv_tol", 0.1)
     print(f"  wrote {dst}")
 
 
@@ -804,6 +854,10 @@ def main():
     convert_petmad_minimize()
     print("petmad_rff:")
     convert_petmad_rff()
+
+    # RPC dimer (molecular saddle search)
+    print("rpc_dimer:")
+    convert_rpc_dimer()
 
     # HCN (partial if run was incomplete)
     print("hcn_convergence:")
