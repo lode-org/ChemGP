@@ -90,15 +90,15 @@ clipping as GP minimization.
 
 OIE selects the image to evaluate by scoring each with:
 
-#+begin_example
-score = |F_perp| + kappa * sigma_perp
-#+end_example
+\[
+s_{i} = \lVert \mathbf{F}^{\perp}_{i} \rVert + \kappa \, \sigma^{\perp}_{i}
+\]
 
-where:
-- =|F_perp|= is the magnitude of the NEB force perpendicular to the path. A
-  large perpendicular force means the image is far from the MEP.
-- =sigma_perp= is the GP gradient variance projected perpendicular to the path.
-  High variance means the GP is uncertain about the perpendicular force.
+where $\lVert \mathbf{F}^{\perp}_{i} \rVert$ is the magnitude of the NEB force
+perpendicular to the path (a large perpendicular force means the image is far
+from the MEP) and $\sigma^{\perp}_{i}$ is the GP gradient uncertainty projected
+perpendicular to the path (high variance means the GP is uncertain about the
+perpendicular force).
 
 The combination prioritizes images that are both far from the MEP /and/
 uncertain. This is more effective than either criterion alone: force magnitude

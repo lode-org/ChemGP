@@ -29,15 +29,15 @@ evaluations. The surrogate has two properties that make it ideal for optimizatio
 
 ** Information density: why energy+gradient matters
 
-Most GPs in machine learning model a scalar function f(x). For PES modeling,
-we jointly model the energy E(x) and its gradient G(x) = dE/dx.
+Most GPs in machine learning model a scalar function $f(\mathbf{x})$. For PES modeling,
+we jointly model the energy $E(\mathbf{x})$ and its gradient $\mathbf{G}(\mathbf{x}) = dE/d\mathbf{x}$.
 
-For a system with D Cartesian degrees of freedom, each oracle call returns:
+For a system with $D$ Cartesian degrees of freedom, each oracle call returns:
 - 1 energy value
-- D gradient components
+- $D$ gradient components
 
-That is 1 + D observations per call. For a 3-atom system (D = 9), each call
-provides 10 observations. For a 50-atom system (D = 150), each call provides 151
+That is $1 + D$ observations per call. For a 3-atom system ($D = 9$), each call
+provides 10 observations. For a 50-atom system ($D = 150$), each call provides 151
 observations.
 
 This information density is why GP-accelerated methods converge in so few oracle
@@ -45,24 +45,26 @@ calls: a handful of energy+gradient evaluations gives the GP enough data to buil
 a useful surrogate. Energy-only GPs (without gradients) converge much more slowly
 because each call provides only 1 observation.
 
-The price is computational: the GP covariance matrix has N*(1+D) rows and columns
-for N training points, so Cholesky factorization costs O(N^3*(1+D)^3). For LEPS
+The price is computational: the GP covariance matrix has $N(1+D)$ rows and columns
+for $N$ training points, so Cholesky factorization costs $\mathcal{O}(N^3(1+D)^3)$. For LEPS
 with 3 atoms and 30 training points, this is a 300x300 matrix (manageable). For
 50 atoms and 30 points, it would be 4530x4530 (expensive). This scaling
 motivates FPS subset selection and RFF approximation.
 
 ** Gaussian Process regression
 
-Given training data ={(x_i, E_i, G_i)}= for i = 1..N, the GP posterior at a new
-point x* is:
+Given training data $\{(\mathbf{x}_i, E_i, \mathbf{G}_i)\}$ for $i = 1 \ldots N$, the GP posterior at a new
+point $\mathbf{x}^*$ is:
 
-#+begin_example
-mean(x*) = k(x*, X) @ K^{-1} @ y
-var(x*)  = k(x*, x*) - k(x*, X) @ K^{-1} @ k(X, x*)
-#+end_example
+\[
+\mu(\mathbf{x}^*) = \mathbf{k}(\mathbf{x}^*, X) K^{-1} \mathbf{y}
+\]
+\[
+\sigma^2(\mathbf{x}^*) = k(\mathbf{x}^*, \mathbf{x}^*) - \mathbf{k}(\mathbf{x}^*, X) K^{-1} \mathbf{k}(X, \mathbf{x}^*)
+\]
 
-where K is the N*(1+D) x N*(1+D) covariance matrix of the training data, y is
-the vector of energies and gradients, and k(x*, X) is the covariance between the
+where $K$ is the $N(1+D) \times N(1+D)$ covariance matrix of the training data, $\mathbf{y}$ is
+the vector of energies and gradients, and $\mathbf{k}(\mathbf{x}^*, X)$ is the covariance between the
 test point and all training data.
 
 The mean gives predictions; the variance gives uncertainty. Both are used by the
@@ -71,7 +73,7 @@ trust and exploration decisions.
 
 ** Kernels
 
-The kernel k(x, y) defines the covariance structure. ChemGP provides two kernels
+The kernel $k(\mathbf{x}, \mathbf{y})$ defines the covariance structure. ChemGP provides two kernels
 via the =Kernel= enum.
 
 *** MolInvDistSE (molecular systems)
@@ -81,18 +83,18 @@ rotating or translating a molecule changes the coordinates but not the physics.
 The =MolInvDistSE= kernel solves this by mapping coordinates to inverse
 interatomic distances:
 
-#+begin_example
-f_ij(x) = 1 / ||x_i - x_j||
-#+end_example
+\[
+f_{ij}(\mathbf{x}) = \frac{1}{\|\mathbf{x}_i - \mathbf{x}_j\|}
+\]
 
 These features are invariant under rotation and translation by construction. The
 kernel then applies a squared exponential in feature space:
 
-#+begin_example
-k(x, y) = sigma^2 * exp(-sum_p theta_p^2 * ||f_p(x) - f_p(y)||^2)
-#+end_example
+\[
+k(\mathbf{x}, \mathbf{y}) = \sigma^2 \exp\!\left(-\sum_p \theta_p^2 \|f_p(\mathbf{x}) - f_p(\mathbf{y})\|^2\right)
+\]
 
-Each pair type p (H-H, H-C, C-C, etc.) has its own length scale theta_p. This
+Each pair type $p$ (H-H, H-C, C-C, etc.) has its own length scale $\theta_p$. This
 lets the kernel distinguish between stretching a C-C bond (stiff, small
 displacement matters) and a van der Waals contact (soft, large displacement
 needed to change the energy).
@@ -113,12 +115,12 @@ adjusts them independently per pair type.
 For non-molecular surfaces (Muller-Brown, 2D test potentials), coordinates /are/
 the natural input. The =CartesianSE= kernel operates directly:
 
-#+begin_example
-k(x, y) = sigma^2 * exp(-theta^2 * ||x - y||^2)
-#+end_example
+\[
+k(\mathbf{x}, \mathbf{y}) = \sigma^2 \exp\!\left(-\theta^2 \|\mathbf{x} - \mathbf{y}\|^2\right)
+\]
 
-Two hyperparameters: signal variance sigma^2 (controls the output scale) and
-inverse length scale theta (controls how quickly correlation decays with
+Two hyperparameters: signal variance $\sigma^2$ (controls the output scale) and
+inverse length scale $\theta$ (controls how quickly correlation decays with
 distance).
 
 #+begin_src rust
@@ -135,42 +137,45 @@ detailed comparison and the invariance argument.
 For two training points, the kernel computes four blocks reflecting the joint
 energy+gradient model:
 
-- =k_ee= :: Energy-energy covariance (scalar). How correlated are the energies
+- $k_{ee}$ :: Energy-energy covariance (scalar). How correlated are the energies
   at two points?
 
-- =k_ef= / =k_fe= :: Energy-gradient cross-covariance (D-vectors). How does
+- $k_{ef}$ / $k_{fe}$ :: Energy-gradient cross-covariance ($D$-vectors). How does
   knowing the energy at one point inform the gradient at another?
 
-- =k_ff= :: Gradient-gradient covariance (D x D matrix). How correlated are the
+- $k_{ff}$ :: Gradient-gradient covariance ($D \times D$ matrix). How correlated are the
   gradient components at two points?
 
-These blocks are arranged into the full covariance matrix:
+These blocks are arranged into the full $N(1+D) \times N(1+D)$ covariance matrix:
 
-#+begin_example
-         E_1      E_2     ...   G_1^1    G_1^2   ...   G_N^D
-E_1   [ k_ee+ne  k_ee    ...   k_ef     k_ef    ...   k_ef   ]
-E_2   [ k_ee     k_ee+ne ...   k_ef     k_ef    ...   k_ef   ]
-...
-G_1^1 [ k_fe     k_fe    ...   k_ff+ng  k_ff    ...   k_ff   ]
-...
-#+end_example
+\[
+K = \begin{bmatrix}
+k_{ee} + \nu_e & k_{ee} & \cdots & k_{ef} & k_{ef} & \cdots & k_{ef} \\
+k_{ee} & k_{ee} + \nu_e & \cdots & k_{ef} & k_{ef} & \cdots & k_{ef} \\
+\vdots & \vdots & \ddots & \vdots & \vdots & & \vdots \\
+k_{fe} & k_{fe} & \cdots & k_{ff} + \nu_g & k_{ff} & \cdots & k_{ff} \\
+\vdots & \vdots & & \vdots & \vdots & \ddots & \vdots
+\end{bmatrix}
+\]
 
-where ne is the energy noise variance (accounts for observation noise or oracle
-numerical error) and ng is the gradient noise variance.
+where $\nu_e$ is the energy noise variance (accounts for observation noise or oracle
+numerical error) and $\nu_g$ is the gradient noise variance.
 
-The cross-covariance blocks k_ef and k_fe are what make the joint model powerful:
+The cross-covariance blocks $k_{ef}$ and $k_{fe}$ are what make the joint model powerful:
 knowing the gradient at one point constrains the energy prediction at nearby
 points, and vice versa. This coupling is why gradient information is so valuable.
 
 ** Training via MAP-NLL
 
-Hyperparameters (sigma^2, theta_p) are optimized by minimizing the negative
+Hyperparameters ($\sigma^2$, $\theta_p$) are optimized by minimizing the negative
 log-marginal-likelihood (NLL) with a Maximum A Posteriori (MAP) prior:
 
-#+begin_example
-NLL = 0.5 * (y^T K^{-1} y + log|K| + N*(1+D)*log(2*pi))
-MAP = NLL + prior_penalty
-#+end_example
+\[
+\mathrm{NLL} = \frac{1}{2}\left(\mathbf{y}^\top K^{-1} \mathbf{y} + \log|K| + N(1+D)\log(2\pi)\right)
+\]
+\[
+\mathrm{MAP} = \mathrm{NLL} + \mathrm{prior\_penalty}
+\]
 
 The prior prevents overfitting when training data is sparse. This is the typical
 regime in GP-accelerated optimization: after only 5-10 oracle calls, the GP must
@@ -192,8 +197,8 @@ NLL landscape visualization.
 Good starting hyperparameters matter. The =init_kernel= function estimates
 initial values from the training data:
 
-- *Signal variance* (sigma^2): estimated from the range of observed energies.
-- *Length scales* (theta_p): estimated from pairwise feature distances, scaled by
+- *Signal variance* ($\sigma^2$): estimated from the range of observed energies.
+- *Length scales* ($\theta_p$): estimated from pairwise feature distances, scaled by
   =NORMINV_075= (the 75th percentile of a standard normal). This follows the
   MATLAB GPstuff initialization strategy.
 
@@ -220,8 +225,8 @@ the FPS subset), because SCG needs exact NLL gradients. Only the prediction
 model can be approximate. This means RFF inherits well-tuned hyperparameters
 without the cost of exact GP prediction.
 
-When =rff_features > 0=, the RFF model provides O(D_rff) prediction cost instead
-of O((N*(1+D))^2) for exact GP. For inner optimization loops that call predict
+When =rff_features > 0=, the RFF model provides $\mathcal{O}(D_{\mathrm{rff}})$ prediction cost instead
+of $\mathcal{O}((N(1+D))^2)$ for exact GP. For inner optimization loops that call predict
 hundreds of times, this speedup is essential. See [[file:scalability.org][Scalability]] for
 the theory behind FPS and RFF.
 
@@ -269,7 +274,7 @@ Run =cargo run --release --example mb_gp_quality= followed by
 
 ** SymPy verification
 
-The CartesianSE kernel block derivations (k_ee, k_ef, k_fe, k_ff) are
+The CartesianSE kernel block derivations ($k_{ee}$, $k_{ef}$, $k_{fe}$, $k_{ff}$) are
 verified in:
 
 #+begin_src bash
@@ -277,17 +282,17 @@ python scripts/sympy/t1_cartesian_se_blocks.py
 #+end_src
 
 This derives all four blocks symbolically and confirms the antisymmetry
-k_ef = -k_fe and the diagonal/off-diagonal structure of k_ff.
+$k_{ef} = -k_{fe}$ and the diagonal/off-diagonal structure of $k_{ff}$.
 
 ** Computational cost summary
 
 | Operation | Exact GP | RFF |
 |-----------+----------+-----|
-| Build covariance | O(N^2 * (1+D)^2) | O(N * D * D_rff) |
-| Cholesky factor | O(N^3 * (1+D)^3) | O(D_rff^3) |
-| One prediction | O(N * (1+D)) | O(D_rff) |
-| SCG training (M iters) | M * Cholesky | M * Cholesky |
+| Build covariance | $\mathcal{O}(N^2 (1+D)^2)$ | $\mathcal{O}(N D D_{\mathrm{rff}})$ |
+| Cholesky factor | $\mathcal{O}(N^3 (1+D)^3)$ | $\mathcal{O}(D_{\mathrm{rff}}^3)$ |
+| One prediction | $\mathcal{O}(N (1+D))$ | $\mathcal{O}(D_{\mathrm{rff}})$ |
+| SCG training ($M$ iters) | $M \times$ Cholesky | $M \times$ Cholesky |
 
-For LEPS (D=9) with 30 training points: exact GP operates on a 300x300 matrix.
-For a 50-atom system (D=150) with 30 points: exact GP needs a 4530x4530 matrix.
-RFF with 500 features: always 500x500, regardless of N or D.
+For LEPS ($D=9$) with 30 training points: exact GP operates on a 300x300 matrix.
+For a 50-atom system ($D=150$) with 30 points: exact GP needs a 4530x4530 matrix.
+RFF with 500 features: always 500x500, regardless of $N$ or $D$.

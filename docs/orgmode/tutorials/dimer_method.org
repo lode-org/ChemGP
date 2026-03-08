@@ -27,10 +27,12 @@ an orientation vector. The dimer does two things at each step:
 The curvature along the dimer axis is estimated from the gradient difference
 between the two images:
 
-#+begin_example
-curvature ~ (G_1 - G_0) . orient / dimer_sep
-#+end_example
+\[
+C \approx \frac{(\mathbf{G}_{1} - \mathbf{G}_{0}) \cdot \hat{\mathbf{n}}}{\Delta R}
+\]
 
+where $\mathbf{G}_{0}$ and $\mathbf{G}_{1}$ are the gradients at the two dimer images,
+$\hat{\mathbf{n}}$ is the dimer orientation, and $\Delta R$ is the dimer separation.
 Rotation adjusts the orientation to minimize this curvature, aligning the dimer
 with the softest mode. This is equivalent to finding the lowest eigenvector of
 the Hessian, but without computing the full Hessian.
