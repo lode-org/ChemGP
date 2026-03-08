@@ -40,7 +40,7 @@ fn main() {
     let method = get_arg(&args, "--method").unwrap_or_else(|| "all".into());
     let max_calls: usize = get_arg(&args, "--max-calls")
         .and_then(|s| s.parse().ok())
-        .unwrap_or(20);
+        .unwrap_or(50);
     let host = std::env::var("RGPOT_HOST").unwrap_or_else(|_| "localhost".into());
     let port: u16 = std::env::var("RGPOT_PORT")
         .unwrap_or_else(|_| "12345".into())
@@ -259,6 +259,8 @@ fn main() {
         cfg.const_sigma2 = 1.0;
         cfg.hod_max_history = 60;
         cfg.use_adaptive_threshold = true;
+        cfg.divisor_t_dimer_gp = 3.0;
+        cfg.rff_features = 500;
 
         eprintln!("\n=== OTGPD ===");
         let result = otgpd(&oracle, &x_start, &orient, &kernel, &cfg, None);
@@ -289,6 +291,15 @@ fn main() {
             .expect("Operation failed");
         }
     }
+
+    // Summary with convergence threshold (all methods use 0.01)
+    let conv_tol = 0.01f64;
+    writeln!(
+        f,
+        r#"{{"summary":true,"conv_tol":{}}}"#,
+        conv_tol
+    )
+    .expect("Operation failed");
 
     eprintln!("\nOutput: {}", outfile);
 }
