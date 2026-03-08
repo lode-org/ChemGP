@@ -25,10 +25,8 @@ input = "hcn_convergence.h5"
 output = "hcn_convergence.pdf"
 type = "convergence"
 
-[[plots]]
-input = "mb_dimer.h5"
-output = "mb_dimer_convergence.pdf"
-type = "convergence"
+# mb_dimer_convergence: dropped (CartesianSE toy, GP not better than classical)
+# Real dimer comparisons on molecular systems: rpc_dimer (d_000 C3H5)
 
 [[plots]]
 input = "rpc_dimer.h5"
@@ -117,6 +115,17 @@ type = "fps"
 input = "hcn_neb.h5"
 output = "hcn_neb_profile.pdf"
 type = "profile"
+
+# --- NEB 2D landscapes (RMSD coordinates, via plt-neb) ---
+
+[[plots]]
+type = "landscape"
+source_dir = "../../.."
+dat_pattern = "hcn_neb_oie.dat"
+con_pattern = "hcn_neb_path_oie.con"
+output = "hcn_neb_landscape.pdf"
+surface_type = "grad_imq"
+landscape_mode = "surface"
 
 # --- Combined RFF (special: two inputs) ---
 # This requires custom handling; the batch runner will pass
