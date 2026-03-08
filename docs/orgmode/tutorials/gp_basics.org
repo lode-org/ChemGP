@@ -234,7 +234,7 @@ Run =cargo run --release --example mb_gp_quality= followed by
 *** GP surrogate progression
 
 #+begin_export rst
-.. figure:: /_static/figures/mb_gp_progression.pdf
+.. figure:: /_static/figures/mb_gp_progression.png
    :width: 100%
 
    GP predicted energy surface at N = 5, 15, 21, 30 training points. White
@@ -245,7 +245,7 @@ Run =cargo run --release --example mb_gp_quality= followed by
 *** Variance and uncertainty
 
 #+begin_export rst
-.. figure:: /_static/figures/mb_variance.pdf
+.. figure:: /_static/figures/mb_variance.png
    :width: 80%
 
    GP variance overlay with crosshatching. Dashed blue contours mark medium
@@ -258,7 +258,7 @@ Run =cargo run --release --example mb_gp_quality= followed by
 *** Prediction error
 
 #+begin_export rst
-.. figure:: /_static/figures/mb_gp_error.pdf
+.. figure:: /_static/figures/mb_gp_error.png
    :width: 80%
 
    GP prediction error (predicted minus true energy) at N = 21. The diverging

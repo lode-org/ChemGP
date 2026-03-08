@@ -151,7 +151,7 @@ On the LEPS surface: OIE converges in ~49 oracle calls, AIE in ~62, standard NEB
 in ~127.
 
 #+begin_export rst
-.. figure:: /_static/figures/leps_neb_convergence.pdf
+.. figure:: /_static/figures/leps_neb_convergence.png
    :width: 70%
 
    Maximum NEB force vs oracle calls for standard NEB, GP-NEB AIE, and GP-NEB

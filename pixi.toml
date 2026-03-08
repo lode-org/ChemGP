@@ -26,7 +26,7 @@ cwd = "docs"
 cmd = "emacs --batch --load export.el"
 
 [feature.docs.tasks.cpfigs]
-cmd = "cp -f scripts/figures/tutorial/output/*.pdf docs/source/_static/figures/ 2>/dev/null || true"
+cmd = "bash -c 'mkdir -p docs/source/_static/figures && for f in scripts/figures/tutorial/output/*.pdf; do pdftoppm -png -r 300 -singlefile \"$f\" \"docs/source/_static/figures/$(basename $f .pdf)\"; done'"
 
 [feature.docs.tasks.sphinxbld]
 depends-on = ["mkrst", "cpfigs"]
