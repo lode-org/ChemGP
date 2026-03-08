@@ -10,12 +10,23 @@
 # RPC examples require: pixi run -e rpc serve-petmad (port 12345)
 
 import os
+import socket
 
 ROOT = os.path.abspath(os.path.join(workflow.basedir, "../.."))
 OUTDIR = os.path.join(ROOT, "scripts/figures/tutorial/output")
 FIGDIR = os.path.join(ROOT, "docs/source/_static/figures")
 TOML = os.path.join(ROOT, "scripts/figures/tutorial/figures.toml")
 H5SCRIPT = os.path.join(ROOT, "scripts/jsonl_to_h5.py")
+LOGDIR = os.path.join(ROOT, ".snakemake/logs")
+
+def check_rpc_server(host="localhost", port=12345):
+    """Check if the RPC server is reachable."""
+    try:
+        s = socket.create_connection((host, port), timeout=2)
+        s.close()
+        return True
+    except (ConnectionRefusedError, OSError):
+        return False
 
 # ============================================================
 # Example registry
@@ -100,12 +111,13 @@ rule rpc_pdfs:
 
 rule run_standalone:
     output: os.path.join(ROOT, "{jsonl}")
+    log: os.path.join(LOGDIR, "{jsonl}.log")
     wildcard_constraints:
         jsonl="|".join(re.escape(v) for v in STANDALONE.values())
     params:
         ex=lambda wc: next(k for k, v in STANDALONE.items() if v == wc.jsonl),
     shell:
-        "cd {ROOT} && cargo run --release --example {params.ex}"
+        "cd {ROOT} && cargo run --release --example {params.ex} 2> {log}"
 
 # mb_gp_quality also writes mb_gp_scattered.jsonl as a side-effect
 rule scattered_sideeffect:
@@ -115,6 +127,7 @@ rule scattered_sideeffect:
 
 rule run_rpc:
     output: os.path.join(ROOT, "{jsonl}")
+    log: os.path.join(LOGDIR, "{jsonl}.log")
     wildcard_constraints:
         jsonl="|".join(re.escape(v[2]) for v in RPC.values())
     params:
@@ -123,9 +136,16 @@ rule run_rpc:
         extra=lambda wc: next(v[1] for v in RPC.values() if v[2] == wc.jsonl),
     resources:
         rpc_slot=1,  # serialize access to RPC server
-    shell:
-        "cd {ROOT} && cargo run --release --features {params.feat} "
-        "--example {params.ex} {params.extra}"
+    run:
+        if not check_rpc_server():
+            raise RuntimeError(
+                "RPC server not running on localhost:12345. "
+                "Start it with: pixi run -e rpc serve-petmad"
+            )
+        shell(
+            "cd {ROOT} && cargo run --release --features {params.feat} "
+            "--example {params.ex} {params.extra} 2> {log}"
+        )
 
 
 # ============================================================
