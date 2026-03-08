@@ -11,14 +11,14 @@
 //!   pixi run -e rpc serve-petmad
 //!
 //! Usage:
-//!   cargo run --release --example hcn_dimer --features io,rgpot -- --method {dimer,otgpd,all}
+//!   cargo run --release --example hcn_dimer --features io,rgpot -- --method {standard,dimer,otgpd,all}
 //!
 //! Outputs `hcn_dimer_comparison.jsonl` for plotting.
 
 use std::cell::RefCell;
 use std::io::Write;
 
-use chemgp_core::dimer::{gp_dimer, DimerConfig};
+use chemgp_core::dimer::{gp_dimer, standard_dimer, DimerConfig};
 use chemgp_core::io::read_con;
 use chemgp_core::kernel::{Kernel, MolInvDistSE};
 use chemgp_core::oracle::RpcOracle;
@@ -94,11 +94,48 @@ fn main() {
 
     // Match gprdzbl config: dimer_separation = 0.01, max_step_size = 0.05
     let dimer_sep = 0.01;
+    let run_std = method == "standard" || method == "all";
     let run_dimer = method == "dimer" || method == "all";
     let run_otgpd = method == "otgpd" || method == "all";
 
     let outfile = "hcn_dimer_comparison.jsonl";
     let mut f = std::fs::File::create(outfile).expect("Failed to create output file");
+
+    // --- Standard Dimer ---
+    if run_std {
+        let mut cfg = DimerConfig::default();
+        cfg.t_force_true = 0.01;
+        cfg.max_oracle_calls = 50;
+        cfg.max_outer_iter = 50;
+        cfg.verbose = true;
+
+        eprintln!("Running Standard Dimer...");
+        let result = standard_dimer(&oracle, &x_start, &orient, &cfg, dimer_sep);
+        eprintln!(
+            "  Standard Dimer: {} calls, |F| = {:.5}, curv = {:.4}, conv = {}, stop = {:?}",
+            result.oracle_calls,
+            result.history.f_true.last().unwrap_or(&f64::NAN),
+            result.history.curv_true.last().unwrap_or(&f64::NAN),
+            result.converged,
+            result.stop_reason,
+        );
+
+        for (i, ((&e, &ft), &oc)) in result
+            .history
+            .e_true
+            .iter()
+            .zip(result.history.f_true.iter())
+            .zip(result.history.oracle_calls.iter())
+            .enumerate()
+        {
+            writeln!(
+                f,
+                r#"{{"method":"standard_dimer","step":{},"energy":{},"force":{},"oracle_calls":{}}}"#,
+                i, e, ft, oc
+            )
+            .expect("Operation failed");
+        }
+    }
 
     // --- GP-Dimer ---
     if run_dimer {
@@ -151,7 +188,7 @@ fn main() {
     if run_otgpd {
         let mut cfg = OTGPDConfig::default();
         cfg.t_dimer = 0.01;           // gprdzbl: converged_force = 0.01
-        cfg.divisor_t_dimer_gp = 10.0; // gprdzbl: divisor_t_dimer = 10
+        cfg.divisor_t_dimer_gp = 3.0; // Molecular: looser inner threshold (2D: 10)
         cfg.trust_radius = 0.05;       // gprdzbl: max_step_size = 0.05
         cfg.max_outer_iter = 30;
         cfg.dimer_sep = dimer_sep;
@@ -170,6 +207,8 @@ fn main() {
         cfg.translation_method = "lbfgs".to_string();
         cfg.lbfgs_memory = 25;        // gprdzbl: lbfgs_memory = 25
         cfg.use_adaptive_threshold = true;
+        cfg.rff_features = 500;        // Smooths GP surface for inner loop
+        cfg.max_inner_iter = 200;
 
         eprintln!("Running OTGPD...");
         let result = otgpd(&oracle, &x_start, &orient, &kernel, &cfg, None);

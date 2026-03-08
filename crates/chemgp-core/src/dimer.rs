@@ -569,6 +569,7 @@ pub fn gp_dimer(
         None
     };
     let mut trans_hist = LbfgsHistory::new(cfg.lbfgs_memory);
+    trans_hist.default_scaling = cfg.alpha_trans;
     let mut f_trans_prev: Vec<f64> = Vec::new();
 
     let mut stop_reason = StopReason::MaxIterations;
@@ -894,6 +895,7 @@ pub fn standard_dimer(
 
     let use_lbfgs = config.translation_method == "lbfgs";
     let mut trans_hist = LbfgsHistory::new(config.lbfgs_memory);
+    trans_hist.default_scaling = config.alpha_trans;
     let mut f_trans_prev: Vec<f64> = Vec::new();
     let mut r_prev = r.clone();
 

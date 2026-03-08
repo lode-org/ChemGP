@@ -613,6 +613,7 @@ pub fn otgpd(
 
         // Inner loop: optimize on GP surface
         let mut trans_hist = LbfgsHistory::new(cfg.lbfgs_memory);
+        trans_hist.default_scaling = cfg.alpha_trans;
         let _r_before = r.clone();
 
         for inner_iter in 0..cfg.max_inner_iter {
