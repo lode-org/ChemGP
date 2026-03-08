@@ -105,13 +105,14 @@ depends-on = ["examples"]
 cmd = "snakemake -j12 standalone_pngs -s scripts/figures/Snakefile"
 
 [feature.dev.tasks.figures-rpc]
-cmd = "snakemake -j1 rpc_pdfs -s scripts/figures/Snakefile --resources rpc_slot=1"
+cmd = "snakemake -j4 rpc_pdfs -s scripts/figures/Snakefile --resources rpc_slot=1"
 
 [feature.dev.tasks.figures-all]
 cmd = "snakemake -j12 -s scripts/figures/Snakefile --resources rpc_slot=1"
+description = "Build all figures. Requires: pixi run -e rpc serve-petmad (in another terminal)"
 
 [feature.rpc.dependencies]
-eon  = ">=2.11.1,<3"
+eon  = ">=2.12.0,<3"
 rust = ">=1.75"
 
 [feature.rpc.pypi-dependencies]
@@ -127,6 +128,8 @@ cmd = "eonclient -p metatomic --config petmad_hcn.ini --serve-port 12345"
 [feature.rpc.tasks.rpc-examples]
 cmd = """
 cargo run --release --features rgpot --example petmad_minimize && \
+cargo run --release --features io,rgpot --example rpc_dimer && \
+cargo run --release --features io,rgpot --example petmad_rff_quality && \
 cargo run --release --features io,rgpot --example hcn_neb -- --method all
 """
 
