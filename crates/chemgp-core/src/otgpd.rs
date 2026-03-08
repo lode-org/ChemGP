@@ -21,7 +21,8 @@ use crate::trust::{
 };
 use crate::types::{GPModel, TrainingData};
 use crate::StopReason;
-use rand::Rng;
+use rand::rngs::StdRng;
+use rand::{Rng, SeedableRng};
 use serde::{Deserialize, Serialize};
 
 /// OTGPD configuration.
@@ -94,6 +95,7 @@ pub struct OTGPDConfig {
     /// threshold, skip the oracle call and continue GP-only.
     /// 0.0 = disabled (default, backward compatible).
     pub unc_convergence: f64,
+    pub seed: u64,
     pub verbose: bool,
 }
 
@@ -148,6 +150,7 @@ impl Default for OTGPDConfig {
             jitter: 1e-6,
             lcb_kappa: 0.0,
             unc_convergence: 0.0,
+            seed: 42,
             verbose: true,
         }
     }
@@ -354,7 +357,7 @@ pub fn otgpd(
 
     // Optional random perturbations (off by default for molecular systems)
     if cfg.n_initial_perturb > 0 {
-        let mut rng = rand::rng();
+        let mut rng = StdRng::seed_from_u64(cfg.seed);
         for _ in 0..cfg.n_initial_perturb {
             let perturb: Vec<f64> = (0..d)
                 .map(|_| (rng.random::<f64>() - 0.5) * cfg.perturb_scale)

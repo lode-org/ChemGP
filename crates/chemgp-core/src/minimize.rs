@@ -13,7 +13,8 @@ use crate::trust::{
 };
 use crate::types::{init_kernel, GPModel, TrainingData};
 use crate::StopReason;
-use rand::Rng;
+use rand::rngs::StdRng;
+use rand::{Rng, SeedableRng};
 use serde::{Deserialize, Serialize};
 
 /// Configuration for GP-guided minimization.
@@ -49,6 +50,8 @@ pub struct MinimizationConfig {
     /// gradient uncertainty (no orient direction for minimize).
     /// 0.0 = disabled (default, backward compatible).
     pub lcb_kappa: f64,
+    /// RNG seed for initial perturbations. Fixed seed ensures reproducibility.
+    pub seed: u64,
     pub verbose: bool,
 }
 
@@ -79,6 +82,7 @@ impl Default for MinimizationConfig {
             adaptive_floor: 0.2,
             const_sigma2: 0.0,
             lcb_kappa: 0.0,
+            seed: 42,
             verbose: true,
         }
     }
@@ -126,7 +130,7 @@ pub fn gp_minimize(
         trajectory.push(x_init.to_vec());
         all_energies.push(e);
 
-        let mut rng = rand::rng();
+        let mut rng = StdRng::seed_from_u64(cfg.seed);
         for _k in 0..cfg.n_initial_perturb {
             let perturb: Vec<f64> = (0..d)
                 .map(|_| (rng.random::<f64>() - 0.5) * cfg.perturb_scale)
@@ -399,7 +403,7 @@ pub fn gp_minimize(
                 .enumerate()
                 .min_by(|(_, a), (_, b)| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal))
                 .map(|(i, _)| i).unwrap_or(0);  // Safe fallback: use first point
-            let mut rng = rand::rng();
+            let mut rng = StdRng::seed_from_u64(cfg.seed.wrapping_add(outer_step as u64));
             x_curr = td.col(best_idx).to_vec();
             for j in 0..d {
                 x_curr[j] += (rng.random::<f64>() - 0.5) * cfg.perturb_scale * 0.5;
