@@ -42,10 +42,27 @@ def plot_petmad_minimize(path="petmad_minimize_comparison.jsonl"):
     fig, ax = plt.subplots(1, 1, figsize=(4.5, 3.2))
     for method in sorted(groups, key=lambda m: order.get(m, 0)):
         records = groups[method]
-        calls = [r["oracle_calls"] for r in records]
-        energies = [r["energy"] for r in records]
-        ax.plot(
-            calls, energies,
+        # Truncate at convergence (first point below threshold)
+        conv_tol = 0.01
+        truncated = []
+        for r in records:
+            truncated.append(r)
+            # Use max_fatom if available, otherwise max_force
+            force = r.get("max_fatom", r.get("max_force", float('inf')))
+            if force < conv_tol:
+                break
+        if not truncated:
+            continue
+        calls = [r["oracle_calls"] for r in truncated]
+        # Use max_fatom if available, otherwise compute from max_force
+        if "max_fatom" in truncated[0]:
+            max_fatom = [r["max_fatom"] for r in truncated]
+        elif "max_force" in truncated[0]:
+            max_fatom = [r["max_force"] for r in truncated]
+        else:
+            continue
+        ax.semilogy(
+            calls, max_fatom,
             label=labels.get(method, method),
             color=palette.get(method, "#333"),
             marker="o" if "gp" in method else None,
@@ -53,16 +70,14 @@ def plot_petmad_minimize(path="petmad_minimize_comparison.jsonl"):
             zorder=order.get(method, 0) + 2,
         )
 
+    # Add convergence threshold line
+    ax.axhline(0.01, color="k", linewidth=0.5, linestyle="--", alpha=0.5, label="conv_tol")
+
     ax.set_xlabel("Oracle calls")
-    ax.set_ylabel("Energy (eV)")
+    ax.set_ylabel("Max force per atom (eV/Å)")
     ax.set_title("PET-MAD Minimization (system100)")
     ax.legend(frameon=False)
     fig.tight_layout()
-
-    OUTDIR.mkdir(parents=True, exist_ok=True)
-    fig.savefig(OUTDIR / "petmad_minimize_convergence.pdf")
-    plt.close(fig)
-    print(f"Wrote {OUTDIR / 'petmad_minimize_convergence.pdf'}")
 
 
 def plot_hcn_neb(path="hcn_neb_comparison.jsonl"):
@@ -100,8 +115,19 @@ def plot_hcn_neb(path="hcn_neb_comparison.jsonl"):
 
     for method in sorted(groups, key=lambda m: list(palette.keys()).index(m) if m in palette else 99):
         records = groups[method]
-        calls = [r["oracle_calls"] for r in records]
-        forces = [r["max_force"] for r in records]
+        # Truncate at convergence (first point below threshold)
+        conv_tol = 0.1
+        truncated = []
+        for r in records:
+            truncated.append(r)
+            force = r.get("ci_force", r.get("max_force", float('inf')))
+            if force < conv_tol:
+                break
+        if not truncated:
+            continue
+        calls = [r["oracle_calls"] for r in truncated]
+        # Use ci_force when available (for climbing image), otherwise max_force
+        forces = [r.get("ci_force", r.get("max_force", float('nan'))) for r in truncated]
         ax.semilogy(
             calls, forces,
             label=labels.get(method, method),
@@ -109,24 +135,34 @@ def plot_hcn_neb(path="hcn_neb_comparison.jsonl"):
             marker="o", markersize=3,
         )
 
+    # Add convergence threshold line at 0.1 (tutorial standard)
+    ax.axhline(0.1, color="k", linewidth=0.5, linestyle="--", alpha=0.5, label="conv_tol")
+
     ax.set_xlabel("Oracle calls")
-    ax.set_ylabel("Max |F| (eV/A)")
+    ax.set_ylabel("CI force (eV/Å)")
     ax.set_title("GP-NEB Convergence")
     ax.legend(frameon=False, fontsize=8)
 
     # Panel 2: energy profile
     if has_path:
         ax2 = axes[1]
-        images = [r["image"] for r in path_energies]
-        energies = [r["energy"] for r in path_energies]
-        # Shift to relative energy
-        e_ref = energies[0]
-        rel_e = [e - e_ref for e in energies]
-        ax2.plot(images, rel_e, "o-", color=TEAL, markersize=5)
+        # Group path energies by method
+        path_groups = defaultdict(list)
+        for rec in path_energies:
+            path_groups[rec["method"]].append(rec)
+        for method in sorted(path_groups, key=lambda m: list(palette.keys()).index(m) if m in palette else 99):
+            records = path_groups[method]
+            images = [r["image"] for r in records]
+            energies = [r["energy"] for r in records]
+            # Shift to relative energy
+            e_ref = energies[0]
+            rel_e = [e - e_ref for e in energies]
+            ax2.plot(images, rel_e, "o-", color=palette.get(method, TEAL), markersize=5, label=labels.get(method, method))
         ax2.set_xlabel("Image index")
         ax2.set_ylabel("Relative energy (eV)")
         ax2.set_title("MEP Energy Profile")
         ax2.axhline(0, color="k", linewidth=0.5, linestyle="--", alpha=0.3)
+        ax2.legend(frameon=False, fontsize=8)
 
     fig.suptitle("HCN -> HNC Isomerization (PET-MAD)", fontsize=13)
     fig.tight_layout()
