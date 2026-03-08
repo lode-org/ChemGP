@@ -47,5 +47,9 @@ name = "hcn_neb"
 required-features = ["io", "rgpot"]
 
 [[example]]
+name = "petmad_rff_quality"
+required-features = ["io", "rgpot"]
+
+[[example]]
 name = "system100_neb"
 required-features = ["cli", "io", "rgpot"]
