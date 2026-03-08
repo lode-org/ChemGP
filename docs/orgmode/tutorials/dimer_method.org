@@ -109,7 +109,7 @@ eigenmode (from Hessian), GP-Dimer converges in ~9 oracle calls and OTGPD in
 ~13. The standard dimer needs ~45 calls.
 
 #+begin_export rst
-.. figure:: /_static/figures/leps_dimer_convergence.pdf
+.. figure:: /_static/figures/leps_dimer_convergence.png
    :width: 70%
 
    Translation force vs oracle calls for standard dimer, GP-Dimer, and OTGPD

@@ -94,7 +94,7 @@ data and return to step 1.
 ** Muller-Brown Example
 
 #+begin_export rst
-.. figure:: /_static/figures/mb_pes.pdf
+.. figure:: /_static/figures/mb_pes.png
    :width: 80%
 
    Muller-Brown potential energy surface. Yellow stars mark the three minima
@@ -114,7 +114,7 @@ Direct gradient descent with the same convergence tolerance needs 34 calls, a
 ~5x improvement.
 
 #+begin_export rst
-.. figure:: /_static/figures/mb_minimize_convergence.pdf
+.. figure:: /_static/figures/mb_minimize_convergence.png
    :width: 70%
 
    Energy vs oracle calls for GP-guided minimization (teal, circles) vs direct
@@ -153,7 +153,7 @@ cfg.trust_metric = TrustMetric::Euclidean;
 ** LEPS Example
 
 #+begin_export rst
-.. figure:: /_static/figures/leps_contour.pdf
+.. figure:: /_static/figures/leps_contour.png
    :width: 80%
 
    LEPS potential energy surface for collinear H + H2 as a function of the
@@ -174,7 +174,7 @@ GP minimization converges in 9 oracle calls to the reactant minimum (E =
 the same precision.
 
 #+begin_export rst
-.. figure:: /_static/figures/leps_minimize_convergence.pdf
+.. figure:: /_static/figures/leps_minimize_convergence.png
    :width: 70%
 
    Energy vs oracle calls on the LEPS surface. GP minimization (teal) reaches

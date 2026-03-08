@@ -59,6 +59,16 @@ cfg.fps_history = 15;
 cfg.const_sigma2 = 1.0;        // constant kernel for molecules
 #+end_src
 
+#+begin_export rst
+.. figure:: /_static/figures/petmad_minimize_convergence.png
+   :width: 80%
+   :align: center
+
+   Convergence on system100 (C\ :sub:`2`\ H\ :sub:`4`\ NO, 9 atoms).
+   GP minimization reaches the 0.05 eV/A threshold in ~15 oracle calls;
+   classical L-BFGS requires ~200 on the same PET-MAD surface.
+#+end_export
+
 ** Differences from 2D examples
 
 | Aspect | 2D surfaces | Real molecules |
