@@ -674,6 +674,7 @@ pub fn gp_neb_oie(
     for outer_iter in 0..cfg.max_outer_iter {
         // ---- STEP 1: Select image to evaluate ----
         let i_eval;
+        let mut i_extra: Option<usize> = None;
 
         if eval_next_early > 0 {
             // Priority 1: early-stop image (too far from training data)
@@ -685,6 +686,15 @@ pub fn gp_neb_oie(
                 .max_by(|&a, &b| energies[a].partial_cmp(&energies[b]).unwrap_or(std::cmp::Ordering::Equal))
                 .unwrap_or(1);  // Must be intermediate image (not endpoint)
             eval_next_ci = false;
+            // Also select an acquisition image so we always evaluate
+            // CI + one other, preventing CI drift from stale neighbors.
+            let i_acq = select_image(
+                &cfg.acquisition, &images, &energies, &uneval,
+                &cached_model, &cached_forces, cfg, d, &mut rng,
+            );
+            if i_acq != i_eval {
+                i_extra = Some(i_acq);
+            }
         } else {
             // Priority 3: acquisition strategy
             i_eval = select_image(
@@ -700,7 +710,7 @@ pub fn gp_neb_oie(
         // Later: GP improves -> fewer images need evaluation -> efficient.
         // Always includes the acquisition-selected image.
         // Fallback: when unc_convergence=0, uses evals_per_iter (triplet or single).
-        let eval_set = if cfg.unc_convergence > 0.0 {
+        let mut eval_set = if cfg.unc_convergence > 0.0 {
             // Use max gradient uncertainty (not energy) -- NEB forces
             // depend on gradient accuracy. GP can have low energy sigma
             // but high gradient sigma, especially after images move.
@@ -726,12 +736,35 @@ pub fn gp_neb_oie(
             if !set.contains(&i_eval) {
                 set.push(i_eval);
             }
+            // When CI is configured, also include the CI image so it stays
+            // fresh alongside the acquisition-selected image.  Without
+            // this the CI drifts on stale GP forces from neighbors while
+            // the acquisition function chases other images.
+            if cfg.climbing_image && cached_forces.ci_f >= ci_tol {
+                let i_ci = (1..n - 1)
+                    .max_by(|&a, &b| {
+                        energies[a]
+                            .partial_cmp(&energies[b])
+                            .unwrap_or(std::cmp::Ordering::Equal)
+                    })
+                    .unwrap_or(1);
+                if !set.contains(&i_ci) {
+                    set.push(i_ci);
+                }
+            }
             set
         } else if cfg.evals_per_iter >= 3 {
             expand_to_triplet(i_eval, n)
         } else {
             vec![i_eval]
         };
+
+        // Include acquisition-selected extra image when CI was forced
+        if let Some(extra) = i_extra {
+            if !eval_set.contains(&extra) {
+                eval_set.push(extra);
+            }
+        }
 
         let n_eval_this_iter = eval_set.len();
         for &idx in &eval_set {
