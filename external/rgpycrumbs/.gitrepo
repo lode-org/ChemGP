@@ -6,7 +6,7 @@
 [subrepo]
 	remote = git@github.com:HaoZeke/rgpycrumbs.git
 	branch = feat/chemgp-jsonl-parser
-	commit = e1d8debc7e8d7a6f6b7f3dca83c6f819619e8043
-	parent = d05c7e942098356e42ca9a7d4f5fd1ae996adc45
+	commit = d7fc26249b65b7a5cd7588a57b05d5ef3749db3a
+	parent = 8ddbc7f660d6431a6fba133b394c77abb0106739
 	method = merge
 	cmdver = 0.4.9
