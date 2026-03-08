@@ -49,3 +49,7 @@ docs/source/_static/figures/
 
 # Logs
 *.log
+
+# Claude Code config (local only)
+CLAUDE.md
+.claude/
