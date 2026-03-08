@@ -109,6 +109,122 @@ pub fn check_interatomic_ratio(
     false
 }
 
+/// Parameters needed for trust-region clipping, shared across all methods.
+pub struct TrustClipParams<'a> {
+    pub trust_radius: f64,
+    pub trust_metric: TrustMetric,
+    pub atom_types: &'a [i32],
+    pub use_adaptive: bool,
+    pub adaptive_t_min: f64,
+    pub adaptive_delta_t: f64,
+    pub adaptive_n_half: usize,
+    pub adaptive_a: f64,
+    pub adaptive_floor: f64,
+}
+
+impl<'a> TrustClipParams<'a> {
+    fn threshold(&self, n_data: usize, n_atoms: usize) -> f64 {
+        adaptive_trust_threshold(
+            self.trust_radius,
+            n_data,
+            n_atoms,
+            self.use_adaptive,
+            self.adaptive_t_min,
+            self.adaptive_delta_t,
+            self.adaptive_n_half,
+            self.adaptive_a,
+            self.adaptive_floor,
+        )
+    }
+}
+
+/// Clip a single position to the trust region around training data.
+///
+/// If `x` is farther than the adaptive threshold from any training point,
+/// snaps it to `nearest + 0.95 * (threshold / distance) * displacement`.
+/// Returns true if clipping occurred.
+pub fn clip_point_to_trust(
+    x: &mut Vec<f64>,
+    td: &crate::types::TrainingData,
+    params: &TrustClipParams,
+) -> bool {
+    let d = x.len();
+    let n_atoms = d / 3;
+    let thresh = params.threshold(td.npoints(), n_atoms);
+    let dist = trust_min_distance(x, &td.data, d, td.npoints(), params.trust_metric, params.atom_types);
+    if dist > thresh {
+        let nearest_idx = (0..td.npoints())
+            .min_by(|&i, &j| {
+                let di = trust_distance(params.trust_metric, params.atom_types, x, td.col(i));
+                let dj = trust_distance(params.trust_metric, params.atom_types, x, td.col(j));
+                di.partial_cmp(&dj).unwrap_or(std::cmp::Ordering::Equal)
+            })
+            .unwrap_or(0);
+        let nearest = td.col(nearest_idx).to_vec();
+        let scale = thresh / dist * 0.95;
+        *x = nearest
+            .iter()
+            .zip(x.iter())
+            .map(|(n, xi)| n + (xi - n) * scale)
+            .collect();
+        true
+    } else {
+        false
+    }
+}
+
+/// Clip intermediate NEB images to the trust region.
+///
+/// Iterates images `1..n-1` (skipping fixed endpoints) and clips each
+/// to the nearest training point if outside the trust radius.
+pub fn clip_images_to_trust(
+    images: &mut [Vec<f64>],
+    td: &crate::types::TrainingData,
+    params: &TrustClipParams,
+) {
+    let n = images.len();
+    let d = images[0].len();
+    let n_atoms = d / 3;
+    let thresh = params.threshold(td.npoints(), n_atoms);
+
+    for i in 1..n - 1 {
+        let dist = trust_min_distance(
+            &images[i], &td.data, d, td.npoints(), params.trust_metric, params.atom_types,
+        );
+        if dist > thresh {
+            let nearest_idx = (0..td.npoints())
+                .min_by(|&a, &b| {
+                    let da = trust_distance(params.trust_metric, params.atom_types, &images[i], td.col(a));
+                    let db = trust_distance(params.trust_metric, params.atom_types, &images[i], td.col(b));
+                    da.partial_cmp(&db).unwrap_or(std::cmp::Ordering::Equal)
+                })
+                .unwrap_or(0);
+            let nearest = td.col(nearest_idx).to_vec();
+            let scale = thresh / dist * 0.95;
+            images[i] = nearest
+                .iter()
+                .zip(images[i].iter())
+                .map(|(n, xi)| n + (xi - n) * scale)
+                .collect();
+        }
+    }
+}
+
+/// Check whether a position exceeds the trust radius (without clipping).
+///
+/// Used by OTGPD which rejects steps rather than clipping.
+pub fn exceeds_trust_radius(
+    x: &[f64],
+    td: &crate::types::TrainingData,
+    params: &TrustClipParams,
+) -> bool {
+    let d = x.len();
+    let n_atoms = d / 3;
+    let thresh = params.threshold(td.npoints(), n_atoms);
+    let dist = trust_min_distance(x, &td.data, d, td.npoints(), params.trust_metric, params.atom_types);
+    dist > thresh
+}
+
 /// Remove rigid body modes from a step vector.
 /// Projects out 3 translational + 3 rotational modes.
 pub fn remove_rigid_body_modes(step: &mut [f64], x: &[f64], n_atoms: usize) -> f64 {

@@ -15,10 +15,8 @@ use crate::neb_path::{
 use crate::neb::{NEBHistory, NEBResult, OracleFn};
 use crate::optim_step::OptimState;
 use crate::predict::{build_pred_model, PredModel};
-use crate::train::train_model;
-use crate::trust::{
-    adaptive_trust_threshold, trust_distance, trust_min_distance,
-};
+use crate::train::{adaptive_train_iters, train_model};
+use crate::trust::{clip_images_to_trust, trust_distance, TrustClipParams};
 use crate::types::{init_kernel, GPModel, TrainingData};
 use crate::StopReason;
 
@@ -541,47 +539,6 @@ fn oie_inner_relax(
     (gp_images, ci_idx, early_stop_image)
 }
 
-/// EMD trust clip (shared with AIE, but kept as local fn for clarity).
-fn emd_trust_clip(images: &mut [Vec<f64>], td: &TrainingData, cfg: &NEBConfig) {
-    let n = images.len();
-    let d = images[0].len();
-    let n_atoms = d / 3;
-
-    let thresh = adaptive_trust_threshold(
-        cfg.trust_radius,
-        td.npoints(),
-        n_atoms,
-        cfg.use_adaptive_threshold,
-        cfg.adaptive_t_min,
-        cfg.adaptive_delta_t,
-        cfg.adaptive_n_half,
-        cfg.adaptive_a,
-        cfg.adaptive_floor,
-    );
-
-    for i in 1..n - 1 {
-        let dist = trust_min_distance(
-            &images[i], &td.data, d, td.npoints(), cfg.trust_metric, &cfg.atom_types,
-        );
-        if dist > thresh {
-            let nearest_idx = (0..td.npoints())
-                .min_by(|&a, &b| {
-                    let da = trust_distance(cfg.trust_metric, &cfg.atom_types, &images[i], td.col(a));
-                    let db = trust_distance(cfg.trust_metric, &cfg.atom_types, &images[i], td.col(b));
-                    da.partial_cmp(&db).unwrap_or(std::cmp::Ordering::Equal)
-                })
-                .unwrap_or(0);  // Safe fallback
-            let nearest = td.col(nearest_idx).to_vec();
-            let disp: Vec<f64> = images[i].iter().zip(nearest.iter()).map(|(a, b)| a - b).collect();
-            images[i] = nearest
-                .iter()
-                .zip(disp.iter())
-                .map(|(a, b)| a + b * (thresh / dist * 0.95))
-                .collect();
-        }
-    }
-}
-
 /// GP-NEB with Outer Iteration Evaluation.
 ///
 /// Follows the Koistinen et al. (2019) MATLAB reference:
@@ -852,11 +809,7 @@ pub fn gp_neb_oie(
             td.clone()
         };
 
-        let train_iters = if prev_kern.is_none() {
-            cfg.gp_train_iter
-        } else {
-            (cfg.gp_train_iter / 3).max(50)
-        };
+        let train_iters = adaptive_train_iters(cfg.gp_train_iter, prev_kern.is_none());
 
         let e_ref_sub = td_use.energies[0];
         let mut y_sub: Vec<f64> = td_use.energies.iter().map(|e| e - e_ref_sub).collect();
@@ -1016,7 +969,18 @@ pub fn gp_neb_oie(
 
             // Optional EMD trust clip
             if cfg.trust_radius > 0.0 {
-                emd_trust_clip(&mut images, &td, cfg);
+                let trust_params = TrustClipParams {
+                    trust_radius: cfg.trust_radius,
+                    trust_metric: cfg.trust_metric,
+                    atom_types: &cfg.atom_types,
+                    use_adaptive: cfg.use_adaptive_threshold,
+                    adaptive_t_min: cfg.adaptive_t_min,
+                    adaptive_delta_t: cfg.adaptive_delta_t,
+                    adaptive_n_half: cfg.adaptive_n_half,
+                    adaptive_a: cfg.adaptive_a,
+                    adaptive_floor: cfg.adaptive_floor,
+                };
+                clip_images_to_trust(&mut images, &td, &trust_params);
             }
 
             // Force-improvement + uncertainty gate (opt-in via unc_revert_tol > 0).
