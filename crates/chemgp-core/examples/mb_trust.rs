@@ -21,14 +21,14 @@ fn main() {
     let mut td = TrainingData::new(2);
     for &x in &train_x {
         let (e, g) = muller_brown_energy_gradient(&[x, y_slice]);
-        td.add_point(&[x, y_slice], e, &g);
+        let _ = td.add_point(&[x, y_slice], e, &g);
     }
 
     // Train GP
     let kernel = Kernel::Cartesian(CartesianSE::new(100.0, 2.0));
     let kernel = init_kernel(&td, &kernel);
     let (y, _mean, _std) = td.normalize();
-    let mut gp = GPModel::new(kernel, &td, y, 1e-6, 1e-4, 1e-6);
+    let mut gp = GPModel::new(kernel, &td, y, 1e-6, 1e-4, 1e-6).expect("GPModel::new failed: invalid training data or kernel params");
     train_model(&mut gp, 100, false);
 
     let pred = build_pred_model(&gp.kernel, &td, 0, 42, 0.0);

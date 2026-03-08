@@ -27,17 +27,15 @@ fn main() {
     
     println!("Running baseline L-BFGS (no GP)...");
     let mut converged = false;
-    let mut final_norm = f64::NAN;
     let mut iterations = 0;
-    
+
     for inner in 0..200 {
         let (_, g_pred) = oracle(&x);
-        
+
         let g_norm: f64 = g_pred.iter().map(|x| x * x).sum::<f64>().sqrt();
-        
+
         if g_norm < 1e-4 {
             converged = true;
-            final_norm = g_norm;
             iterations = inner;
             break;
         }
@@ -86,7 +84,7 @@ fn main() {
     println!("  Energy change: ΔE = {:.6} eV", e0 - e_final);
     
     // Expected LEPS minimum energy (approximately)
-    let leps_min_expected = -4.0; // Approximate value for LEPS reactant well
+    let _leps_min_expected = -4.0; // Approximate value for LEPS reactant well
     
     if converged && g_final_norm < 1e-4 {
         println!();

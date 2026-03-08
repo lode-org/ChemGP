@@ -20,7 +20,7 @@ fn main() {
     let mut td = TrainingData::new(2);
     for &x in &train_x {
         let (e, g) = muller_brown_energy_gradient(&[x, y_slice]);
-        td.add_point(&[x, y_slice], e, &g);
+        let _ = td.add_point(&[x, y_slice], e, &g);
     }
 
     // Prediction grid along x
@@ -59,7 +59,8 @@ fn main() {
 
             // Build GP model with fixed hyperparameters (no SCG training)
             let (y, _mean, _std) = td.normalize();
-            let gp = GPModel::new(kernel.clone(), &td, y, 1e-6, 1e-4, 1e-6);
+            let gp = GPModel::new(kernel.clone(), &td, y, 1e-6, 1e-4, 1e-6)
+                .expect("Failed to create GP model");
 
             // Build prediction model (exact GP, no RFF)
             let pred = build_pred_model_full(
