@@ -6,7 +6,7 @@
 [subrepo]
 	remote = git@github.com:HaoZeke/chemparseplot.git
 	branch = feat/chemgp-theme-export
-	commit = 15993adcf120d5b54a9d98725b26eb43eaad761b
-	parent = 198131a1a48a3d91bb94faa6e31b0f19867f62fd
+	commit = 4810b6b09df2ce339d90b6973311ea3503e9579c
+	parent = e8db1be75584aa8a48f4a86630305bd374b42738
 	method = merge
 	cmdver = 0.4.9
