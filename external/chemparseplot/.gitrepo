@@ -1,0 +1,12 @@
+; DO NOT EDIT (unless you know what you are doing)
+;
+; This subdirectory is a git "subrepo", and this file is maintained by the
+; git-subrepo command. See https://github.com/ingydotnet/git-subrepo#readme
+;
+[subrepo]
+	remote = git@github.com:HaoZeke/chemparseplot.git
+	branch = feat/chemgp-theme-export
+	commit = 15993adcf120d5b54a9d98725b26eb43eaad761b
+	parent = 198131a1a48a3d91bb94faa6e31b0f19867f62fd
+	method = merge
+	cmdver = 0.4.9
