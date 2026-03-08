@@ -6,6 +6,7 @@ author = "Rohit Goswami"
 # -- General configuration ---------------------------------------------------
 extensions = [
     "sphinx.ext.intersphinx",
+    "sphinx.ext.mathjax",
     "sphinx_sitemap",
 ]
 

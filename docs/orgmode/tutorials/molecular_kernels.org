@@ -41,45 +41,47 @@ distances and Jacobians is negligible compared to the kernel evaluation.
 
 The mapping from Cartesian coordinates to inverse distance features:
 
-#+begin_example
-f_ij(x) = 1 / r_ij,   r_ij = ||x_i - x_j||
-#+end_example
+\[
+f_{ij}(\mathbf{x}) = \frac{1}{r_{ij}}, \quad r_{ij} = \|\mathbf{x}_i - \mathbf{x}_j\|
+\]
 
-For N atoms, this produces N*(N-1)/2 features (one per pair). The Jacobian
-J[l,d] = df_l / dx_d transforms kernel derivatives from feature space to
+For $N$ atoms, this produces $N(N-1)/2$ features (one per pair). The Jacobian
+$J_{ld} = \partial f_l / \partial x_d$ transforms kernel derivatives from feature space to
 coordinate space:
 
-#+begin_example
-df_ij/dx_i = -(x_i - x_j) / r_ij^3
-df_ij/dx_j = +(x_i - x_j) / r_ij^3
-df_ij/dx_k = 0   (k not in {i,j})
-#+end_example
+\[
+\frac{\partial f_{ij}}{\partial \mathbf{x}_i} = -\frac{\mathbf{x}_i - \mathbf{x}_j}{r_{ij}^3}, \quad
+\frac{\partial f_{ij}}{\partial \mathbf{x}_j} = +\frac{\mathbf{x}_i - \mathbf{x}_j}{r_{ij}^3}, \quad
+\frac{\partial f_{ij}}{\partial \mathbf{x}_k} = 0 \;\; (k \notin \{i,j\})
+\]
 
 The kernel blocks use the chain rule through this Jacobian:
 
-#+begin_example
-k_ef = J^T @ (dk/df)        (energy-force cross-covariance)
-k_ff = J^T @ H_feat @ J     (force-force covariance)
-#+end_example
+\[
+\mathbf{K}_{ef} = \mathbf{J}^\top \frac{\partial k}{\partial \mathbf{f}} \quad \text{(energy-force cross-covariance)}
+\]
+\[
+\mathbf{K}_{ff} = \mathbf{J}^\top \mathbf{H}_{\mathrm{feat}} \mathbf{J} \quad \text{(force-force covariance)}
+\]
 
-where dk/df and H_feat are the gradient and Hessian of the kernel in
+where $\partial k / \partial \mathbf{f}$ and $\mathbf{H}_{\mathrm{feat}}$ are the gradient and Hessian of the kernel in
 feature space. See =scripts/sympy/t3_invdist_jacobian.py= for the full
 derivation.
 
 ** Pair-type length scales
 
-The =MolInvDistSE= kernel assigns a separate inverse length scale theta_p
+The =MolInvDistSE= kernel assigns a separate inverse length scale $\theta_p$
 to each pair type (H-H, H-C, C-C, etc.):
 
-#+begin_example
-k(x,y) = sigma^2 * exp(-sum_p theta_p^2 * (f_p(x) - f_p(y))^2)
-#+end_example
+\[
+k(\mathbf{x}, \mathbf{y}) = \sigma^2 \exp\!\left(-\sum_p \theta_p^2 \left(f_p(\mathbf{x}) - f_p(\mathbf{y})\right)^2\right)
+\]
 
 This lets the kernel learn that stretching a C-C bond (stiff, high energy
 change per unit displacement) is different from displacing a van der Waals
 contact (soft, small energy change per large displacement).
 
-During SCG training, each theta_p adapts independently. Pair types with
+During SCG training, each $\theta_p$ adapts independently. Pair types with
 many features (e.g., C-C in a hydrocarbon) get tighter MAP priors to
 prevent overfitting; pair types with few features get looser priors.
 
@@ -117,5 +119,5 @@ The inverse distance Jacobian derivation is verified in:
 python scripts/sympy/t3_invdist_jacobian.py
 #+end_src
 
-This derives J analytically for a 3-atom collinear system, then verifies
-that the chain rule (J^T @ dk/df) matches direct differentiation dk/dy.
+This derives $\mathbf{J}$ analytically for a 3-atom collinear system, then verifies
+that the chain rule ($\mathbf{J}^\top \partial k / \partial \mathbf{f}$) matches direct differentiation $\partial k / \partial \mathbf{y}$.

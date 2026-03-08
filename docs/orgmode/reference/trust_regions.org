@@ -46,7 +46,7 @@ structural distance that is:
 
 - Invariant under rotation and translation (by construction of the features)
 - Sensitive to bond-length changes (which dominate the energy landscape)
-- Cheap to compute (O(n_pairs * log(n_pairs)) for sorting + O(n_pairs) for the
+- Cheap to compute ($\mathcal{O}(n_{\text{pairs}} \log n_{\text{pairs}})$ for sorting + $\mathcal{O}(n_{\text{pairs}})$ for the
   1D assignment)
 
 Use EMD for all molecular systems.
@@ -65,10 +65,10 @@ parameterize the PES.
 When the proposed step places the new point beyond =trust_radius= from the
 nearest training point:
 
-#+begin_example
-if dist(x_proposed, nearest_train) > trust_radius:
-    x_clipped = x_current + (x_proposed - x_current) * trust_radius / dist
-#+end_example
+\[
+\mathbf{x}_{\text{clip}} = \mathbf{x}_{\text{cur}} + (\mathbf{x}_{\text{prop}} - \mathbf{x}_{\text{cur}}) \frac{r_{\text{trust}}}{d(\mathbf{x}_{\text{prop}},\, \mathbf{x}_{\text{nn}})}
+\quad \text{if } d(\mathbf{x}_{\text{prop}},\, \mathbf{x}_{\text{nn}}) > r_{\text{trust}}
+\]
 
 The direction is preserved; only the magnitude is reduced. /Why preserve
 direction/: the GP's gradient prediction is most reliable near training data, so
@@ -89,9 +89,9 @@ magnitude (determined by the GP curvature, which degrades faster with distance).
 A faster alternative to full EMD: computes the maximum absolute difference in
 log-space features across all dimensions:
 
-#+begin_example
-d(x, y) = max_i |log(f_i(x)) - log(f_i(y))|
-#+end_example
+\[
+d(\mathbf{x}, \mathbf{y}) = \max_i \left| \log f_i(\mathbf{x}) - \log f_i(\mathbf{y}) \right|
+\]
 
 Used for FPS subset selection and coarse trust screening, where ranking
 (which point is nearest?) matters more than the exact distance value.
@@ -101,9 +101,9 @@ Used for FPS subset selection and coarse trust screening, where ranking
 The inner L-BFGS for minimization uses a soft quadratic penalty instead of hard
 clipping:
 
-#+begin_example
-penalty = penalty_coeff * max(0, dist - trust_radius)^2
-#+end_example
+\[
+P = \lambda_{\text{pen}} \left[\max\!\left(0,\; d - r_{\text{trust}}\right)\right]^2
+\]
 
 /Why soft instead of hard/: L-BFGS builds a curvature model from gradient
 history. Hard clipping introduces gradient discontinuities at the trust boundary,
@@ -116,11 +116,11 @@ convergence.
 
 OTGPD replaces the geometric trust region with a force-based decision:
 
-#+begin_example
-T_gp = max(min(F_true) / divisor, T_dimer / 10)
-#+end_example
+\[
+T_{\text{gp}} = \max\!\left(\frac{\min(\|\mathbf{F}_{\text{true}}\|)}{\text{divisor}},\; \frac{T_{\text{dimer}}}{10}\right)
+\]
 
-When the GP-predicted force is below T_gp, trust the GP and skip the oracle.
+When the GP-predicted force is below $T_{\text{gp}}$, trust the GP and skip the oracle.
 This is not a spatial trust region but a prediction-quality threshold: it asks
 "is the GP good enough?" rather than "is the point close enough?"
 

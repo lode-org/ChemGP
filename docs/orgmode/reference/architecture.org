@@ -62,15 +62,15 @@ fails for practical problem sizes.
 
 *** FPS subset selection
 
-*Problem*: the GP covariance matrix for N training points with D-dimensional
-gradients is N*(1+D) x N*(1+D). Cholesky factorization costs O(N^3*(1+D)^3).
-With 50 training points and D=9 (LEPS), the matrix is 500x500. With D=150 (50
-atoms), it is 7550x7550. Training with SCG calls Cholesky at every iteration
+*Problem*: the GP covariance matrix for $N$ training points with $D$-dimensional
+gradients is $N(1+D) \times N(1+D)$. Cholesky factorization costs $\mathcal{O}(N^3(1+D)^3)$.
+With 50 training points and $D=9$ (LEPS), the matrix is $500 \times 500$. With $D=150$ (50
+atoms), it is $7550 \times 7550$. Training with SCG calls Cholesky at every iteration
 (~50 iterations), making the cost prohibitive.
 
-*Solution*: Farthest Point Sampling selects K << N points that are spread out
-and cover the local neighborhood. Training happens on the K-point subset, keeping
-Cholesky cost at O(K^3*(1+D)^3).
+*Solution*: Farthest Point Sampling selects $K \ll N$ points that are spread out
+and cover the local neighborhood. Training happens on the $K$-point subset, keeping
+Cholesky cost at $\mathcal{O}(K^3(1+D)^3)$.
 
 *Tradeoff*: fewer training points means less information for hyperparameter
 optimization. The =fps_latest_points= parameter always includes the most recent
@@ -97,12 +97,12 @@ are identical). EMD provides a meaningful measure of structural similarity.
 *** RFF approximation
 
 *Problem*: even with FPS keeping the training set small, inner optimization loops
-call =predict= hundreds of times. Each exact GP prediction costs O(N*(1+D)),
+call =predict= hundreds of times. Each exact GP prediction costs $\mathcal{O}(N(1+D))$,
 and each =predict_with_variance= needs the Cholesky solve.
 
 *Solution*: Random Fourier Features approximate the kernel with a finite-rank
-feature map. The resulting linear model has O(D_rff) prediction cost, independent
-of N. Hyperparameters are trained exactly (SCG on the FPS subset), then the RFF
+feature map. The resulting linear model has $\mathcal{O}(D_{\text{rff}})$ prediction cost, independent
+of $N$. Hyperparameters are trained exactly (SCG on the FPS subset), then the RFF
 model is built on the full training data.
 
 *Why not Nystrom*: the alternative sparse GP approximation (Nystrom) uses a
@@ -110,9 +110,9 @@ Woodbury matrix inversion that amplifies noise. For gradient observations with
 small noise variance (1e-4), this causes instability. RFF avoids the Woodbury
 identity entirely.
 
-*Tradeoff*: RFF introduces approximation error. With D_rff = 500 features, the
+*Tradeoff*: RFF introduces approximation error. With $D_{\text{rff}} = 500$ features, the
 approximation is excellent for LEPS (3 atoms). Larger systems may need more
-features, but the O(D_rff^3) cost is always independent of N and D.
+features, but the $\mathcal{O}(D_{\text{rff}}^3)$ cost is always independent of $N$ and $D$.
 
 #+begin_export rst
 .. figure:: /_static/figures/leps_rff_quality.pdf
@@ -132,7 +132,7 @@ PES has features (a lower minimum, a pass through a barrier) just outside the
 data region.
 
 *Solution*: Lower Confidence Bound penalizes low-variance regions:
-=E_lcb = E_gp + kappa * sigma=. Points with high variance become more
+$E_{\text{lcb}} = E_{\text{gp}} + \kappa \, \sigma$. Points with high variance become more
 attractive, encouraging the optimizer to sample uncertain regions before
 committing to a direction.
 

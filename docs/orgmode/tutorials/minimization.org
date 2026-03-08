@@ -58,9 +58,9 @@ near the proposed next step that may not be in the training subset.
 Minimize the GP surrogate surface using L-BFGS within the trust region. The
 objective includes a soft penalty for leaving the trust region:
 
-#+begin_example
-objective(x) = GP_energy(x) + penalty_coeff * max(0, dist(x) - trust_radius)^2
-#+end_example
+\[
+f(\mathbf{x}) = E_{\mathrm{GP}}(\mathbf{x}) + \lambda \, \bigl[\max\bigl(0,\; d(\mathbf{x}) - r_{\mathrm{trust}}\bigr)\bigr]^{2}
+\]
 
 /Why L-BFGS/: it uses curvature information from gradient history, converging
 much faster than steepest descent on the smooth GP surface. /Why soft penalty

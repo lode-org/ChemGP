@@ -29,19 +29,30 @@ PET-MAD is a universal ML potential trained on the Alexandria dataset. It
 provides DFT-quality energies and forces at a fraction of the cost, making
 it useful as a production oracle for GP optimization.
 
-To start the oracle server:
+The RPC environment requires eOn (>=2.11.1) and ASE. Install and verify:
 
 #+begin_src bash
-pixi run -e rpc serve-petmad
+pixi install -e rpc          # install eOn, ASE, Rust toolchain
+pixi run -e rpc serve-petmad # start PET-MAD server on localhost:12345
 #+end_src
 
-This launches an eOn serve instance on =localhost:12345= with PET-MAD as
-the backend potential.
+The server runs in the foreground. Open a second terminal for the examples.
+Verify connectivity with the smoke test:
+
+#+begin_src bash
+cargo run --release --features rgpot --example rpc_smoke_test
+#+end_src
+
+The PET-MAD model weights are downloaded on first use (~500 MB) and cached
+by metatensor. Subsequent launches are near-instant.
+
+To change the host or port, set =RGPOT_HOST= and =RGPOT_PORT= environment
+variables before running examples.
 
 ** Running GP minimization
 
 #+begin_src bash
-cargo run --release --example petmad_minimize --features io,rgpot
+cargo run --release --features rgpot --example petmad_minimize
 #+end_src
 
 This loads a system100 geometry (pre-minimized endpoints from the nebviz
@@ -52,10 +63,10 @@ Key configuration for molecular systems:
 
 #+begin_src rust
 let mut cfg = MinimizationConfig::default();
-cfg.conv_tol = 0.05;           // eV/A force convergence
+cfg.conv_tol = 0.01;           // eV/A force convergence
 cfg.trust_metric = TrustMetric::Emd;  // EMD for molecules
 cfg.atom_types = atomic_numbers.clone();
-cfg.fps_history = 15;
+cfg.fps_history = 20;
 cfg.const_sigma2 = 1.0;        // constant kernel for molecules
 #+end_src
 
@@ -65,8 +76,8 @@ cfg.const_sigma2 = 1.0;        // constant kernel for molecules
    :align: center
 
    Convergence on system100 (C\ :sub:`2`\ H\ :sub:`4`\ NO, 9 atoms).
-   GP minimization reaches the 0.05 eV/A threshold in ~15 oracle calls;
-   classical L-BFGS requires ~200 on the same PET-MAD surface.
+   GP minimization converges in 14 oracle calls vs 32 for classical L-BFGS
+   at a 0.01 eV/A per-atom force threshold.
 #+end_export
 
 ** Differences from 2D examples

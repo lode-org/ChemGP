@@ -20,16 +20,15 @@ the GP and skip the oracle call.
 
 The oracle-calling threshold adapts as the search progresses:
 
-#+begin_example
-T_gp = max(min(F_true) / divisor, T_dimer / 10)
-#+end_example
+\[
+T_{\mathrm{GP}} = \max\!\left(\frac{\min_{k} \lVert \mathbf{F}^{\mathrm{true}}_{k} \rVert}{d},\; \frac{T_{\mathrm{dimer}}}{10}\right)
+\]
 
-where:
-- =min(F_true)= is the smallest true force observed so far
-- =divisor= controls how aggressive the GP trust is (default 5.0)
-- =T_dimer= is the dimer convergence tolerance
-- =T_dimer / 10= is the floor (never trust the GP with tolerance tighter than
-  10% of the convergence criterion)
+where $\min_{k} \lVert \mathbf{F}^{\mathrm{true}}_{k} \rVert$ is the smallest
+true force observed so far, $d$ is the divisor controlling how aggressive the GP
+trust is (default 5.0), $T_{\mathrm{dimer}}$ is the dimer convergence tolerance,
+and the floor $T_{\mathrm{dimer}} / 10$ ensures the GP is never trusted with
+tolerance tighter than 10% of the convergence criterion.
 
 /Why this formula works/: early in the search, forces are large (far from the
 saddle), so =min(F_true) / divisor= is large, and the oracle is called
