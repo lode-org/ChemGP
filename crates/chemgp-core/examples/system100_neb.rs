@@ -290,7 +290,7 @@ fn main() {
         cfg.max_move = 0.05;
         cfg.gp_train_iter = 50;
         cfg.max_gp_points = 30;
-        cfg.rff_features = 500;         // moderate RFF for 27D
+        cfg.rff_features = 1000;        // 27D needs large basis; KNN keeps data local
         cfg.ci_force_tol = -1.0;        // use conv_tol
         cfg.inner_ci_threshold = 0.5;
         cfg.gp_tol_divisor = 3;
