@@ -700,10 +700,58 @@ pub fn gp_neb_oie(
         max_history: cfg.hod_max_history,
     };
 
+    // Exploration mode: when the same image is selected repeatedly with low
+    // local uncertainty, switch to Thompson sampling for a bounded burst
+    // (max 3 iters), then return to normal acquisition for a cooldown (2 iters).
+    // This prevents the band from stagnating while keeping most iterations
+    // focused on productive CI convergence.
+    let mut recent_evals: Vec<usize> = Vec::new();
+    let mut explore_remaining: usize = 0;   // countdown of exploration iters
+    let mut cooldown_remaining: usize = 0;  // countdown before next exploration
+
     for outer_iter in 0..cfg.max_outer_iter {
         // ---- STEP 1: Select image to evaluate ----
         let i_eval;
         let mut i_extra: Option<usize> = None;
+
+        // Check exploration state
+        let use_exploration = if explore_remaining > 0 {
+            explore_remaining -= 1;
+            if explore_remaining == 0 {
+                cooldown_remaining = 2;  // force normal acquisition for 2 iters
+            }
+            true
+        } else if cooldown_remaining > 0 {
+            cooldown_remaining -= 1;
+            false
+        } else if recent_evals.len() >= 2 {
+            // Detect stagnation: same image 2+ times consecutively with low unc
+            let last = *recent_evals.last().unwrap_or(&0);
+            let consecutive = recent_evals.iter().rev().take_while(|&&i| i == last).count();
+            if consecutive >= 2 {
+                let (_, var) = cached_model.predict_with_variance(&images[last]);
+                let sigma_g = var[1..].iter().map(|v| v.max(0.0).sqrt()).fold(0.0f64, f64::max);
+                if sigma_g < 0.1 {
+                    explore_remaining = 2;  // 3 total exploration iters (this + 2 more)
+                    true
+                } else {
+                    false
+                }
+            } else {
+                false
+            }
+        } else {
+            false
+        };
+
+        let effective_acq = if use_exploration {
+            if cfg.verbose {
+                eprintln!("  Exploration: Thompson sampling ({} remaining)", explore_remaining);
+            }
+            AcquisitionStrategy::ThompsonSampling
+        } else {
+            cfg.acquisition.clone()
+        };
 
         if eval_next_early > 0 {
             // Priority 1: early-stop image (too far from training data)
@@ -718,19 +766,25 @@ pub fn gp_neb_oie(
             // Also select an acquisition image so we always evaluate
             // CI + one other, preventing CI drift from stale neighbors.
             let i_acq = select_image(
-                &cfg.acquisition, &images, &energies, &uneval,
+                &effective_acq, &images, &energies, &uneval,
                 &cached_model, &cached_forces, cfg, d, &mut rng,
             );
             if i_acq != i_eval {
                 i_extra = Some(i_acq);
             }
         } else {
-            // Priority 3: acquisition strategy
+            // Priority 3: acquisition strategy (or exploration override)
             i_eval = select_image(
-                &cfg.acquisition, &images, &energies, &uneval,
+                &effective_acq, &images, &energies, &uneval,
                 &cached_model, &cached_forces, cfg, d, &mut rng,
             );
         }
+
+        // Track this selection for stagnation detection (keep last 5)
+        if recent_evals.len() >= 5 {
+            recent_evals.remove(0);
+        }
+        recent_evals.push(i_eval);
 
         // ---- STEP 2: Build eval set ----
         // Three modes controlled by unc_convergence and evals_per_iter:
@@ -909,21 +963,20 @@ pub fn gp_neb_oie(
         }
 
         // Build prediction model:
-        // - rff_features > 0: RFF approximation on full training data
-        // - max_pred_points > 0: exact GP on KNN per-bead subset
-        // - Otherwise: exact GP on full training data (Cholesky cost
-        //   acceptable for molecular NEB, ~O(n*28)^3 with n~100)
-        let e_ref_full = td.energies[0];
-        let pred_model = if cfg.rff_features > 0 {
-            build_pred_model(&gp_sub.kernel, &td, cfg.rff_features, 42, cfg.const_sigma2)
-        } else if cfg.max_pred_points > 0 && td.npoints() > cfg.max_pred_points {
-            let td_pred = crate::neb::bead_local_subset(
+        // - max_pred_points > 0: KNN per-bead subset (reduces data fed to RFF or exact GP)
+        // - rff_features > 0: RFF approximation on the (possibly KNN-reduced) data
+        // - Otherwise: exact GP (Cholesky cost acceptable for small molecular NEB)
+        let td_pred = if cfg.max_pred_points > 0 && td.npoints() > cfg.max_pred_points {
+            crate::neb::bead_local_subset(
                 &td, cfg.max_pred_points, &images, cfg.trust_metric, &cfg.atom_types,
-            );
-            build_pred_model(&gp_sub.kernel, &td_pred, 0, 42, cfg.const_sigma2)
+            )
         } else {
-            build_pred_model(&gp_sub.kernel, &td, 0, 42, cfg.const_sigma2)
+            td.clone()
         };
+        let e_ref_full = td_pred.energies[0];
+        let pred_model = build_pred_model(
+            &gp_sub.kernel, &td_pred, cfg.rff_features, 42, cfg.const_sigma2,
+        );
 
         // Predict at unevaluated images
         for i in 1..n - 1 {
