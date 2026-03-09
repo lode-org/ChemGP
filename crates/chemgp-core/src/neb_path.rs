@@ -189,7 +189,7 @@ pub fn max_atom_force(force: &[f64], n_atoms: usize, n_coords: usize) -> f64 {
 /// Acquisition strategy for OIE image selection.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub enum AcquisitionStrategy {
-    /// Max energy variance among unevaluated images (MATLAB baseline).
+    /// Max energy variance among unevaluated images.
     MaxVariance,
     /// Max GP-predicted NEB force among unevaluated images.
     MaxForce,
@@ -256,21 +256,21 @@ pub struct NEBConfig {
     /// Most recent points always included in FPS.
     pub fps_latest_points: usize,
     /// Use Quick-min Velocity Verlet for inner GP relaxation instead of L-BFGS.
-    /// Matches MATLAB GP_NEB_OIE baseline; naturally conservative steps.
+    /// Naturally conservative steps for OIE inner relaxation.
     pub use_quickmin: bool,
     /// QM-VV time step (dt).
     pub qm_dt: f64,
     /// Two-phase acquisition: when max GP energy uncertainty across
     /// unevaluated images exceeds this, select highest-uncertainty image
     /// (pure exploration). Below this threshold, use configured strategy.
-    /// CatLearn default: 0.05. Set 0 to disable (always use strategy).
+    /// Default: 0.05. Set 0 to disable (always use strategy).
     pub unc_convergence: f64,
     /// Uncertainty gate for convergence: require max GP uncertainty < this
     /// in addition to force convergence. 0 disables the check.
     pub unc_conv_tol: f64,
     /// Uncertainty gate for inner relaxation revert: if max GP uncertainty
     /// at relaxed positions exceeds this, revert to pre-relaxation path.
-    /// Mirrors CatLearn max_unc_restart. 0 disables. Typical: 0.05 eV.
+    /// Revert relaxed path when max uncertainty exceeds this. 0 disables.
     pub unc_revert_tol: f64,
     /// Images evaluated per outer iteration: 1 (classic OIE) or 3 (triplet).
     /// Triplet mode evaluates {i-1, i, i+1} so the Henkelman-Jonsson improved
