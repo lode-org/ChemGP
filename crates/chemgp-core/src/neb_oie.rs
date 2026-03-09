@@ -190,7 +190,7 @@ fn select_image(
         return fallback_max_force(cached_forces, d, n);
     }
 
-    // Two-phase gate (CatLearn AcqUUCB pattern): when GP gradient
+    // Two-phase gate: when GP gradient
     // uncertainty is high, select the most uncertain image (pure
     // exploration). Once gradient uncertainty drops below threshold,
     // switch to configured strategy.
@@ -454,7 +454,7 @@ fn oie_inner_relax(
         let pre_step_images = gp_images.clone();
 
         if cfg.use_quickmin {
-            // Quick-min Velocity Verlet (MATLAB baseline)
+            // Quick-min Velocity Verlet
             for im in 0..n_mov {
                 let excess = (unc_scales[im] - sigma_min).max(0.0);
                 let scale = 1.0 / (1.0 + excess / sigma_ref);
@@ -565,12 +565,12 @@ fn oie_inner_relax(
 
 /// GP-NEB with Outer Iteration Evaluation.
 ///
-/// Follows the Koistinen et al. (2019) MATLAB reference:
+/// Follows Koistinen et al. (2019):
 ///   - Image selection by max energy variance among unevaluated images
 ///   - Path reset to initial/last-converged at start of each relaxation
 ///   - Exact GP with cached Cholesky (CachedGpModel)
 ///   - Displacement-based early stopping (disp_max * path_scale)
-///   - L-BFGS inner optimizer (replaces MATLAB Quick-min VV)
+///   - L-BFGS inner optimizer
 ///
 /// When `lcb_kappa > 0`, uses LCB selection (|F| + kappa * sigma_perp)
 /// instead of pure variance. When `rff_features > 0`, uses RFF approximation.
@@ -721,8 +721,10 @@ pub fn gp_neb_oie(
             .max_by(|&a, &b| energies[a].partial_cmp(&energies[b]).unwrap_or(std::cmp::Ordering::Equal))
             .unwrap_or(n / 2);
 
-        // Check if CI force is trending upward (2 consecutive increases)
-        let ci_worsening = if ci_force_history.len() >= 3 {
+        // CI-force-driven adaptive acquisition (triplet mode only).
+        // In triplet mode, track CI force trend to switch between
+        // CI-focused and Thompson exploration strategies.
+        let ci_worsening = if cfg.evals_per_iter >= 3 && ci_force_history.len() >= 3 {
             let h = &ci_force_history;
             let n_h = h.len();
             h[n_h - 1] > h[n_h - 2] && h[n_h - 2] > h[n_h - 3]
@@ -734,13 +736,15 @@ pub fn gp_neb_oie(
             if cfg.verbose {
                 eprintln!("  CI focus: triplet on CI image {} (force rising)", i_ci);
             }
-            cfg.acquisition.clone()  // i_eval overridden to i_ci anyway
-        } else {
-            // CI progressing or early: explore the band with Thompson sampling
-            if cfg.verbose && outer_iter > 3 {
+            cfg.acquisition.clone()
+        } else if cfg.evals_per_iter >= 3 && outer_iter > 3 {
+            // Triplet mode (molecular): explore with Thompson sampling
+            if cfg.verbose {
                 eprintln!("  Exploration: Thompson sampling");
             }
             AcquisitionStrategy::ThompsonSampling
+        } else {
+            cfg.acquisition.clone()
         };
 
         if eval_next_early > 0 {
@@ -748,9 +752,9 @@ pub fn gp_neb_oie(
             i_eval = eval_next_early;
             eval_next_early = 0;
         } else if ci_worsening {
-            // Priority 2: CI force rising -> force triplet onto CI
+            // Priority 2: CI force rising -> force triplet onto CI (triplet mode)
             i_eval = i_ci;
-            eval_next_ci = false;  // consumed
+            eval_next_ci = false;
         } else if eval_next_ci {
             // Priority 3: climbing image (highest energy)
             i_eval = i_ci;
@@ -1029,7 +1033,7 @@ pub fn gp_neb_oie(
             );
         }
 
-        // ---- STEP 4: Decide whether to relax (MATLAB lines 282-298) ----
+        // ---- STEP 4: Decide whether to relax ----
         let i_ci = (1..n - 1)
             .max_by(|&a, &b| energies[a].partial_cmp(&energies[b]).unwrap_or(std::cmp::Ordering::Equal))
             .unwrap_or(1);  // Must be intermediate image (not endpoint)
