@@ -219,7 +219,7 @@ cargo run --release --features io,rgpot --example system100_neb -- --method oie
 
 | PDF | Source | Plot type |
 |-----|--------|-----------|
-| `system100_neb_landscape.pdf` | `system100_neb_oie.dat` + `system100_neb_path_oie.con` | landscape |
+| `system100_neb_landscape.pdf` | `system100_neb_oie_enh.dat` + `system100_neb_path_oie_enh.con` | landscape |
 
 ## How to add a new figure
 
