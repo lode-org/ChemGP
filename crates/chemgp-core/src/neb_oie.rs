@@ -700,71 +700,61 @@ pub fn gp_neb_oie(
         max_history: cfg.hod_max_history,
     };
 
-    // Exploration mode: when the same image is selected repeatedly with low
-    // local uncertainty, switch to Thompson sampling for a bounded burst
-    // (max 3 iters), then return to normal acquisition for a cooldown (2 iters).
-    // This prevents the band from stagnating while keeping most iterations
-    // focused on productive CI convergence.
-    let mut recent_evals: Vec<usize> = Vec::new();
-    let mut explore_remaining: usize = 0;   // countdown of exploration iters
-    let mut cooldown_remaining: usize = 0;  // countdown before next exploration
+    // Two-mode adaptive acquisition driven by CI force trend:
+    //
+    // 1. CI FOCUS: When CI|F| is rising (2 consecutive increases), the GP
+    //    surface at the transition state is deteriorating. Force the triplet
+    //    directly onto the CI image {ci-1, ci, ci+1} to re-anchor it.
+    //
+    // 2. EXPLORATION: When CI|F| is flat or decreasing, the transition state
+    //    is progressing. Use Thompson sampling to explore the rest of the band,
+    //    feeding the GP with diverse data to improve global surface quality.
+    let mut ci_force_history: Vec<f64> = Vec::new();
 
     for outer_iter in 0..cfg.max_outer_iter {
         // ---- STEP 1: Select image to evaluate ----
         let i_eval;
         let mut i_extra: Option<usize> = None;
 
-        // Check exploration state
-        let use_exploration = if explore_remaining > 0 {
-            explore_remaining -= 1;
-            if explore_remaining == 0 {
-                cooldown_remaining = 2;  // force normal acquisition for 2 iters
-            }
-            true
-        } else if cooldown_remaining > 0 {
-            cooldown_remaining -= 1;
-            false
-        } else if recent_evals.len() >= 2 {
-            // Detect stagnation: same image 2+ times consecutively with low unc
-            let last = *recent_evals.last().unwrap_or(&0);
-            let consecutive = recent_evals.iter().rev().take_while(|&&i| i == last).count();
-            if consecutive >= 2 {
-                let (_, var) = cached_model.predict_with_variance(&images[last]);
-                let sigma_g = var[1..].iter().map(|v| v.max(0.0).sqrt()).fold(0.0f64, f64::max);
-                if sigma_g < 0.1 {
-                    explore_remaining = 2;  // 3 total exploration iters (this + 2 more)
-                    true
-                } else {
-                    false
-                }
-            } else {
-                false
-            }
+        // Find current CI image (highest energy intermediate)
+        let i_ci = (1..n - 1)
+            .max_by(|&a, &b| energies[a].partial_cmp(&energies[b]).unwrap_or(std::cmp::Ordering::Equal))
+            .unwrap_or(n / 2);
+
+        // Check if CI force is trending upward (2 consecutive increases)
+        let ci_worsening = if ci_force_history.len() >= 3 {
+            let h = &ci_force_history;
+            let n_h = h.len();
+            h[n_h - 1] > h[n_h - 2] && h[n_h - 2] > h[n_h - 3]
         } else {
             false
         };
 
-        let effective_acq = if use_exploration {
+        let effective_acq = if ci_worsening {
             if cfg.verbose {
-                eprintln!("  Exploration: Thompson sampling ({} remaining)", explore_remaining);
+                eprintln!("  CI focus: triplet on CI image {} (force rising)", i_ci);
+            }
+            cfg.acquisition.clone()  // i_eval overridden to i_ci anyway
+        } else {
+            // CI progressing or early: explore the band with Thompson sampling
+            if cfg.verbose && outer_iter > 3 {
+                eprintln!("  Exploration: Thompson sampling");
             }
             AcquisitionStrategy::ThompsonSampling
-        } else {
-            cfg.acquisition.clone()
         };
 
         if eval_next_early > 0 {
             // Priority 1: early-stop image (too far from training data)
             i_eval = eval_next_early;
             eval_next_early = 0;
+        } else if ci_worsening {
+            // Priority 2: CI force rising -> force triplet onto CI
+            i_eval = i_ci;
+            eval_next_ci = false;  // consumed
         } else if eval_next_ci {
-            // Priority 2: climbing image (highest energy)
-            i_eval = (1..n - 1)
-                .max_by(|&a, &b| energies[a].partial_cmp(&energies[b]).unwrap_or(std::cmp::Ordering::Equal))
-                .unwrap_or(1);  // Must be intermediate image (not endpoint)
+            // Priority 3: climbing image (highest energy)
+            i_eval = i_ci;
             eval_next_ci = false;
-            // Also select an acquisition image so we always evaluate
-            // CI + one other, preventing CI drift from stale neighbors.
             let i_acq = select_image(
                 &effective_acq, &images, &energies, &uneval,
                 &cached_model, &cached_forces, cfg, d, &mut rng,
@@ -773,18 +763,12 @@ pub fn gp_neb_oie(
                 i_extra = Some(i_acq);
             }
         } else {
-            // Priority 3: acquisition strategy (or exploration override)
+            // Priority 4: Thompson exploration or normal acquisition
             i_eval = select_image(
                 &effective_acq, &images, &energies, &uneval,
                 &cached_model, &cached_forces, cfg, d, &mut rng,
             );
         }
-
-        // Track this selection for stagnation detection (keep last 5)
-        if recent_evals.len() >= 5 {
-            recent_evals.remove(0);
-        }
-        recent_evals.push(i_eval);
 
         // ---- STEP 2: Build eval set ----
         // Three modes controlled by unc_convergence and evals_per_iter:
@@ -1007,6 +991,7 @@ pub fn gp_neb_oie(
         history.ci_force.push(cached_forces.ci_f);
         history.oracle_calls.push(oracle_calls);
         history.max_energy.push(energies.iter().cloned().fold(f64::NEG_INFINITY, f64::max));
+        ci_force_history.push(cached_forces.ci_f);
 
         // eOn-style GP-based convergence: only the CI force matters.
         // Accept convergence even if some non-CI images have larger forces
