@@ -28,7 +28,7 @@ enum Method {
     Neb,
     /// GP-NEB All Images Evaluated
     Aie,
-    /// GP-NEB OIE baseline (MATLAB: variance selection, exact GP, path reset)
+    /// GP-NEB OIE baseline (variance selection, exact GP, path reset)
     Oie,
     /// GP-NEB OIE enhanced (LCB, RFF, FPS, EMD trust)
     OieEnhanced,
@@ -240,9 +240,8 @@ fn main() {
         None
     };
 
-    // --- GP-NEB OIE (MATLAB baseline) ---
+    // --- GP-NEB OIE (baseline) ---
     // Koistinen et al. (2019): energy variance selection, exact GP, path reset.
-    // No RFF, no FPS, no LCB, no EMD trust.
     let oie_result: Option<NEBResult> = if run_oie {
         eprintln!("\n=== GP-NEB OIE (baseline) ===");
         let max_outer = neb_calls.min(400);
@@ -250,7 +249,7 @@ fn main() {
 
         let mut cfg = base_neb_config(args.images);
         cfg.max_outer_iter = max_outer;
-        cfg.max_iter = 1000;           // MATLAB uses 10000; 1000 is enough for GP surface
+        cfg.max_iter = 1000;
         cfg.max_move = 0.05;
         cfg.gp_train_iter = 150;
         cfg.max_gp_points = 0;        // no FPS, use all data
@@ -258,12 +257,12 @@ fn main() {
         cfg.ci_force_tol = -1.0;      // use conv_tol
         cfg.inner_ci_threshold = 0.5;
         cfg.gp_tol_divisor = 10;      // adaptive inner tolerance
-        cfg.max_step_frac = 0.5;      // MATLAB disp_max = 0.5
+        cfg.max_step_frac = 0.5;
         cfg.bond_stretch_limit = 2.0 / 3.0;
         cfg.lcb_kappa = 0.0;          // unused for MaxVariance
         cfg.acquisition = AcquisitionStrategy::MaxVariance;
         cfg.trust_radius = 0.0;       // no EMD trust
-        cfg.use_quickmin = true;      // QM-VV inner optimizer (MATLAB baseline)
+        cfg.use_quickmin = true;
         cfg.qm_dt = 0.1;
         cfg.atom_types = atomic_numbers.clone();
         cfg.const_sigma2 = 1.0;
@@ -282,29 +281,29 @@ fn main() {
     let oie_enh_result: Option<NEBResult> = if run_oie_enh {
         eprintln!("\n=== GP-NEB OIE (enhanced) ===");
         let max_outer = neb_calls.min(400);
-        eprintln!("  Budget: {} outer iters (3 calls/iter triplet, cap from {} NEB calls)", max_outer, neb_calls);
+        eprintln!("  Budget: {} outer iters, cap from {} NEB calls", max_outer, neb_calls);
 
         let mut cfg = base_neb_config(args.images);
         cfg.max_outer_iter = max_outer;
-        cfg.max_iter = 10;
+        cfg.max_iter = 100;             // match AIE: enough inner iters for GP relaxation
         cfg.max_move = 0.05;
-        cfg.gp_train_iter = 50;
-        cfg.max_gp_points = 30;
-        cfg.rff_features = 1000;        // 27D needs large basis; KNN keeps data local
-        cfg.ci_force_tol = -1.0;        // use conv_tol
+        cfg.gp_train_iter = 150;        // match AIE: thorough hyperparameter training
+        cfg.max_gp_points = 20;         // match AIE: FPS subset for exact GP
+        cfg.rff_features = 0;           // exact GP (RFF too approximate for 27D TS)
+        cfg.ci_force_tol = -1.0;
         cfg.inner_ci_threshold = 0.5;
-        cfg.gp_tol_divisor = 3;
+        cfg.gp_tol_divisor = 5;
         cfg.max_step_frac = 0.1;
         cfg.bond_stretch_limit = 2.0 / 3.0;
         cfg.lcb_kappa = 0.0;
-        cfg.fps_history = 30;           // FPS subset for hyper training
+        cfg.fps_history = 30;
         cfg.fps_latest_points = 3;
-        cfg.trust_radius = 0.05;
+        cfg.trust_radius = 0.1;         // match AIE
         cfg.trust_metric = chemgp_core::trust::TrustMetric::Emd;
         cfg.atom_types = atomic_numbers.clone();
-        cfg.unc_convergence = 0.0;      // disable adaptive batch
-        cfg.evals_per_iter = 3;         // triplet {i-1, i, i+1} around acquisition
-        cfg.max_pred_points = 30;       // KNN subset feeds into RFF fitting
+        cfg.unc_convergence = 0.0;
+        cfg.evals_per_iter = 3;         // triplet {i-1, i, i+1}
+        cfg.max_pred_points = 0;        // no KNN: use full FPS subset for prediction
         cfg.unc_revert_tol = 0.0;
         cfg.hod_max_history = 80;
         cfg.const_sigma2 = 1.0;
