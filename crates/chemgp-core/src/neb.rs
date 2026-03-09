@@ -440,20 +440,20 @@ pub fn gp_neb_aie(
         prev_kern = Some(gp_sub.kernel.clone());
 
         // Build prediction model:
-        // - rff_features > 0: RFF approximation on full training data
-        // - max_pred_points > 0: exact GP on KNN per-bead subset
-        // - Otherwise: exact GP on full training data
-        let e_ref_full = td.energies[0];
-        let pred_model = if cfg.rff_features > 0 {
-            build_pred_model(&gp_sub.kernel, &td, cfg.rff_features, 42, cfg.const_sigma2)
-        } else if cfg.max_pred_points > 0 && td.npoints() > cfg.max_pred_points {
-            let td_pred = bead_local_subset(
+        // - max_pred_points > 0: KNN per-bead subset (reduces data fed to RFF or exact GP)
+        // - rff_features > 0: RFF approximation on the (possibly KNN-reduced) data
+        // - Otherwise: exact GP (Cholesky cost acceptable for small molecular NEB)
+        let td_pred = if cfg.max_pred_points > 0 && td.npoints() > cfg.max_pred_points {
+            bead_local_subset(
                 &td, cfg.max_pred_points, &images, cfg.trust_metric, &cfg.atom_types,
-            );
-            build_pred_model(&gp_sub.kernel, &td_pred, 0, 42, cfg.const_sigma2)
+            )
         } else {
-            build_pred_model(&gp_sub.kernel, &td, 0, 42, cfg.const_sigma2)
+            td.clone()
         };
+        let e_ref_full = td_pred.energies[0];
+        let pred_model = build_pred_model(
+            &gp_sub.kernel, &td_pred, cfg.rff_features, 42, cfg.const_sigma2,
+        );
 
         // Inner loop: relax on GP/RFF surface with gradual tightening.
         // Far from convergence (ratio>>1): divisor=2 to avoid overshooting GP.
