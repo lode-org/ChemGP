@@ -1,5 +1,5 @@
-[![CI](https://github.com/HaoZeke/ChemGP/actions/workflows/CI.yml/badge.svg?branch=main)](https://github.com/HaoZeke/ChemGP/actions/workflows/CI.yml?query=branch%3Amain)
-[![Documentation](https://github.com/HaoZeke/ChemGP/actions/workflows/Documentation.yml/badge.svg)](https://chemgp.rgoswami.me)
+[![CI](https://github.com/lode-org/ChemGP/actions/workflows/CI.yml/badge.svg?branch=main)](https://github.com/lode-org/ChemGP/actions/workflows/CI.yml?query=branch%3Amain)
+[![Documentation](https://github.com/lode-org/ChemGP/actions/workflows/Documentation.yml/badge.svg)](https://chemgp.rgoswami.me)
 
 Gaussian Process accelerated optimization for computational chemistry.
 ChemGP provides GP surrogate models for energy surface exploration,
@@ -55,14 +55,6 @@ cargo run --release --example leps_neb
 ```
 
 Each writes a `.jsonl` file with per-step convergence data.
-
-# Python Bindings
-
-```shell
-pip install maturin
-cd crates/chemgp-py
-maturin develop --release
-```
 
 # Documentation
 

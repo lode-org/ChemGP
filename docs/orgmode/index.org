@@ -19,8 +19,7 @@ electronic structure evaluations (oracle calls) needed for geometry
 optimization, saddle point search, and minimum energy path finding.
 
 The core library (~chemgp-core~) is written in Rust for performance and
-reproducibility. Python bindings (~chemgp~) expose the full API for
-scripting and integration with existing workflows.
+reproducibility.
 
 ** Why GP acceleration?
 

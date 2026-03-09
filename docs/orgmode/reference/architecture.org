@@ -45,7 +45,6 @@ ChemGP/
         leps_rff_quality.rs # RFF vs exact GP on LEPS
         leps_neb.rs       # NEB vs AIE vs OIE
         leps_dimer.rs     # GP-Dimer vs OTGPD
-    chemgp-py/            # pyo3 bindings
   docs/
     export.el             # ox-rst batch export
     orgmode/              # org source files (single source of truth)

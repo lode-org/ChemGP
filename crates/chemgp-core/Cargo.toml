@@ -4,6 +4,13 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 description = "GP-accelerated molecular optimization: kernels, SCG, minimization, dimer, NEB"
+repository = "https://github.com/lode-org/ChemGP"
+documentation = "https://chemgp.rgoswami.me"
+homepage = "https://chemgp.rgoswami.me"
+keywords = ["gaussian-process", "optimization", "chemistry", "neb", "dimer"]
+categories = ["science", "mathematics"]
+authors = ["Rohit Goswami <rgoswami@ieee.org>"]
+readme = "../../README.md"
 
 [features]
 default = []

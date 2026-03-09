@@ -15,19 +15,3 @@ cargo doc --open -p chemgp-core
 The Rust API is the canonical reference. All public types, functions, and
 modules are documented with doc comments in the source.
 
-** Python API
-
-The Python bindings are built with [[https://pyo3.rs/][pyo3]] and exposed via the
-=chemgp= package. As the bindings are expanded, auto-generated documentation
-will be added here.
-
-Install and use:
-
-#+begin_src bash
-pip install chemgp
-#+end_src
-
-#+begin_src python
-import chemgp
-# Python API examples will be added here
-#+end_src
