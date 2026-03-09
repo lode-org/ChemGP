@@ -395,15 +395,24 @@ fn main() {
         write_convergence(&mut f, &format!("oie_{}", name), r);
     }
 
-    // Path energies from best GP result
-    let best_gp = oie_enh_result.as_ref()
-        .or(compare_results.first().map(|(_, r)| r))
-        .or(oie_result.as_ref())
-        .or(aie_result.as_ref());
-    if let Some(ref r) = best_gp {
-        for (img, e) in r.path.energies.iter().enumerate() {
-            writeln!(f, r#"{{"type":"path_energy","image":{},"energy":{}}}"#, img, e).expect("Failed to write to output file");
+    // Path energies for each method
+    let write_path_energies = |f: &mut std::fs::File, method: &str, result: &NEBResult| {
+        for (img, e) in result.path.energies.iter().enumerate() {
+            writeln!(f, r#"{{"type":"path_energy","method":"{}","image":{},"energy":{}}}"#,
+                method, img, e).expect("Failed to write to output file");
         }
+    };
+    if let Some(ref r) = neb_result {
+        write_path_energies(&mut f, "neb", r);
+    }
+    if let Some(ref r) = aie_result {
+        write_path_energies(&mut f, "gp_neb_aie", r);
+    }
+    if let Some(ref r) = oie_result {
+        write_path_energies(&mut f, "gp_neb_oie", r);
+    }
+    if let Some(ref r) = oie_enh_result {
+        write_path_energies(&mut f, "gp_neb_oie", r);
     }
 
     // Write .con + .dat for rgpycrumbs
@@ -454,7 +463,8 @@ fn main() {
 
     // Summary
     let oie_calls = oie_enh_result.as_ref().or(oie_result.as_ref()).map_or(0, |r| r.oracle_calls);
-    writeln!(f, r#"{{"summary":true,"neb_calls":{},"aie_calls":{},"oie_calls":{}}}"#,
+    writeln!(f, r#"{{"summary":true,"conv_tol":{},"neb_calls":{},"aie_calls":{},"oie_calls":{}}}"#,
+        cfg.conv_tol,
         neb_result.as_ref().map_or(0, |r| r.oracle_calls),
         aie_result.as_ref().map_or(0, |r| r.oracle_calls),
         oie_calls,
