@@ -389,7 +389,7 @@ fn main() {
         write_convergence(&mut f, "gp_neb_oie", r);
     }
     if let Some(ref r) = oie_enh_result {
-        write_convergence(&mut f, "gp_neb_oie_enh", r);
+        write_convergence(&mut f, "gp_neb_oie", r);
     }
     for (name, ref r) in &compare_results {
         write_convergence(&mut f, &format!("oie_{}", name), r);
@@ -446,18 +446,18 @@ fn main() {
         eprintln!("  wrote {} (image {})", sp_path, sp_idx);
     };
 
-    for (label, res) in [("neb", &neb_result), ("aie", &aie_result), ("oie", &oie_result), ("oie_enh", &oie_enh_result)] {
+    for (label, res) in [("neb", &neb_result), ("aie", &aie_result), ("oie", &oie_result), ("oie", &oie_enh_result)] {
         if let Some(ref r) = res {
             write_path(label, r);
         }
     }
 
     // Summary
-    writeln!(f, r#"{{"summary":true,"neb_calls":{},"aie_calls":{},"oie_calls":{},"oie_enh_calls":{}}}"#,
+    let oie_calls = oie_enh_result.as_ref().or(oie_result.as_ref()).map_or(0, |r| r.oracle_calls);
+    writeln!(f, r#"{{"summary":true,"neb_calls":{},"aie_calls":{},"oie_calls":{}}}"#,
         neb_result.as_ref().map_or(0, |r| r.oracle_calls),
         aie_result.as_ref().map_or(0, |r| r.oracle_calls),
-        oie_result.as_ref().map_or(0, |r| r.oracle_calls),
-        oie_enh_result.as_ref().map_or(0, |r| r.oracle_calls),
+        oie_calls,
     ).expect("Operation failed");
     for (name, ref r) in &compare_results {
         writeln!(f, r#"{{"summary_acq":"{}","calls":{},"converged":{},"final_max_f":{},"final_ci_f":{}}}"#,
@@ -478,7 +478,7 @@ fn main() {
         eprintln!("  OIE:      {} calls, converged = {}", r.oracle_calls, r.converged);
     }
     if let Some(ref r) = oie_enh_result {
-        eprintln!("  OIE-enh:  {} calls, converged = {}", r.oracle_calls, r.converged);
+        eprintln!("  OIE:      {} calls, converged = {}", r.oracle_calls, r.converged);
     }
     for (name, ref r) in &compare_results {
         eprintln!("  OIE-{}:  {} calls, converged = {}, max|F| = {:.5}",

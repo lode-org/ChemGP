@@ -218,9 +218,9 @@ rule pdfs_rpc:
 rule run_system100_neb:
     output:
         os.path.join(ROOT, "system100_neb_comparison.jsonl"),
-        expand(os.path.join(ROOT, "system100_neb_{m}.dat"), m=["neb", "aie", "oie_enh"]),
-        expand(os.path.join(ROOT, "system100_neb_path_{m}.con"), m=["neb", "aie", "oie_enh"]),
-        expand(os.path.join(ROOT, "system100_neb_sp_{m}.con"), m=["neb", "aie", "oie_enh"]),
+        expand(os.path.join(ROOT, "system100_neb_{m}.dat"), m=["neb", "aie", "oie"]),
+        expand(os.path.join(ROOT, "system100_neb_path_{m}.con"), m=["neb", "aie", "oie"]),
+        expand(os.path.join(ROOT, "system100_neb_sp_{m}.con"), m=["neb", "aie", "oie"]),
     log: os.path.join(LOGDIR, "system100_neb_comparison.jsonl.log")
     resources:
         rpc_slot=1,
@@ -245,8 +245,8 @@ rule run_system100_neb:
 
 rule system100_landscape:
     input:
-        dat=os.path.join(ROOT, "system100_neb_oie_enh.dat"),
-        con=os.path.join(ROOT, "system100_neb_path_oie_enh.con"),
+        dat=os.path.join(ROOT, "system100_neb_oie.dat"),
+        con=os.path.join(ROOT, "system100_neb_path_oie.con"),
         sp_neb=os.path.join(ROOT, "system100_neb_sp_neb.con"),
         sp_aie=os.path.join(ROOT, "system100_neb_sp_aie.con"),
         augment_dat=os.path.join(ROOT, "system100_neb_neb.dat"),
