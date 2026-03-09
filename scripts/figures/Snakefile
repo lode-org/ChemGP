@@ -10,6 +10,7 @@
 # RPC examples require: pixi run -e rpc serve-petmad (port 12345)
 
 import os
+import re
 import socket
 
 ROOT = os.path.abspath(os.path.join(workflow.basedir, "../.."))
@@ -84,6 +85,15 @@ PDF_LANDSCAPE = [
     "system100_neb_landscape.pdf",
 ]
 
+# JSONL intermediates to archive in output/
+JSONL_STANDALONE = list(STANDALONE.values()) + [
+    "mb_gp_quality.jsonl", "mb_gp_scattered.jsonl",
+]
+JSONL_RPC = [v[2] for v in RPC.values()] + [
+    "system100_neb_comparison.jsonl",
+]
+ALL_JSONL = JSONL_STANDALONE + JSONL_RPC
+
 ALL_PDFS = PDF_STANDALONE + PDF_RPC + PDF_LANDSCAPE
 ALL_STEMS = [os.path.splitext(p)[0] for p in ALL_PDFS]
 
@@ -94,15 +104,18 @@ ALL_STEMS = [os.path.splitext(p)[0] for p in ALL_PDFS]
 rule default:
     input:
         expand(os.path.join(FIGDIR, "{s}.png"), s=ALL_STEMS),
+        expand(os.path.join(OUTDIR, "{j}"), j=ALL_JSONL),
 
 rule standalone_pngs:
     input:
         expand(os.path.join(FIGDIR, "{s}.png"),
                s=[os.path.splitext(p)[0] for p in PDF_STANDALONE]),
+        expand(os.path.join(OUTDIR, "{j}"), j=JSONL_STANDALONE),
 
 rule rpc_pdfs:
     input:
         expand(os.path.join(OUTDIR, "{p}"), p=PDF_RPC),
+        expand(os.path.join(OUTDIR, "{j}"), j=JSONL_RPC),
 
 
 # ============================================================
@@ -155,6 +168,19 @@ rule run_rpc:
             "cargo run --release --features {params.feat} "
             "--example {params.ex} {params.extra} 2> {log}"
         )
+
+
+# ============================================================
+# Stage 1b: Copy JSONL to output/ for archival
+# ============================================================
+
+rule copy_jsonl:
+    input: os.path.join(ROOT, "{jsonl}")
+    output: os.path.join(OUTDIR, "{jsonl}")
+    wildcard_constraints:
+        jsonl="|".join(re.escape(j) for j in ALL_JSONL)
+    shell:
+        "cp {input} {output}"
 
 
 # ============================================================
@@ -272,6 +298,3 @@ rule pdf_to_png:
     shell:
         "mkdir -p {FIGDIR} && "
         "pdftoppm -png -r 300 -singlefile {input} {FIGDIR}/{wildcards.stem}"
-
-
-import re  # for wildcard_constraints
