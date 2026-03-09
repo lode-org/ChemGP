@@ -16,6 +16,7 @@ ROOT = os.path.abspath(os.path.join(workflow.basedir, "../.."))
 OUTDIR = os.path.join(ROOT, "scripts/figures/tutorial/output")
 FIGDIR = os.path.join(ROOT, "docs/source/_static/figures")
 TOML = os.path.join(ROOT, "scripts/figures/tutorial/figures.toml")
+LANDSCAPE_TOML = os.path.join(ROOT, "scripts/figures/tutorial/landscape.toml")
 H5SCRIPT = os.path.join(ROOT, "scripts/jsonl_to_h5.py")
 LOGDIR = os.path.join(ROOT, ".snakemake/logs")
 
@@ -251,7 +252,7 @@ rule system100_landscape:
         sp_aie=os.path.join(ROOT, "system100_neb_sp_aie.con"),
         augment_dat=os.path.join(ROOT, "system100_neb_neb.dat"),
         augment_con=os.path.join(ROOT, "system100_neb_path_neb.con"),
-        toml=TOML,
+        toml=LANDSCAPE_TOML,
     output:
         os.path.join(OUTDIR, "system100_neb_landscape.pdf"),
     resources:

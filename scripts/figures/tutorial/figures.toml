@@ -116,23 +116,7 @@ input = "system100_neb.h5"
 output = "system100_neb_profile.pdf"
 type = "profile"
 
-# --- NEB 2D landscapes (RMSD coordinates, via plt-neb) ---
-
-[[plots]]
-type = "landscape"
-source_dir = "../../.."
-dat_pattern = "system100_neb_oie.dat"
-con_pattern = "system100_neb_path_oie.con"
-output = "system100_neb_landscape.pdf"
-surface_type = "grad_imq"
-landscape_mode = "surface"
-plot_structures = "crit_points"
-augment_dat = "system100_neb_neb.dat"
-augment_con = "system100_neb_path_neb.con"
-additional_con = [["system100_neb_sp_neb.con", "Standard NEB"], ["system100_neb_sp_aie.con", "GP-NEB AIE"]]
-zoom_ratio = 0.3
-ase_rotation = "0x,0y,0z"
-height = 6.5
+# --- NEB 2D landscapes: in separate landscape.toml (needs RPC-produced .con files) ---
 
 # --- Combined RFF (special: two inputs) ---
 # This requires custom handling; the batch runner will pass
