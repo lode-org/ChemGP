@@ -86,7 +86,7 @@ fn base_neb_config(images: usize) -> NEBConfig {
     let mut cfg = NEBConfig::default();
     cfg.images = images;
     cfg.max_iter = 1000;
-    cfg.conv_tol = 0.0514221;
+    cfg.conv_tol = 0.5;              // molecular CI force threshold
     cfg.climbing_image = true;
     cfg.ci_activation_tol = 0.5;
     cfg.ci_trigger_rel = 0.8;
@@ -189,7 +189,7 @@ fn main() {
 
     let run_neb = matches!(args.method, Method::Neb | Method::All);
     let run_aie = matches!(args.method, Method::Aie | Method::All);
-    let run_oie = matches!(args.method, Method::Oie | Method::All);
+    let run_oie = matches!(args.method, Method::Oie);  // baseline only on explicit request
     let run_oie_enh = matches!(args.method, Method::OieEnhanced | Method::All);
     let run_oie_compare = matches!(args.method, Method::OieCompare);
 
@@ -286,24 +286,25 @@ fn main() {
 
         let mut cfg = base_neb_config(args.images);
         cfg.max_outer_iter = max_outer;
-        cfg.max_iter = 30;              // conservative inner GP relaxation
-        // Keep standard inner tolerance (drives inner relaxation properly)
-        // but accept tutorial-level convergence for CI force
+        cfg.max_iter = 10;
         cfg.max_move = 0.05;
-        cfg.gp_train_iter = 150;
+        cfg.gp_train_iter = 50;
         cfg.max_gp_points = 50;
-        cfg.rff_features = 500;
-        cfg.ci_force_tol = 1.0;        // tutorial level acceptance
+        cfg.rff_features = 1000;        // 27D needs large basis
+        cfg.ci_force_tol = -1.0;        // use conv_tol
         cfg.inner_ci_threshold = 0.5;
-        cfg.gp_tol_divisor = 10;
+        cfg.gp_tol_divisor = 3;
         cfg.max_step_frac = 0.1;
         cfg.bond_stretch_limit = 2.0 / 3.0;
-        cfg.lcb_kappa = 2.0;
-        cfg.fps_history = 30;
+        cfg.lcb_kappa = 0.0;           // pure force minimization on GP
+        cfg.fps_history = 50;
         cfg.fps_latest_points = 3;
-        cfg.trust_radius = 0.05;       // EMD trust (0.05 achieved CI 0.67 previously)
+        cfg.trust_radius = 0.05;
         cfg.trust_metric = chemgp_core::trust::TrustMetric::Emd;
         cfg.atom_types = atomic_numbers.clone();
+        cfg.unc_convergence = 0.05;     // batch-eval uncertain images
+        cfg.unc_revert_tol = 0.0;
+        cfg.hod_max_history = 80;
         cfg.const_sigma2 = 1.0;
         cfg.acquisition = parse_acquisition(&args.acquisition);
 
