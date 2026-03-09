@@ -278,31 +278,33 @@ fn main() {
         None
     };
 
-    // --- GP-NEB OIE (enhanced: LCB + RFF + FPS + EMD) ---
+    // --- GP-NEB OIE (enhanced: triplet + FPS + EMD) ---
     let oie_enh_result: Option<NEBResult> = if run_oie_enh {
         eprintln!("\n=== GP-NEB OIE (enhanced) ===");
         let max_outer = neb_calls.min(400);
-        eprintln!("  Budget: {} outer iters (1 call/iter, cap from {} NEB calls)", max_outer, neb_calls);
+        eprintln!("  Budget: {} outer iters (3 calls/iter triplet, cap from {} NEB calls)", max_outer, neb_calls);
 
         let mut cfg = base_neb_config(args.images);
         cfg.max_outer_iter = max_outer;
         cfg.max_iter = 10;
         cfg.max_move = 0.05;
         cfg.gp_train_iter = 50;
-        cfg.max_gp_points = 50;
-        cfg.rff_features = 1000;        // 27D needs large basis
+        cfg.max_gp_points = 30;
+        cfg.rff_features = 500;         // moderate RFF for 27D
         cfg.ci_force_tol = -1.0;        // use conv_tol
         cfg.inner_ci_threshold = 0.5;
         cfg.gp_tol_divisor = 3;
         cfg.max_step_frac = 0.1;
         cfg.bond_stretch_limit = 2.0 / 3.0;
-        cfg.lcb_kappa = 0.0;           // pure force minimization on GP
-        cfg.fps_history = 50;
+        cfg.lcb_kappa = 0.0;
+        cfg.fps_history = 30;           // FPS subset for hyper training
         cfg.fps_latest_points = 3;
         cfg.trust_radius = 0.05;
         cfg.trust_metric = chemgp_core::trust::TrustMetric::Emd;
         cfg.atom_types = atomic_numbers.clone();
-        cfg.unc_convergence = 0.05;     // batch-eval uncertain images
+        cfg.unc_convergence = 0.0;      // disable adaptive batch
+        cfg.evals_per_iter = 3;         // triplet {i-1, i, i+1} around acquisition
+        cfg.max_pred_points = 30;       // KNN subset feeds into RFF fitting
         cfg.unc_revert_tol = 0.0;
         cfg.hod_max_history = 80;
         cfg.const_sigma2 = 1.0;
