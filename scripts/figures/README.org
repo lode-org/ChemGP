@@ -211,3 +211,20 @@ of the manuscript repository and compiled via =pixi run tikz-figs=.
   year    = {2026},
 }
 #+end_src
+
+** Materials Cloud Archive
+
+#+begin_quote
+TODO: replace with actual DOI after submission
+#+end_quote
+
+#+begin_src bibtex
+@misc{goswami2026chemgp_data,
+  author    = {Goswami, Rohit},
+  title     = {Data for: Bayesian Optimization with Gaussian Processes to
+               Accelerate Stationary Point Searches},
+  year      = {2026},
+  publisher = {Materials Cloud Archive},
+  doi       = {10.24435/materialscloud:XXXX},
+}
+#+end_src

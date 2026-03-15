@@ -56,6 +56,24 @@ cargo run --release --example leps_neb
 
 Each writes a `.jsonl` file with per-step convergence data.
 
+# Figure Reproduction
+
+All manuscript figures are generated via a Snakemake pipeline in
+`scripts/figures/`. See [`scripts/figures/README.org`](scripts/figures/README.org)
+for the full workflow.
+
+A rehydration archive (`chemgp_tutorial_data.tar.xz`) contains the exact
+computational state at submission: all data, figures, the PET-MAD model, and
+Snakemake cache. Extract at repo root to restore without recomputation:
+
+```shell
+tar -xJf scripts/figures/tutorial/chemgp_tutorial_data.tar.xz
+```
+
+The archive is deposited on Materials Cloud Archive:
+<!-- TODO: replace with actual DOI after submission -->
+`doi:10.24435/materialscloud:XXXX`
+
 # Documentation
 
 ```shell
