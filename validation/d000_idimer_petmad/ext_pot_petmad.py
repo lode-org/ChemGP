@@ -1,4 +1,4 @@
-#!/home/rgoswami/.cache/uv/archive-v0/8Pu-CjOc6Ob0c0mvgKD6u/bin/python
+#!/usr/bin/env python3
 """eOn ext_pot wrapper for PET-MAD via metatomic ASE calculator."""
 import os
 import numpy as np

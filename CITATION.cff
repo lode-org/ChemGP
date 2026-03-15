@@ -1,0 +1,38 @@
+cff-version: 1.2.0
+message: "If you use this software, please cite the tutorial review."
+title: "ChemGP: Gaussian Process Accelerated Optimization for Computational Chemistry"
+type: software
+authors:
+  - given-names: Rohit
+    family-names: Goswami
+    orcid: "https://orcid.org/0000-0002-2393-8056"
+    affiliation: "EPFL"
+repository-code: "https://github.com/lode-org/ChemGP"
+url: "https://chemgp.rgoswami.me"
+license: MIT
+version: "0.1.0"
+preferred-citation:
+  type: article
+  title: "Bayesian Optimization with Gaussian Processes to Accelerate Stationary Point Searches"
+  authors:
+    - given-names: Rohit
+      family-names: Goswami
+      orcid: "https://orcid.org/0000-0002-2393-8056"
+  journal: "ACS Physical Chemistry Au"
+  year: 2026
+references:
+  - type: article
+    title: "Efficient Implementation of Gaussian Process Regression Accelerated Saddle Point Searches with Application to Molecular Reactions"
+    authors:
+      - given-names: Rohit
+        family-names: Goswami
+      - given-names: Maxim
+        family-names: Masterov
+      - given-names: Satish
+        family-names: Kamath
+      - given-names: Alejandro
+        family-names: Pena-Torres
+      - given-names: Hannes
+        family-names: Jonsson
+    journal: "Journal of Chemical Theory and Computation"
+    year: 2025
