@@ -4,7 +4,7 @@
 
 use chemgp_core::kernel::{CartesianSE, Kernel};
 use chemgp_core::potentials::muller_brown_energy_gradient;
-use chemgp_core::predict::build_pred_model_full;
+use chemgp_core::predict::{build_pred_model_full, GPNoiseParams};
 use chemgp_core::types::{GPModel, TrainingData};
 
 use std::fs::File;
@@ -64,7 +64,8 @@ fn main() {
 
             // Build prediction model (exact GP, no RFF)
             let pred = build_pred_model_full(
-                &gp.kernel, &td, 0, 42, 0.0, gp.noise_var, gp.grad_noise_var, 1e-6,
+                &gp.kernel, &td, 0, 42, 0.0,
+                &GPNoiseParams { noise_e: gp.noise_var, noise_g: gp.grad_noise_var, jitter: 1e-6 },
             );
 
             for &x in &x_pred {

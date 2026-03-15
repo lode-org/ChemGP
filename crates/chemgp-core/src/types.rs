@@ -5,6 +5,14 @@
 use crate::error::{validate, GpError, GpResult};
 use crate::kernel::Kernel;
 
+/// GP noise parameters (energy noise, gradient noise, jitter).
+#[derive(Debug, Clone, Copy)]
+pub struct GPNoiseParams {
+    pub noise_e: f64,
+    pub noise_g: f64,
+    pub jitter: f64,
+}
+
 /// Container for the growing dataset of oracle evaluations.
 ///
 /// X is stored column-major: each column is a D-dimensional configuration.
@@ -39,11 +47,7 @@ impl TrainingData {
     }
 
     pub fn npoints(&self) -> usize {
-        if self.dim == 0 {
-            0
-        } else {
-            self.data.len() / self.dim
-        }
+        self.data.len().checked_div(self.dim).unwrap_or(0)
     }
 
     /// Add a single oracle evaluation with validation.

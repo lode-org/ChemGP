@@ -56,12 +56,12 @@ impl RffModel {
 
         // u = W * phi + b
         let mut u = vec![0.0; d_rff];
-        for i in 0..d_rff {
+        for (i, u_i) in u.iter_mut().enumerate().take(d_rff) {
             let mut s = self.b[i];
-            for f in 0..d_feat {
-                s += self.w[(i, f)] * phi[f];
+            for (f, &phi_f) in phi.iter().enumerate().take(d_feat) {
+                s += self.w[(i, f)] * phi_f;
             }
-            u[i] = s;
+            *u_i = s;
         }
 
         let mut z: Vec<f64> = u.iter().map(|&v| self.c * v.cos()).collect();
@@ -96,19 +96,28 @@ impl RffModel {
     }
 }
 
+/// Configuration for building an RFF model.
+pub struct RffConfig<'a> {
+    pub kernel: &'a Kernel,
+    pub x_train: &'a [f64],
+    pub dim: usize,
+    pub n: usize,
+    pub y_train: &'a [f64],
+    pub d_rff: usize,
+    pub noise_var: f64,
+    pub grad_noise_var: f64,
+    pub seed: u64,
+    pub const_sigma2: f64,
+}
+
 /// Build an RFF model from a trained kernel and all training data.
-pub fn build_rff(
-    kernel: &Kernel,
-    x_train: &[f64],
-    dim: usize,
-    n: usize,
-    y_train: &[f64],
-    d_rff: usize,
-    noise_var: f64,
-    grad_noise_var: f64,
-    seed: u64,
-    const_sigma2: f64,
-) -> RffModel {
+pub fn build_rff(cfg: &RffConfig) -> RffModel {
+    let RffConfig {
+        kernel, x_train, dim, n, y_train,
+        d_rff, noise_var, grad_noise_var, seed, const_sigma2,
+    } = cfg;
+    let (dim, n, d_rff) = (*dim, *n, *d_rff);
+    let (noise_var, grad_noise_var, const_sigma2) = (*noise_var, *grad_noise_var, *const_sigma2);
     let inv_ls = kernel.inv_lengthscales();
     let d_feat = kernel.n_features(dim);
 
@@ -119,7 +128,7 @@ pub fn build_rff(
         Kernel::Cartesian(_) => FeatureMode::Cartesian,
     };
 
-    let mut rng = StdRng::seed_from_u64(seed);
+    let mut rng = StdRng::seed_from_u64(*seed);
 
     // Sample frequencies from N(0, 2*theta^2 * I)
     let feat_map = kernel.feature_params_map();
@@ -142,8 +151,8 @@ pub fn build_rff(
     }
 
     let mut b = vec![0.0; d_rff];
-    for i in 0..d_rff {
-        b[i] = rng.random::<f64>() * 2.0 * std::f64::consts::PI;
+    for b_i in b.iter_mut().take(d_rff) {
+        *b_i = rng.random::<f64>() * 2.0 * std::f64::consts::PI;
     }
 
     let sigma = kernel.signal_variance().sqrt();
@@ -185,11 +194,11 @@ pub fn build_rff(
 
     // Noise precision
     let mut prec = vec![0.0; n_obs];
-    for i in 0..n {
-        prec[i] = 1.0 / noise_var;
+    for p in prec.iter_mut().take(n) {
+        *p = 1.0 / noise_var;
     }
-    for i in n..n_obs {
-        prec[i] = 1.0 / grad_noise_var;
+    for p in prec.iter_mut().take(n_obs).skip(n) {
+        *p = 1.0 / grad_noise_var;
     }
 
     // A = Z^T diag(prec) Z + I

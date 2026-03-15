@@ -503,8 +503,8 @@ pub fn molinvdist_kernel_blocks_and_hypergrads(
     for i in 0..nf {
         s_vec[fmap[i]] += r[i] * r[i];
     }
-    for p in 0..n_ls {
-        s_vec[p] *= 2.0 * k.inv_lengthscales[p].powi(2);
+    for (p, sv) in s_vec.iter_mut().enumerate().take(n_ls) {
+        *sv *= 2.0 * k.inv_lengthscales[p].powi(2);
     }
 
     let mut grad_blocks = Vec::with_capacity(n_params);
@@ -517,8 +517,7 @@ pub fn molinvdist_kernel_blocks_and_hypergrads(
         k_ff: blocks.k_ff.clone(),
     });
 
-    for p in 0..n_ls {
-        let sp = s_vec[p];
+    for (p, &sp) in s_vec.iter().enumerate().take(n_ls) {
         let theta2_p = k.inv_lengthscales[p].powi(2);
 
         let dk_ee_p = -kval * sp;

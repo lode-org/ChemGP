@@ -5,7 +5,7 @@
 
 use crate::covariance::{build_full_covariance, robust_cholesky};
 use crate::kernel::Kernel;
-use crate::rff::{build_rff, rff_predict, rff_predict_with_variance, RffModel};
+use crate::rff::{build_rff, rff_predict, rff_predict_with_variance, RffConfig, RffModel};
 use crate::types::{GPModel, TrainingData};
 use faer::linalg::solvers::Solve;
 use faer::Mat;
@@ -31,9 +31,7 @@ impl CachedGpModel {
             &model.x_data,
             model.dim,
             model.n_train,
-            model.noise_var,
-            model.grad_noise_var,
-            model.jitter,
+            &GPNoiseParams { noise_e: model.noise_var, noise_g: model.grad_noise_var, jitter: model.jitter },
             model.const_sigma2,
         );
         let llt = robust_cholesky(&k_train, 8).expect("Cholesky failed in CachedGpModel");
@@ -100,8 +98,13 @@ pub fn build_pred_model(
     seed: u64,
     const_sigma2: f64,
 ) -> PredModel {
-    build_pred_model_full(kernel, td, rff_features, seed, const_sigma2, 1e-6, 1e-4, 1e-6)
+    build_pred_model_full(kernel, td, rff_features, seed, const_sigma2, &GPNoiseParams {
+        noise_e: 1e-6, noise_g: 1e-4, jitter: 1e-6,
+    })
 }
+
+// Re-export for convenience (defined in types.rs).
+pub use crate::types::GPNoiseParams;
 
 /// Build a PredModel with explicit noise and jitter.
 ///
@@ -112,26 +115,25 @@ pub fn build_pred_model_full(
     rff_features: usize,
     seed: u64,
     const_sigma2: f64,
-    noise_e: f64,
-    noise_g: f64,
-    jitter: f64,
+    noise: &GPNoiseParams,
 ) -> PredModel {
+    let GPNoiseParams { noise_e, noise_g, jitter } = *noise;
     let e_ref = td.energies[0];
     if rff_features > 0 {
         let mut y_rff: Vec<f64> = td.energies.iter().map(|e| e - e_ref).collect();
         y_rff.extend_from_slice(&td.gradients);
-        let rff = build_rff(
+        let rff = build_rff(&RffConfig {
             kernel,
-            &td.data,
-            td.dim,
-            td.npoints(),
-            &y_rff,
-            rff_features,
-            noise_e,
-            noise_g,
+            x_train: &td.data,
+            dim: td.dim,
+            n: td.npoints(),
+            y_train: &y_rff,
+            d_rff: rff_features,
+            noise_var: noise_e,
+            grad_noise_var: noise_g,
             seed,
             const_sigma2,
-        );
+        });
         PredModel::Rff(rff)
     } else {
         let mut y_gp: Vec<f64> = td.energies.iter().map(|e| e - e_ref).collect();
@@ -277,9 +279,7 @@ pub fn predict(model: &GPModel, x_test: &[f64], n_test: usize) -> Vec<f64> {
         &model.x_data,
         d,
         n_train,
-        model.noise_var,
-        model.grad_noise_var,
-        model.jitter,
+        &GPNoiseParams { noise_e: model.noise_var, noise_g: model.grad_noise_var, jitter: model.jitter },
         model.const_sigma2,
     );
 
@@ -345,9 +345,7 @@ pub fn predict_with_variance(
         &model.x_data,
         d,
         n_train,
-        model.noise_var,
-        model.grad_noise_var,
-        model.jitter,
+        &GPNoiseParams { noise_e: model.noise_var, noise_g: model.grad_noise_var, jitter: model.jitter },
         model.const_sigma2,
     );
 

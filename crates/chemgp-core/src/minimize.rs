@@ -405,8 +405,8 @@ pub fn gp_minimize(
                 .map(|(i, _)| i).unwrap_or(0);  // Safe fallback: use first point
             let mut rng = StdRng::seed_from_u64(cfg.seed.wrapping_add(outer_step as u64));
             x_curr = td.col(best_idx).to_vec();
-            for j in 0..d {
-                x_curr[j] += (rng.random::<f64>() - 0.5) * cfg.perturb_scale * 0.5;
+            for xc in x_curr.iter_mut().take(d) {
+                *xc += (rng.random::<f64>() - 0.5) * cfg.perturb_scale * 0.5;
             }
             continue;
         }

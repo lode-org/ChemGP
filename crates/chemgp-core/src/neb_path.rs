@@ -377,7 +377,7 @@ pub fn compute_all_neb_forces(path: &NEBPath, cfg: &NEBConfig, ci_on: bool) -> N
     let mut max_f_norm = 0.0f64;
     let mut ci_f_norm = 0.0f64;
 
-    for i in 1..n - 1 {
+    for (i, force_i) in forces.iter_mut().enumerate().take(n - 1).skip(1) {
         let tau = path_tangent(&path.images, &path.energies, i);
 
         let f_spring = if cfg.energy_weighted {
@@ -423,7 +423,7 @@ pub fn compute_all_neb_forces(path: &NEBPath, cfg: &NEBConfig, ci_on: bool) -> N
         if is_highest {
             ci_f_norm = fn_val;
         }
-        forces[i] = f;
+        *force_i = f;
     }
 
     NEBForces {

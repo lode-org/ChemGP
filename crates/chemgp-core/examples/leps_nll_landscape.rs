@@ -12,7 +12,7 @@
 //! Outputs `leps_nll_landscape.jsonl` for contour plotting.
 
 use chemgp_core::kernel::{Kernel, MolInvDistSE};
-use chemgp_core::nll::nll_and_grad;
+use chemgp_core::nll::{nll_and_grad, NllData, NllNoise, NllPrior};
 use chemgp_core::potentials::{leps_energy_gradient, LEPS_REACTANT, LEPS_PRODUCT};
 use chemgp_core::train::train_model;
 use chemgp_core::types::{init_kernel, GPModel, TrainingData};
@@ -112,9 +112,10 @@ fn main() {
             }
 
             let (nll, grad) = nll_and_grad(
-                &w, &x_data, dim, n, &y, &template,
-                noise_e, noise_g, jitter, &w_prior, &prior_var, const_sigma2,
-                0.0, 1.0, 0.0,
+                &w,
+                &NllData { x_data: &x_data, dim, n, y: &y, template: &template },
+                &NllNoise { noise_e, noise_g, jitter, const_sigma2 },
+                &NllPrior { w_prior: &w_prior, prior_var: &prior_var, prior_dof: 0.0, prior_s2: 1.0, prior_mu: 0.0 },
             );
 
             if nll.is_finite() {

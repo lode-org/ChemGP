@@ -13,7 +13,7 @@ use crate::dimer_utils::{
 use crate::hod::{HodConfig, HodState};
 use crate::kernel::Kernel;
 use crate::lbfgs::LbfgsHistory;
-use crate::predict::{build_pred_model_full, PredModel};
+use crate::predict::{build_pred_model_full, GPNoiseParams, PredModel};
 use crate::sampling::{prune_training_data, select_optim_subset};
 use crate::train::{adaptive_train_iters, train_model};
 use crate::trust::{
@@ -597,7 +597,7 @@ pub fn otgpd(
         // Build prediction model on full data (RFF if configured, else exact GP)
         let model = build_pred_model_full(
             &gp_sub.kernel, &td, cfg.rff_features, 42, const_sigma2,
-            cfg.noise_e, cfg.noise_g, cfg.jitter,
+            &GPNoiseParams { noise_e: cfg.noise_e, noise_g: cfg.noise_g, jitter: cfg.jitter },
         );
         let e_ref = td.energies[0];
 
@@ -694,11 +694,10 @@ pub fn otgpd(
             let mut r_new: Vec<f64> = r.iter().zip(step_proj.iter()).map(|(a, b)| a + b).collect();
 
             // Per-atom step limiting (C++ AtomicDimer.cpp:336-396)
-            if n_atoms >= 2 {
-                if limit_per_atom_step(&r, &mut r_new, n_atoms, cfg.ratio_at_limit) {
+            if n_atoms >= 2
+                && limit_per_atom_step(&r, &mut r_new, n_atoms, cfg.ratio_at_limit) {
                     trans_hist.reset();
                 }
-            }
 
             // Trust region check (C++ AtomicDimer.cpp:614: skip on first inner step)
             // C++ rejects the step outright and breaks (does NOT clip to boundary).

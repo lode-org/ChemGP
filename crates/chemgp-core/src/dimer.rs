@@ -12,12 +12,12 @@ use crate::dimer_utils::{
 };
 use crate::kernel::Kernel;
 use crate::lbfgs::LbfgsHistory;
-use crate::predict::{build_pred_model_full, PredModel};
+use crate::predict::{build_pred_model_full, GPNoiseParams, PredModel};
 use crate::sampling::select_optim_subset;
 use crate::train::{adaptive_train_iters, train_model};
 use crate::trust::{
     adaptive_trust_threshold, clip_point_to_trust, trust_distance, trust_min_distance,
-    TrustClipParams, TrustMetric,
+    AdaptiveTrustParams, TrustClipParams, TrustMetric,
 };
 use crate::types::{GPModel, TrainingData};
 use crate::StopReason;
@@ -648,7 +648,7 @@ pub fn gp_dimer(
         let y_std = 1.0;
         let model = build_pred_model_full(
             &gp_sub.kernel, &td, cfg.rff_features, 42, const_sigma2,
-            cfg.noise_e, cfg.noise_g, cfg.jitter,
+            &GPNoiseParams { noise_e: cfg.noise_e, noise_g: cfg.noise_g, jitter: cfg.jitter },
         );
 
         // Reset L-BFGS/CG state for new outer iteration
@@ -737,11 +737,13 @@ pub fn gp_dimer(
                 td.npoints(),
                 n_atoms,
                 cfg.use_adaptive_threshold,
-                cfg.adaptive_t_min,
-                cfg.adaptive_delta_t,
-                cfg.adaptive_n_half,
-                cfg.adaptive_a,
-                cfg.adaptive_floor,
+                &AdaptiveTrustParams {
+                    t_min: cfg.adaptive_t_min,
+                    delta_t: cfg.adaptive_delta_t,
+                    n_half: cfg.adaptive_n_half,
+                    a: cfg.adaptive_a,
+                    floor: cfg.adaptive_floor,
+                },
             );
             let trust_dist = trust_min_distance(
                 &r_new,

@@ -3,6 +3,7 @@
 //! Ports `build_full_covariance` from `functions.jl`.
 
 use crate::kernel::Kernel;
+use crate::types::GPNoiseParams;
 use faer::linalg::solvers::Llt;
 use faer::{Mat, Side};
 
@@ -16,11 +17,10 @@ pub fn build_full_covariance(
     x_data: &[f64],
     dim: usize,
     n: usize,
-    noise_e: f64,
-    noise_g: f64,
-    jitter: f64,
+    noise: &GPNoiseParams,
     const_sigma2: f64,
 ) -> Mat<f64> {
+    let GPNoiseParams { noise_e, noise_g, jitter } = *noise;
     let total = n * (1 + dim);
     let mut k_mat = Mat::<f64>::zeros(total, total);
 

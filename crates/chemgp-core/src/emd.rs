@@ -8,7 +8,7 @@
 /// greedy otherwise) and reports max per-type mean displacement.
 pub fn emd_distance(x1: &[f64], x2: &[f64], atom_types: &[i32]) -> f64 {
     assert_eq!(x1.len(), x2.len());
-    assert!(x1.len() % 3 == 0);
+    assert!(x1.len().is_multiple_of(3));
     let n_atoms = x1.len() / 3;
 
     let types: Vec<i32> = if atom_types.is_empty() {
@@ -88,12 +88,12 @@ fn greedy_assignment(cost: &[Vec<f64>]) -> f64 {
     let mut assigned = vec![false; n];
     let mut total = 0.0;
 
-    for i in 0..n {
+    for row in cost.iter().take(n) {
         let mut best_j = 0;
         let mut best_c = f64::INFINITY;
         for j in 0..n {
-            if !assigned[j] && cost[i][j] < best_c {
-                best_c = cost[i][j];
+            if !assigned[j] && row[j] < best_c {
+                best_c = row[j];
                 best_j = j;
             }
         }

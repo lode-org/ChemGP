@@ -2,7 +2,7 @@
 //!
 //! Ports `train_model!` from `functions.jl` (Kernel + fix_noise path).
 
-use crate::nll::nll_and_grad;
+use crate::nll::{nll_and_grad, NllData, NllNoise, NllPrior};
 use crate::scg::{scg_optimize, ScgConfig};
 use crate::types::GPModel;
 
@@ -58,8 +58,8 @@ pub fn train_model(model: &mut GPModel, iterations: usize, verbose: bool) {
 
     let mut prior_var = Vec::with_capacity(1 + n_ls);
     prior_var.push(1.0);
-    for p in 0..n_ls {
-        let v = 0.5 * (n_feat_per_param[p] as f64 / 3.0).clamp(0.3, 1.0);
+    for nfpp in n_feat_per_param.iter().take(n_ls) {
+        let v = 0.5 * (*nfpp as f64 / 3.0).clamp(0.3, 1.0);
         prior_var.push(v);
     }
 
@@ -76,11 +76,14 @@ pub fn train_model(model: &mut GPModel, iterations: usize, verbose: bool) {
     let p_dof = model.prior_dof;
     let p_s2 = model.prior_s2;
     let p_mu = model.prior_mu;
+    let nll_data = NllData { x_data: &x_data, dim, n, y: &y, template: &template };
+    let nll_noise = NllNoise { noise_e, noise_g, jitter: jit, const_sigma2: const_s2 };
+    let nll_prior = NllPrior {
+        w_prior: &w_prior, prior_var: &prior_var,
+        prior_dof: p_dof, prior_s2: p_s2, prior_mu: p_mu,
+    };
     let mut fg = |w: &[f64]| -> (f64, Vec<f64>) {
-        nll_and_grad(
-            w, &x_data, dim, n, &y, &template, noise_e, noise_g, jit, &w_prior,
-            &prior_var, const_s2, p_dof, p_s2, p_mu,
-        )
+        nll_and_grad(w, &nll_data, &nll_noise, &nll_prior)
     };
 
     let config = ScgConfig {

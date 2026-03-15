@@ -8,24 +8,31 @@
 use crate::neb_path::linear_interpolation;
 use crate::optim_step::OptimState;
 
+/// Configuration for IDPP/S-IDPP path interpolation.
+#[derive(Clone, Copy)]
+pub struct IdppConfig {
+    pub n_images: usize,
+    pub n_coords_per_atom: usize,
+    pub max_iter: usize,
+    pub max_move: f64,
+    pub force_tol: f64,
+    pub lbfgs_memory: usize,
+}
+
 /// IDPP interpolation: per-image independent optimization.
 pub fn idpp_interpolation(
     x_start: &[f64],
     x_end: &[f64],
-    n_images: usize,
-    n_coords_per_atom: usize,
-    max_iter: usize,
-    max_move: f64,
-    force_tol: f64,
-    lbfgs_memory: usize,
+    cfg: &IdppConfig,
 ) -> Vec<Vec<f64>> {
+    let IdppConfig { n_images, n_coords_per_atom, max_iter, max_move, force_tol, lbfgs_memory } = *cfg;
     let mut images = linear_interpolation(x_start, x_end, n_images);
     let n_atoms = x_start.len() / n_coords_per_atom;
 
     let d_start = pairwise_distances(x_start, n_atoms, n_coords_per_atom);
     let d_end = pairwise_distances(x_end, n_atoms, n_coords_per_atom);
 
-    for img_idx in 1..n_images - 1 {
+    for (img_idx, image) in images.iter_mut().enumerate().take(n_images - 1).skip(1) {
         let xi = img_idx as f64 / (n_images - 1) as f64;
         let d_target: Vec<f64> = d_start
             .iter()
@@ -34,7 +41,7 @@ pub fn idpp_interpolation(
             .collect();
 
         let mut optim = OptimState::new(lbfgs_memory);
-        let mut x = images[img_idx].clone();
+        let mut x = image.clone();
 
         for _ in 0..max_iter {
             let (_, force) =
@@ -48,7 +55,7 @@ pub fn idpp_interpolation(
             }
         }
 
-        images[img_idx] = x;
+        *image = x;
     }
 
     images
@@ -58,22 +65,19 @@ pub fn idpp_interpolation(
 pub fn sidpp_interpolation(
     x_start: &[f64],
     x_end: &[f64],
-    n_images: usize,
-    n_coords_per_atom: usize,
-    max_iter: usize,
-    max_move: f64,
-    force_tol: f64,
-    lbfgs_memory: usize,
+    cfg: &IdppConfig,
     spring_constant: f64,
     growth_alpha: f64,
 ) -> Vec<Vec<f64>> {
+    let n_images = cfg.n_images;
+    let n_coords_per_atom = cfg.n_coords_per_atom;
     let n_atoms = x_start.len() / n_coords_per_atom;
 
     let d_init = pairwise_distances(x_start, n_atoms, n_coords_per_atom);
     let d_final = pairwise_distances(x_end, n_atoms, n_coords_per_atom);
 
     let mut path = vec![x_start.to_vec(), x_end.to_vec()];
-    let n_target = if n_images >= 2 { n_images - 2 } else { 0 };
+    let n_target = n_images.saturating_sub(2);
     let mut n_left = 0;
     let mut n_right = 0;
     let mut n_intermediate = 0;
@@ -107,31 +111,14 @@ pub fn sidpp_interpolation(
         }
 
         relax_collective_idpp(
-            &mut path,
-            &d_init,
-            &d_final,
-            n_atoms,
-            n_coords_per_atom,
-            max_iter,
-            max_move,
-            force_tol,
-            lbfgs_memory,
-            spring_constant,
+            &mut path, &d_init, &d_final, n_atoms, cfg, spring_constant,
         );
     }
 
     // Final full-path relaxation
+    let final_cfg = IdppConfig { max_iter: 500, ..*cfg };
     relax_collective_idpp(
-        &mut path,
-        &d_init,
-        &d_final,
-        n_atoms,
-        n_coords_per_atom,
-        500,
-        max_move,
-        force_tol,
-        lbfgs_memory,
-        spring_constant,
+        &mut path, &d_init, &d_final, n_atoms, &final_cfg, spring_constant,
     );
 
     path
@@ -139,17 +126,14 @@ pub fn sidpp_interpolation(
 
 /// Collective IDPP-NEB relaxation.
 fn relax_collective_idpp(
-    path: &mut Vec<Vec<f64>>,
+    path: &mut [Vec<f64>],
     d_init: &[f64],
     d_final: &[f64],
     n_atoms: usize,
-    n_coords: usize,
-    max_iter: usize,
-    max_move: f64,
-    force_tol: f64,
-    lbfgs_memory: usize,
+    cfg: &IdppConfig,
     spring_constant: f64,
 ) {
+    let IdppConfig { n_coords_per_atom: n_coords, max_iter, max_move, force_tol, lbfgs_memory, .. } = *cfg;
     let n_images = path.len();
     let n_mov = if n_images >= 2 { n_images - 2 } else { return };
     let d = path[0].len();
@@ -161,8 +145,8 @@ fn relax_collective_idpp(
             collective_idpp_forces(path, d_init, d_final, n_atoms, n_coords, spring_constant);
 
         let mut cur_force = Vec::with_capacity(n_mov * d);
-        for i in 1..=n_mov {
-            cur_force.extend_from_slice(&forces[i]);
+        for f in forces.iter().take(n_mov + 1).skip(1) {
+            cur_force.extend_from_slice(f);
         }
 
         let total_atoms = cur_force.len() / n_coords;
@@ -171,8 +155,8 @@ fn relax_collective_idpp(
         }
 
         let mut cur_x = Vec::with_capacity(n_mov * d);
-        for i in 1..=n_mov {
-            cur_x.extend_from_slice(&path[i]);
+        for p in path.iter().take(n_mov + 1).skip(1) {
+            cur_x.extend_from_slice(p);
         }
 
         let disp = optim.step(&cur_x, &cur_force, max_move, n_coords);
@@ -315,7 +299,9 @@ mod tests {
     fn test_idpp_preserves_endpoints() {
         let start = vec![0.0, 0.0, 0.0, 1.0, 0.0, 0.0];
         let end = vec![0.0, 0.0, 0.0, 2.0, 0.0, 0.0];
-        let images = idpp_interpolation(&start, &end, 5, 3, 100, 0.1, 0.01, 10);
+        let images = idpp_interpolation(&start, &end, &IdppConfig {
+            n_images: 5, n_coords_per_atom: 3, max_iter: 100, max_move: 0.1, force_tol: 0.01, lbfgs_memory: 10,
+        });
         assert_eq!(images.len(), 5);
         assert!((images[0][3] - 1.0).abs() < 1e-10);
         assert!((images[4][3] - 2.0).abs() < 1e-10);

@@ -10,7 +10,7 @@ use std::collections::{BTreeMap, BTreeSet};
 /// Features are ordered: MM upper triangle (j < i), then MF (all combos).
 /// Total features: N_mov*(N_mov-1)/2 + N_mov*N_fro.
 pub fn compute_inverse_distances(x_flat: &[f64], frozen_flat: &[f64]) -> Vec<f64> {
-    assert!(x_flat.len() % 3 == 0, "Moving coordinates must be 3D");
+    assert!(x_flat.len().is_multiple_of(3), "Moving coordinates must be 3D");
     let n_mov = x_flat.len() / 3;
     let n_fro = frozen_flat.len() / 3;
 
@@ -70,11 +70,9 @@ pub fn build_feature_map(
 
     // Moving-Frozen
     if n_fro > 0 {
-        for j in 0..n_mov {
-            for k in 0..n_fro {
-                let t1 = mov_types[j];
-                let t2 = fro_types[k];
-                map_indices.push(pair_map[t1][t2]);
+        for mt in mov_types.iter().take(n_mov) {
+            for ft in fro_types.iter().take(n_fro) {
+                map_indices.push(pair_map[*mt][*ft]);
             }
         }
     }
@@ -144,12 +142,12 @@ pub fn build_pair_scheme(
     }
 
     // Moving-Frozen
-    for j in 0..n_mov {
-        for k in 0..n_fro {
-            let (t1, t2) = if mov_types[j] <= fro_types[k] {
-                (mov_types[j], fro_types[k])
+    for mt in mov_types.iter().take(n_mov) {
+        for ft in fro_types.iter().take(n_fro) {
+            let (t1, t2) = if *mt <= *ft {
+                (*mt, *ft)
             } else {
-                (fro_types[k], mov_types[j])
+                (*ft, *mt)
             };
             used_pairs.insert((t1, t2));
         }

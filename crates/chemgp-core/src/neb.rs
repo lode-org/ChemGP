@@ -5,7 +5,7 @@
 //! Reference: Goswami et al., J. Chem. Theory Comput. (2025).
 
 use crate::hod::{HodConfig, HodState};
-use crate::idpp::{idpp_interpolation, sidpp_interpolation};
+use crate::idpp::{idpp_interpolation, sidpp_interpolation, IdppConfig};
 use crate::kernel::Kernel;
 use crate::neb_path::{
     compute_all_neb_forces, get_hessian_points, linear_interpolation, NEBConfig, NEBPath,
@@ -45,19 +45,17 @@ pub type OracleFn = dyn Fn(&[f64]) -> (f64, Vec<f64>);
 fn init_neb_images(cfg: &NEBConfig, x_start: &[f64], x_end: &[f64]) -> Vec<Vec<f64>> {
     let n_total = cfg.images + 2;
     match cfg.initializer.as_str() {
-        "sidpp" => sidpp_interpolation(
-            x_start,
-            x_end,
-            n_total,
-            3,
-            200,
-            0.1,
-            0.01,
-            10,
-            cfg.spring_constant,
-            0.3,
-        ),
-        "idpp" => idpp_interpolation(x_start, x_end, n_total, 3, 200, 0.1, 0.01, 10),
+        "sidpp" => {
+            let idpp_cfg = IdppConfig {
+                n_images: n_total, n_coords_per_atom: 3, max_iter: 200,
+                max_move: 0.1, force_tol: 0.01, lbfgs_memory: 10,
+            };
+            sidpp_interpolation(x_start, x_end, &idpp_cfg, cfg.spring_constant, 0.3)
+        },
+        "idpp" => idpp_interpolation(x_start, x_end, &IdppConfig {
+            n_images: n_total, n_coords_per_atom: 3, max_iter: 200,
+            max_move: 0.1, force_tol: 0.01, lbfgs_memory: 10,
+        }),
         _ => linear_interpolation(x_start, x_end, n_total),
     }
 }
@@ -465,16 +463,13 @@ pub fn gp_neb_aie(
             .min(cfg.conv_tol)
             .max(cfg.conv_tol / 10.0);
         let (new_images, _early_stopped) = gp_inner_relax(
-            &pred_model,
-            &images,
-            &energies,
-            &gradients,
-            &td,
+            &InnerRelaxCtx {
+                model: &pred_model, images: &images,
+                energies: &energies, gradients: &gradients,
+                td: &td, e_ref: e_ref_full, gp_tol, path_scale,
+            },
             cfg,
             ci_on,
-            e_ref_full,
-            gp_tol,
-            path_scale,
         );
         images = new_images;
 
@@ -524,18 +519,25 @@ pub fn gp_neb_aie(
 ///
 /// Returns (relaxed_images, early_stopped) where early_stopped is true
 /// if bond stretch or displacement guards triggered.
-fn gp_inner_relax(
-    model: &PredModel,
-    images: &[Vec<f64>],
-    energies: &[f64],
-    gradients: &[Vec<f64>],
-    td: &TrainingData,
-    cfg: &NEBConfig,
-    ci_on: bool,
+/// Shared context for GP inner relaxation.
+struct InnerRelaxCtx<'a> {
+    model: &'a PredModel,
+    images: &'a [Vec<f64>],
+    energies: &'a [f64],
+    gradients: &'a [Vec<f64>],
+    td: &'a TrainingData,
     e_ref: f64,
     gp_tol: f64,
     path_scale: f64,
+}
+
+fn gp_inner_relax(
+    ctx: &InnerRelaxCtx,
+    cfg: &NEBConfig,
+    ci_on: bool,
 ) -> (Vec<Vec<f64>>, bool) {
+    let InnerRelaxCtx { model, images, energies, gradients, td, e_ref, gp_tol, path_scale } = ctx;
+    let (e_ref, gp_tol, path_scale) = (*e_ref, *gp_tol, *path_scale);
     let n = images.len();
     let d = images[0].len();
     let n_mov = n - 2;
@@ -570,9 +572,9 @@ fn gp_inner_relax(
         // Concatenate movable images
         let mut cur_x = Vec::with_capacity(n_mov * d);
         let mut cur_force = Vec::with_capacity(n_mov * d);
-        for i in 1..=n_mov {
-            cur_x.extend_from_slice(&gp_images[i]);
-            cur_force.extend_from_slice(&gp_forces.forces[i]);
+        for (gi, fi) in gp_images.iter().zip(gp_forces.forces.iter()).take(n_mov + 1).skip(1) {
+            cur_x.extend_from_slice(gi);
+            cur_force.extend_from_slice(fi);
         }
 
         let disp = optim.step(&cur_x, &cur_force, cfg.max_move, 3);

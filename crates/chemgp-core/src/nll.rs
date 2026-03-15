@@ -12,23 +12,49 @@ use std::f64::consts::PI;
 fn ln_gamma(x: f64) -> f64 {
     // Coefficients from Numerical Recipes (Lanczos, g=7, n=9).
     const C: [f64; 9] = [
-        0.99999999999980993,
+        0.999_999_999_999_809_9,
         676.5203681218851,
         -1259.1392167224028,
-        771.32342877765313,
-        -176.61502916214059,
+        771.323_428_777_653_1,
+        -176.615_029_162_140_6,
         12.507343278686905,
         -0.13857109526572012,
-        9.9843695780195716e-6,
+        9.984_369_578_019_572e-6,
         1.5056327351493116e-7,
     ];
     let x = x - 1.0;
     let mut sum = C[0];
-    for i in 1..9 {
-        sum += C[i] / (x + i as f64);
+    for (i, &c) in C.iter().enumerate().skip(1) {
+        sum += c / (x + i as f64);
     }
     let t = x + 7.5;
     0.5 * (2.0 * PI).ln() + (x + 0.5) * t.ln() - t + sum.ln()
+}
+
+/// Training data and kernel template for NLL evaluation.
+pub struct NllData<'a> {
+    pub x_data: &'a [f64],
+    pub dim: usize,
+    pub n: usize,
+    pub y: &'a [f64],
+    pub template: &'a Kernel,
+}
+
+/// Noise parameters for the GP covariance.
+pub struct NllNoise {
+    pub noise_e: f64,
+    pub noise_g: f64,
+    pub jitter: f64,
+    pub const_sigma2: f64,
+}
+
+/// MAP prior configuration.
+pub struct NllPrior<'a> {
+    pub w_prior: &'a [f64],
+    pub prior_var: &'a [f64],
+    pub prior_dof: f64,
+    pub prior_s2: f64,
+    pub prior_mu: f64,
 }
 
 /// Compute MAP NLL and gradient w.r.t. log-space hyperparameters.
@@ -39,21 +65,14 @@ fn ln_gamma(x: f64) -> f64 {
 /// Returns (nll, gradient). Returns (Inf, zeros) on Cholesky failure.
 pub fn nll_and_grad(
     w: &[f64],
-    x_data: &[f64],
-    dim: usize,
-    n: usize,
-    y: &[f64],
-    template: &Kernel,
-    noise_e: f64,
-    noise_g: f64,
-    jitter: f64,
-    w_prior: &[f64],
-    prior_var: &[f64],
-    const_sigma2: f64,
-    prior_dof: f64,
-    prior_s2: f64,
-    prior_mu: f64,
+    data: &NllData,
+    noise: &NllNoise,
+    prior: &NllPrior,
 ) -> (f64, Vec<f64>) {
+    let NllData { x_data, dim, n, y, template } = data;
+    let (dim, n) = (*dim, *n);
+    let NllNoise { noise_e, noise_g, jitter, const_sigma2 } = *noise;
+    let NllPrior { w_prior, prior_var, prior_dof, prior_s2, prior_mu } = *prior;
     let sigma2 = w[0].exp();
     let inv_ls: Vec<f64> = w[1..].iter().map(|v| v.exp()).collect();
     let n_params = w.len();
@@ -86,16 +105,16 @@ pub fn nll_and_grad(
             k_mat[(s_gi + di, s_gi + di)] += noise_g + jitter;
         }
 
-        for jp in 0..n_params {
+        for (jp, dk_jp) in dk.iter_mut().enumerate().take(n_params) {
             let gb = &bg.grad_blocks[jp];
-            dk[jp][(i, i)] += gb.k_ee;
+            dk_jp[(i, i)] += gb.k_ee;
             for d in 0..dim {
-                dk[jp][(i, s_gi + d)] += gb.k_ef[d];
-                dk[jp][(s_gi + d, i)] += gb.k_fe[d];
+                dk_jp[(i, s_gi + d)] += gb.k_ef[d];
+                dk_jp[(s_gi + d, i)] += gb.k_fe[d];
             }
             for di in 0..dim {
                 for dj in 0..dim {
-                    dk[jp][(s_gi + di, s_gi + dj)] += gb.k_ff[(di, dj)];
+                    dk_jp[(s_gi + di, s_gi + dj)] += gb.k_ff[(di, dj)];
                 }
             }
         }
@@ -125,20 +144,20 @@ pub fn nll_and_grad(
                 }
             }
 
-            for jp in 0..n_params {
+            for (jp, dk_jp) in dk.iter_mut().enumerate().take(n_params) {
                 let gb = &bg.grad_blocks[jp];
-                dk[jp][(i, j)] += gb.k_ee;
-                dk[jp][(j, i)] += gb.k_ee;
+                dk_jp[(i, j)] += gb.k_ee;
+                dk_jp[(j, i)] += gb.k_ee;
                 for d in 0..dim {
-                    dk[jp][(i, s_gj + d)] += gb.k_ef[d];
-                    dk[jp][(s_gj + d, i)] += gb.k_ef[d];
-                    dk[jp][(s_gi + d, j)] += gb.k_fe[d];
-                    dk[jp][(j, s_gi + d)] += gb.k_fe[d];
+                    dk_jp[(i, s_gj + d)] += gb.k_ef[d];
+                    dk_jp[(s_gj + d, i)] += gb.k_ef[d];
+                    dk_jp[(s_gi + d, j)] += gb.k_fe[d];
+                    dk_jp[(j, s_gi + d)] += gb.k_fe[d];
                 }
                 for di in 0..dim {
                     for dj in 0..dim {
-                        dk[jp][(s_gi + di, s_gj + dj)] += gb.k_ff[(di, dj)];
-                        dk[jp][(s_gj + dj, s_gi + di)] += gb.k_ff[(di, dj)];
+                        dk_jp[(s_gi + di, s_gj + dj)] += gb.k_ff[(di, dj)];
+                        dk_jp[(s_gj + dj, s_gi + di)] += gb.k_ff[(di, dj)];
                     }
                 }
             }

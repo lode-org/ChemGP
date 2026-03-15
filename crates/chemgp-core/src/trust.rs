@@ -17,7 +17,7 @@ pub enum TrustMetric {
 pub fn trust_distance(metric: TrustMetric, atom_types: &[i32], x1: &[f64], x2: &[f64]) -> f64 {
     match metric {
         TrustMetric::Emd => {
-            if x1.len() % 3 == 0 {
+            if x1.len().is_multiple_of(3) {
                 emd_distance(x1, x2, atom_types)
             } else {
                 euclidean_distance(x1, x2)
@@ -53,23 +53,28 @@ pub fn trust_min_distance(
 ///
 /// More data -> higher threshold -> more permissive exploration.
 /// Capped by `physical_limit = max(floor, a / sqrt(n_atoms))`.
+/// Parameters controlling adaptive trust threshold growth.
+pub struct AdaptiveTrustParams {
+    pub t_min: f64,
+    pub delta_t: f64,
+    pub n_half: usize,
+    pub a: f64,
+    pub floor: f64,
+}
+
 pub fn adaptive_trust_threshold(
     trust_radius: f64,
     n_data: usize,
     n_atoms: usize,
     use_adaptive: bool,
-    t_min: f64,
-    delta_t: f64,
-    n_half: usize,
-    a: f64,
-    floor: f64,
+    params: &AdaptiveTrustParams,
 ) -> f64 {
     if !use_adaptive {
         return trust_radius;
     }
-    let k = 2.0_f64.ln() / n_half.max(1) as f64;
-    let earned = t_min + delta_t * (1.0 - (-k * n_data as f64).exp());
-    let physical = floor.max(a / (n_atoms.max(1) as f64).sqrt());
+    let k = 2.0_f64.ln() / params.n_half.max(1) as f64;
+    let earned = params.t_min + params.delta_t * (1.0 - (-k * n_data as f64).exp());
+    let physical = params.floor.max(params.a / (n_atoms.max(1) as f64).sqrt());
     earned.min(physical)
 }
 
@@ -124,16 +129,19 @@ pub struct TrustClipParams<'a> {
 
 impl<'a> TrustClipParams<'a> {
     fn threshold(&self, n_data: usize, n_atoms: usize) -> f64 {
+        let params = AdaptiveTrustParams {
+            t_min: self.adaptive_t_min,
+            delta_t: self.adaptive_delta_t,
+            n_half: self.adaptive_n_half,
+            a: self.adaptive_a,
+            floor: self.adaptive_floor,
+        };
         adaptive_trust_threshold(
             self.trust_radius,
             n_data,
             n_atoms,
             self.use_adaptive,
-            self.adaptive_t_min,
-            self.adaptive_delta_t,
-            self.adaptive_n_half,
-            self.adaptive_a,
-            self.adaptive_floor,
+            &params,
         )
     }
 }
@@ -187,23 +195,23 @@ pub fn clip_images_to_trust(
     let n_atoms = d / 3;
     let thresh = params.threshold(td.npoints(), n_atoms);
 
-    for i in 1..n - 1 {
+    for image in images.iter_mut().take(n - 1).skip(1) {
         let dist = trust_min_distance(
-            &images[i], &td.data, d, td.npoints(), params.trust_metric, params.atom_types,
+            image, &td.data, d, td.npoints(), params.trust_metric, params.atom_types,
         );
         if dist > thresh {
             let nearest_idx = (0..td.npoints())
                 .min_by(|&a, &b| {
-                    let da = trust_distance(params.trust_metric, params.atom_types, &images[i], td.col(a));
-                    let db = trust_distance(params.trust_metric, params.atom_types, &images[i], td.col(b));
+                    let da = trust_distance(params.trust_metric, params.atom_types, image, td.col(a));
+                    let db = trust_distance(params.trust_metric, params.atom_types, image, td.col(b));
                     da.partial_cmp(&db).unwrap_or(std::cmp::Ordering::Equal)
                 })
                 .unwrap_or(0);
             let nearest = td.col(nearest_idx).to_vec();
             let scale = thresh / dist * 0.95;
-            images[i] = nearest
+            *image = nearest
                 .iter()
-                .zip(images[i].iter())
+                .zip(image.iter())
                 .map(|(n, xi)| n + (xi - n) * scale)
                 .collect();
         }
@@ -239,8 +247,8 @@ pub fn remove_rigid_body_modes(step: &mut [f64], x: &[f64], n_atoms: usize) -> f
             com[k] += x[3 * i + k];
         }
     }
-    for k in 0..3 {
-        com[k] /= n_atoms as f64;
+    for c in &mut com {
+        *c /= n_atoms as f64;
     }
 
     // Build 6 basis vectors
@@ -289,14 +297,14 @@ pub fn remove_rigid_body_modes(step: &mut [f64], x: &[f64], n_atoms: usize) -> f
         let mut u = v.clone();
         for ou in &ortho {
             let proj: f64 = v.iter().zip(ou.iter()).map(|(a, b)| a * b).sum();
-            for j in 0..u.len() {
-                u[j] -= proj * ou[j];
+            for (u_j, &ou_j) in u.iter_mut().zip(ou.iter()) {
+                *u_j -= proj * ou_j;
             }
         }
         let un: f64 = u.iter().map(|x| x * x).sum::<f64>().sqrt();
         if un > 1e-9 {
-            for j in 0..u.len() {
-                u[j] /= un;
+            for u_j in u.iter_mut() {
+                *u_j /= un;
             }
             ortho.push(u);
         }

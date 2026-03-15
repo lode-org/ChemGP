@@ -54,16 +54,16 @@ impl LbfgsHistory {
         let mut alpha_vec = vec![0.0; m];
         let mut rho = vec![0.0; m];
 
-        for i in 0..m {
+        for (i, rho_i) in rho.iter_mut().enumerate().take(m) {
             let ys: f64 = self.y[i].iter().zip(self.s[i].iter()).map(|(a, b)| a * b).sum();
-            rho[i] = if ys > 1e-18 { 1.0 / ys } else { 0.0 };
+            *rho_i = if ys > 1e-18 { 1.0 / ys } else { 0.0 };
         }
 
         // Backward pass
         for i in (0..m).rev() {
             alpha_vec[i] = rho[i] * dot(&self.s[i], &q);
-            for j in 0..q.len() {
-                q[j] -= alpha_vec[i] * self.y[i][j];
+            for (q_j, &y_j) in q.iter_mut().zip(self.y[i].iter()) {
+                *q_j -= alpha_vec[i] * y_j;
             }
         }
 
@@ -82,8 +82,8 @@ impl LbfgsHistory {
         // Forward pass
         for i in 0..m {
             let beta = rho[i] * dot(&self.y[i], &r);
-            for j in 0..r.len() {
-                r[j] += (alpha_vec[i] - beta) * self.s[i][j];
+            for (r_j, &s_j) in r.iter_mut().zip(self.s[i].iter()) {
+                *r_j += (alpha_vec[i] - beta) * s_j;
             }
         }
 

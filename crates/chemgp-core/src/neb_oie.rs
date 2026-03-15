@@ -20,21 +20,24 @@ use crate::trust::{clip_images_to_trust, trust_distance, TrustClipParams};
 use crate::types::{init_kernel, GPModel, TrainingData};
 use crate::StopReason;
 
-use crate::idpp::{idpp_interpolation, sidpp_interpolation};
+use crate::idpp::{idpp_interpolation, sidpp_interpolation, IdppConfig};
 use rand::SeedableRng;
 
 /// Initialize NEB path images (same as neb.rs).
 fn init_neb_images(cfg: &NEBConfig, x_start: &[f64], x_end: &[f64]) -> Vec<Vec<f64>> {
     let n_total = cfg.images + 2;
     match cfg.initializer.as_str() {
-        "sidpp" => sidpp_interpolation(
-            x_start,
-            x_end,
-            n_total,
-            3, 200, 0.1, 0.01, 10,
-            cfg.spring_constant, 0.3,
-        ),
-        "idpp" => idpp_interpolation(x_start, x_end, n_total, 3, 200, 0.1, 0.01, 10),
+        "sidpp" => {
+            let idpp_cfg = IdppConfig {
+                n_images: n_total, n_coords_per_atom: 3, max_iter: 200,
+                max_move: 0.1, force_tol: 0.01, lbfgs_memory: 10,
+            };
+            sidpp_interpolation(x_start, x_end, &idpp_cfg, cfg.spring_constant, 0.3)
+        },
+        "idpp" => idpp_interpolation(x_start, x_end, &IdppConfig {
+            n_images: n_total, n_coords_per_atom: 3, max_iter: 200,
+            max_move: 0.1, force_tol: 0.01, lbfgs_memory: 10,
+        }),
         _ => linear_interpolation(x_start, x_end, n_total),
     }
 }
@@ -92,11 +95,11 @@ pub fn oie_check_early_stop(
     let n_atoms = (d / 3).max(1);
     let disp_limit = cfg.max_step_frac * path_scale * (n_atoms as f64).sqrt();
 
-    for i in 1..n - 1 {
+    for (i, image) in images.iter().enumerate().take(n - 1).skip(1) {
         // Bond stretch check (only for systems with >= 2 atoms)
         if d >= 6 {
             let min_log_d = (0..td.npoints())
-                .map(|j| crate::distances::max_1d_log_distance(&images[i], td.col(j)))
+                .map(|j| crate::distances::max_1d_log_distance(image, td.col(j)))
                 .fold(f64::INFINITY, f64::min);
             if min_log_d > log_limit {
                 return (true, i);
@@ -105,7 +108,7 @@ pub fn oie_check_early_stop(
 
         // Displacement check
         let min_disp = (0..td.npoints())
-            .map(|j| euclidean_distance(&images[i], td.col(j)))
+            .map(|j| euclidean_distance(image, td.col(j)))
             .fold(f64::INFINITY, f64::min);
         if min_disp > disp_limit {
             return (true, i);
@@ -170,18 +173,25 @@ fn expand_to_triplet(center: usize, n: usize) -> Vec<usize> {
     (lo..=hi).collect()
 }
 
+/// Current NEB path state for image selection.
+struct SelectionState<'a> {
+    images: &'a [Vec<f64>],
+    energies: &'a [f64],
+    uneval: &'a [bool],
+    cached_model: &'a PredModel,
+    cached_forces: &'a crate::neb_path::NEBForces,
+    d: usize,
+}
+
 /// Select which image to evaluate next using the given acquisition strategy.
 fn select_image(
     strategy: &AcquisitionStrategy,
-    images: &[Vec<f64>],
-    energies: &[f64],
-    uneval: &[bool],
-    cached_model: &PredModel,
-    cached_forces: &crate::neb_path::NEBForces,
+    state: &SelectionState,
     cfg: &NEBConfig,
-    d: usize,
     rng: &mut impl rand::Rng,
 ) -> usize {
+    let SelectionState { images, energies, uneval, cached_model, cached_forces, d } = state;
+    let d = *d;
     let n = images.len();
 
     // Only consider unevaluated intermediate images.
@@ -326,7 +336,7 @@ fn qm_vv_update_velocity(
 ) {
     let d = v.len();
     if zero_v {
-        for i in 0..d { v[i] = 0.0; }
+        for vi in v.iter_mut().take(d) { *vi = 0.0; }
     } else {
         // Velocity Verlet half-step: v += dt/2 * (F_old + F_new)
         for i in 0..d {
@@ -341,7 +351,7 @@ fn qm_vv_update_velocity(
             / f_norm_sq.sqrt();
         if p < 0.0 {
             // Velocity antiparallel to force: zero it
-            for i in 0..d { v[i] = 0.0; }
+            for vi in v.iter_mut().take(d) { *vi = 0.0; }
         } else {
             // Project velocity onto force direction
             let inv_fn = 1.0 / f_norm_sq.sqrt();
@@ -352,21 +362,28 @@ fn qm_vv_update_velocity(
     }
 }
 
+/// Shared context for GP inner relaxation.
+struct InnerRelaxCtx<'a> {
+    model: &'a PredModel,
+    images: &'a [Vec<f64>],
+    energies: &'a [f64],
+    gradients: &'a [Vec<f64>],
+    td: &'a TrainingData,
+    e_ref: f64,
+    gp_tol: f64,
+    path_scale: f64,
+}
+
 /// Inner GP relaxation for OIE with CI mid-activation and early stopping.
 ///
 /// Returns (relaxed_images, ci_index, early_stop_image).
 fn oie_inner_relax(
-    model: &PredModel,
-    images: &[Vec<f64>],
-    energies: &[f64],
-    gradients: &[Vec<f64>],
-    td: &TrainingData,
+    ctx: &InnerRelaxCtx,
     cfg: &NEBConfig,
     ci_on_outer: bool,
-    e_ref: f64,
-    gp_tol: f64,
-    path_scale: f64,
 ) -> (Vec<Vec<f64>>, usize, usize) {
+    let InnerRelaxCtx { model, images, energies, gradients, td, e_ref, gp_tol, path_scale } = ctx;
+    let (e_ref, gp_tol, path_scale) = (*e_ref, *gp_tol, *path_scale);
     let n = images.len();
     let d = images[0].len();
     let n_mov = n - 2;
@@ -485,9 +502,9 @@ fn oie_inner_relax(
             // L-BFGS with displacement trust clip
             let mut cur_x = Vec::with_capacity(n_mov * d);
             let mut cur_force = Vec::with_capacity(n_mov * d);
-            for i in 1..=n_mov {
-                cur_x.extend_from_slice(&gp_images[i]);
-                cur_force.extend_from_slice(&gp_forces.forces[i]);
+            for (gi, fi) in gp_images.iter().zip(gp_forces.forces.iter()).take(n_mov + 1).skip(1) {
+                cur_x.extend_from_slice(gi);
+                cur_force.extend_from_slice(fi);
             }
 
             let disp = optim.step(&cur_x, &cur_force, cfg.max_move, 3);
@@ -759,19 +776,21 @@ pub fn gp_neb_oie(
             // Priority 3: climbing image (highest energy)
             i_eval = i_ci;
             eval_next_ci = false;
-            let i_acq = select_image(
-                &effective_acq, &images, &energies, &uneval,
-                &cached_model, &cached_forces, cfg, d, &mut rng,
-            );
+            let sel_state = SelectionState {
+                images: &images, energies: &energies, uneval: &uneval,
+                cached_model: &cached_model, cached_forces: &cached_forces, d,
+            };
+            let i_acq = select_image(&effective_acq, &sel_state, cfg, &mut rng);
             if i_acq != i_eval {
                 i_extra = Some(i_acq);
             }
         } else {
             // Priority 4: Thompson exploration or normal acquisition
-            i_eval = select_image(
-                &effective_acq, &images, &energies, &uneval,
-                &cached_model, &cached_forces, cfg, d, &mut rng,
-            );
+            let sel_state = SelectionState {
+                images: &images, energies: &energies, uneval: &uneval,
+                cached_model: &cached_model, cached_forces: &cached_forces, d,
+            };
+            i_eval = select_image(&effective_acq, &sel_state, cfg, &mut rng);
         }
 
         // ---- STEP 2: Build eval set ----
@@ -1079,16 +1098,13 @@ pub fn gp_neb_oie(
             };
 
             let (new_images, _ci_idx, early_img) = oie_inner_relax(
-                &cached_model,
-                &images,
-                &relax_energies,
-                &relax_gradients,
-                &td,
+                &InnerRelaxCtx {
+                    model: &cached_model, images: &images,
+                    energies: &relax_energies, gradients: &relax_gradients,
+                    td: &td, e_ref: e_ref_full, gp_tol: gp_tol_val, path_scale,
+                },
                 cfg,
                 cfg.climbing_image,
-                e_ref_full,
-                gp_tol_val,
-                path_scale,
             );
 
             images = new_images;
@@ -1162,8 +1178,8 @@ pub fn gp_neb_oie(
                 }
             }
             // Always mark unevaluated: images moved (fully or partially)
-            for i in 1..n - 1 {
-                uneval[i] = true;
+            for u in uneval.iter_mut().take(n - 1).skip(1) {
+                *u = true;
             }
 
             // Record early stop image for priority evaluation
