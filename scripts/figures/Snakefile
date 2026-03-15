@@ -23,8 +23,8 @@ LOGDIR = os.path.join(ROOT, ".snakemake/logs")
 MODELDIR = os.path.join(ROOT, "models")
 PETMAD_MODEL = os.path.join(MODELDIR, "pet-mad-xs-v1.5.0.pt")
 PETMAD_VERSION = "v1.5.0"
-PETMAD_URL = f"https://huggingface.co/lab-cosmo/pet-mad/resolve/{PETMAD_VERSION}/models/pet-mad-{PETMAD_VERSION}.ckpt"
-PETMAD_PT_SHA256 = "5ea4404e44f281087fa5f294040546b10bf3b9c8110b166fdf4755fc39aa4a59"
+PETMAD_HF_REPO = "lab-cosmo/upet"
+PETMAD_CKPT = f"models/pet-mad-xs-{PETMAD_VERSION}.ckpt"
 
 def check_rpc_server(host="localhost", port=12345):
     """Check if the RPC server is reachable."""
@@ -123,6 +123,8 @@ rule rpc_pdfs:
         expand(os.path.join(OUTDIR, "{j}"), j=JSONL_RPC),
 
 ARCHIVE = os.path.join(ROOT, "scripts/figures/tutorial/chemgp_tutorial_data.tar.xz")
+README_ORG = os.path.join(ROOT, "scripts/figures/README.org")
+README_MD = os.path.join(ROOT, "scripts/figures/README.md")
 
 rule archive:
     """Create rehydration archive: extract to repo root to restore exact submission state.
@@ -173,9 +175,6 @@ rule archive:
 # Stage 0: Model download (for RPC figures)
 # ============================================================
 
-README_ORG = os.path.join(ROOT, "scripts/figures/README.org")
-README_MD = os.path.join(ROOT, "scripts/figures/README.md")
-
 rule readme_md:
     """Convert README.org to README.md via pandoc for Materials Cloud Archive."""
     input: README_ORG
@@ -187,15 +186,10 @@ rule get_petmad_model:
     """Download PET-MAD checkpoint from HuggingFace, export to .pt, verify hash."""
     output: PETMAD_MODEL
     log: os.path.join(LOGDIR, "get_petmad_model.log")
-    params:
-        expected_sha256=PETMAD_PT_SHA256,
     shell:
         "mkdir -p {MODELDIR} && "
-        "curl -L -o {MODELDIR}/pet-mad-{PETMAD_VERSION}.ckpt "
-        "  '{PETMAD_URL}' 2> {log} && "
-        "mtt export {MODELDIR}/pet-mad-{PETMAD_VERSION}.ckpt 2>> {log} && "
-        "mv pet-mad-{PETMAD_VERSION}.pt {output} 2>> {log} && "
-        "echo '{params.expected_sha256}  {output}' | sha256sum -c >> {log} 2>&1"
+        "uvx --from 'metatrain>=2026.2.1' mtt export "
+        "  {PETMAD_HF_REPO} {PETMAD_CKPT} -o {output} 2> {log}"
 
 rule serve_petmad:
     """Start eOn serve with PET-MAD (blocking, run in separate terminal)."""
