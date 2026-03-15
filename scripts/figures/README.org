@@ -1,0 +1,122 @@
+#+TITLE: ChemGP Figure Reproduction
+#+AUTHOR: Rohit Goswami
+#+OPTIONS: toc:2
+
+* Overview
+
+This directory contains the complete reproduction pipeline for all figures in
+the tutorial review "Bayesian Optimization with Gaussian Processes to Accelerate
+Stationary Point Searches" (ACS Physical Chemistry Au).
+
+All figures are generated from the =chemgp-core= Rust crate examples. The
+pipeline has four stages:
+
+1. *Rust examples* produce JSONL output (convergence traces, GP quality data)
+2. *jsonl_to_h5.py* converts JSONL to structured HDF5
+3. *rgpycrumbs* reads HDF5 and renders publication-quality PDF plots
+4. *pdftoppm* converts PDFs to PNG for documentation
+
+* Quick start
+
+** Standalone figures (no server needed)
+
+These figures use built-in analytic potentials (Muller-Brown, LEPS, Lennard-Jones):
+
+#+begin_src bash
+pixi run -e dev figures
+#+end_src
+
+This runs all standalone Rust examples, converts to HDF5, and generates 12 PDFs + PNGs.
+
+** RPC figures (molecular systems with PET-MAD)
+
+These figures require an eOn serve instance providing a PET-MAD universal potential.
+
+*** Setup eOn serve
+
+#+begin_src bash
+# Terminal 1: start the potential server
+cd /path/to/eon_orchestrator  # or any eOn install with metatomic support
+eonclient --serve "metatomic:12345" --config config/eon_serve_petmad.ini
+#+end_src
+
+The INI config at =config/eon_serve_petmad.ini= specifies the model path. The
+PET-MAD-XS v1.5.0 model can be obtained via =mtt export= from HuggingFace:
+
+#+begin_src bash
+pip install metatrain
+mtt export lab-cosmo/pet-mad models/pet-mad-xs-v1.5.0.ckpt
+#+end_src
+
+*** Generate RPC figures
+
+#+begin_src bash
+# Terminal 2: run RPC examples against the server
+pixi run -e dev figures-rpc
+#+end_src
+
+This produces 6 additional PDFs (petmad_minimize, rpc_dimer_convergence,
+system100_convergence, system100_neb_profile, system100_neb_landscape,
+petmad_rff_quality).
+
+** All figures
+
+#+begin_src bash
+pixi run -e dev figures-all  # requires eOn serve running
+#+end_src
+
+* Pipeline details
+
+** Snakemake workflow
+
+The =Snakefile= orchestrates the full pipeline. Key targets:
+
+| Target            | Description                        |
+|-------------------+------------------------------------|
+| =standalone_pngs= | All standalone figures (12 PDFs)   |
+| =rpc_pdfs=        | RPC/molecular figures (6 PDFs)     |
+| =default=         | Everything + PNG conversion        |
+
+** Configuration
+
+- =tutorial/figures.toml=: plot configuration (axes, labels, colors, thresholds)
+- =tutorial/landscape.toml=: 2D landscape plot configuration
+- =config/eon_serve_petmad.ini=: eOn serve INI for PET-MAD potential
+
+** Output structure
+
+#+begin_example
+tutorial/output/
+  *.jsonl          # Raw Rust example output
+  *.h5             # Converted HDF5 (structured)
+  *.pdf            # Publication-quality plots
+#+end_example
+
+** Deterministic reproduction
+
+All examples use fixed random seeds (=StdRng::seed_from_u64=) for deterministic
+output. The JSONL files contain the exact data used to generate manuscript figures.
+
+* Figure inventory
+
+| Figure | PDF filename                      | Source example    | Surface    |
+|--------+-----------------------------------+-------------------+------------|
+|      3 | mb_gp_progression.pdf             | mb_gp_quality     | MB 2D      |
+|      4 | mb_variance.pdf                   | mb_gp_quality     | MB 2D      |
+|      7 | mb_hyperparams.pdf                | mb_hyperparams    | MB 2D      |
+|      9 | rpc_dimer_convergence.pdf         | rpc_dimer         | C3H5 (RPC) |
+|     11 | mb_trust_region.pdf               | mb_trust          | MB 2D      |
+|     12 | mb_neb.pdf                        | mb_neb            | MB 2D      |
+|     13 | leps_neb.pdf                      | leps_neb          | LEPS 9D    |
+|     14 | leps_aie_oie.pdf                  | leps_neb          | LEPS 9D    |
+|     15 | leps_minimize_convergence.pdf     | leps_minimize     | LEPS 9D    |
+|     18 | leps_fps.pdf                      | leps_fps          | LEPS 9D    |
+|     19 | leps_rff_quality.pdf              | leps_rff_quality  | LEPS 9D    |
+|     20 | petmad_minimize_convergence.pdf   | petmad_minimize   | PET-MAD    |
+|     21 | system100_convergence.pdf         | system100_neb     | PET-MAD    |
+|     22 | system100_neb_profile.pdf         | system100_neb     | PET-MAD    |
+|     23 | system100_neb_landscape.pdf       | system100_neb     | PET-MAD    |
+|     S3 | leps_nll_landscape.pdf            | leps_nll_landscape| LEPS 9D    |
+
+TikZ figures (1, 2, 5, 6, 8, 10, 16, 17, S1, S2, TOC) are in =src/figures/tikz/=
+of the manuscript repository and compiled via =pixi run tikz-figs=.

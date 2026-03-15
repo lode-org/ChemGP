@@ -463,8 +463,9 @@ fn main() {
 
     // Summary
     let oie_calls = oie_enh_result.as_ref().or(oie_result.as_ref()).map_or(0, |r| r.oracle_calls);
+    let base_cfg = base_neb_config(args.images);
     writeln!(f, r#"{{"summary":true,"conv_tol":{},"neb_calls":{},"aie_calls":{},"oie_calls":{}}}"#,
-        cfg.conv_tol,
+        base_cfg.conv_tol,
         neb_result.as_ref().map_or(0, |r| r.oracle_calls),
         aie_result.as_ref().map_or(0, |r| r.oracle_calls),
         oie_calls,

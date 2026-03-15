@@ -167,10 +167,12 @@ fn main() {
     let outfile = "rpc_dimer.jsonl";
     let mut f = std::fs::File::create(outfile).expect("Failed to create output file");
 
+    let conv_threshold = 0.1; // eV/A, consistent with NEB examples
+
     // --- Standard Dimer ---
     if run_std {
         let mut cfg = DimerConfig::default();
-        cfg.t_force_true = 0.01;
+        cfg.t_force_true = conv_threshold;
         cfg.max_oracle_calls = max_calls;
         cfg.max_outer_iter = max_calls;
         cfg.verbose = true;
@@ -206,8 +208,8 @@ fn main() {
     // --- GP-Dimer ---
     if run_dimer {
         let mut cfg = DimerConfig::default();
-        cfg.t_force_true = 0.01;
-        cfg.t_force_gp = 0.001;
+        cfg.t_force_true = conv_threshold;
+        cfg.t_force_gp = conv_threshold / 10.0;
         cfg.trust_radius = 0.05;
         cfg.max_outer_iter = max_calls;
         cfg.max_oracle_calls = max_calls;
@@ -248,6 +250,7 @@ fn main() {
     // --- OTGPD ---
     if run_otgpd {
         let mut cfg = OTGPDConfig::default();
+        cfg.t_dimer = conv_threshold;
         cfg.trust_radius = 0.05;
         cfg.max_outer_iter = max_calls;
         cfg.dimer_sep = dimer_sep;
@@ -292,12 +295,11 @@ fn main() {
         }
     }
 
-    // Summary with convergence threshold (all methods use 0.01)
-    let conv_tol = 0.01f64;
+    // Summary with convergence threshold
     writeln!(
         f,
         r#"{{"summary":true,"conv_tol":{}}}"#,
-        conv_tol
+        conv_threshold
     )
     .expect("Operation failed");
 
