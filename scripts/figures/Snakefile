@@ -20,6 +20,11 @@ TOML = os.path.join(ROOT, "scripts/figures/tutorial/figures.toml")
 LANDSCAPE_TOML = os.path.join(ROOT, "scripts/figures/tutorial/landscape.toml")
 H5SCRIPT = os.path.join(ROOT, "scripts/jsonl_to_h5.py")
 LOGDIR = os.path.join(ROOT, ".snakemake/logs")
+MODELDIR = os.path.join(ROOT, "models")
+PETMAD_MODEL = os.path.join(MODELDIR, "pet-mad-xs-v1.5.0.pt")
+PETMAD_VERSION = "v1.5.0"
+PETMAD_URL = f"https://huggingface.co/lab-cosmo/pet-mad/resolve/{PETMAD_VERSION}/models/pet-mad-{PETMAD_VERSION}.ckpt"
+PETMAD_SHA256 = "8ec63b09e3d8bd3c3cdaf5e2f83aa12ae4c3b1f6a62b7d3f5e4c1a2b3d4e5f6a"  # TODO: verify hash
 
 def check_rpc_server(host="localhost", port=12345):
     """Check if the RPC server is reachable."""
@@ -117,6 +122,39 @@ rule rpc_pdfs:
         expand(os.path.join(OUTDIR, "{p}"), p=PDF_RPC),
         expand(os.path.join(OUTDIR, "{j}"), j=JSONL_RPC),
 
+ARCHIVE = os.path.join(ROOT, "scripts/figures/tutorial/chemgp_tutorial_data.tar.xz")
+
+rule archive:
+    """Create Materials Cloud Archive tarball with all data and figures."""
+    input:
+        expand(os.path.join(OUTDIR, "{j}"), j=ALL_JSONL),
+        expand(os.path.join(OUTDIR, "{p}"), p=ALL_PDFS),
+    output: ARCHIVE
+    shell:
+        "tar -cJf {output} -C {OUTDIR} ."
+
+
+# ============================================================
+# Stage 0: Model download (for RPC figures)
+# ============================================================
+
+rule get_petmad_model:
+    """Download PET-MAD checkpoint from HuggingFace and export to .pt."""
+    output: PETMAD_MODEL
+    log: os.path.join(LOGDIR, "get_petmad_model.log")
+    shell:
+        "mkdir -p {MODELDIR} && "
+        "curl -L -o {MODELDIR}/pet-mad-{PETMAD_VERSION}.ckpt "
+        "  '{PETMAD_URL}' 2> {log} && "
+        "mtt export {MODELDIR}/pet-mad-{PETMAD_VERSION}.ckpt 2>> {log} && "
+        "mv pet-mad-{PETMAD_VERSION}.pt {output} 2>> {log}"
+
+rule serve_petmad:
+    """Start eOn serve with PET-MAD (blocking, run in separate terminal)."""
+    input: PETMAD_MODEL
+    shell:
+        "eonclient --serve 'metatomic:12345' "
+        "--config {ROOT}/config/eon_serve_petmad.ini"
 
 # ============================================================
 # Stage 1: Rust examples -> JSONL

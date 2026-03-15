@@ -21,6 +21,7 @@ rgpot/
 *.ini
 !petmad_hcn_v15xs.ini
 !validation/**/*.ini
+!config/*.ini
 results_*/
 scratch/
 

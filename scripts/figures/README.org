@@ -71,17 +71,34 @@ pixi run -e dev figures-all  # requires eOn serve running
 
 The =Snakefile= orchestrates the full pipeline. Key targets:
 
-| Target            | Description                        |
-|-------------------+------------------------------------|
-| =standalone_pngs= | All standalone figures (12 PDFs)   |
-| =rpc_pdfs=        | RPC/molecular figures (6 PDFs)     |
-| =default=         | Everything + PNG conversion        |
+| Target            | Description                                  |
+|-------------------+----------------------------------------------|
+| =standalone_pngs= | All standalone figures (12 PDFs + PNGs)      |
+| =rpc_pdfs=        | RPC/molecular figures (6 PDFs)               |
+| =default=         | Everything + PNG conversion                  |
+| =archive=         | Create =chemgp_tutorial_data.tar.xz= tarball |
+| =get_petmad_model=| Download and export PET-MAD-XS v1.5.0        |
+| =serve_petmad=    | Start eOn serve (blocking, separate terminal)|
+
+** Full archive generation
+
+#+begin_src bash
+# Terminal 1: download model and start serve
+pixi run -e dev snakemake get_petmad_model -s scripts/figures/Snakefile
+pixi run -e dev snakemake serve_petmad -s scripts/figures/Snakefile
+
+# Terminal 2: generate everything and create archive
+pixi run -e dev snakemake archive -s scripts/figures/Snakefile -j12 --resources rpc_slot=1
+#+end_src
+
+The archive target produces =scripts/figures/tutorial/chemgp_tutorial_data.tar.xz=
+containing all JSONL, HDF5, and PDF outputs.
 
 ** Configuration
 
 - =tutorial/figures.toml=: plot configuration (axes, labels, colors, thresholds)
 - =tutorial/landscape.toml=: 2D landscape plot configuration
-- =config/eon_serve_petmad.ini=: eOn serve INI for PET-MAD potential
+- =config/eon_serve_petmad.ini=: eOn serve INI for PET-MAD potential (relative model path)
 
 ** Output structure
 
@@ -90,6 +107,7 @@ tutorial/output/
   *.jsonl          # Raw Rust example output
   *.h5             # Converted HDF5 (structured)
   *.pdf            # Publication-quality plots
+  *.con, *.dat     # NEB path data (system100)
 #+end_example
 
 ** Deterministic reproduction
