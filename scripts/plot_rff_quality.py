@@ -16,7 +16,7 @@ sys.path.insert(0, str(Path(__file__).parent))
 from _theme import CORAL, SKY, TEAL, HAS_PARSERS, plt
 
 if HAS_PARSERS:
-    from rgpycrumbs.parsers.chemgp import parse_rff_quality_jsonl
+    from chemparseplot.parse.chemgp_jsonl import parse_rff_quality_jsonl
 else:
     import json
 

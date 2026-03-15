@@ -20,7 +20,7 @@ Rust examples  -->  JSONL  -->  HDF5  -->  PDF  -->  PNG
 - **Stage 2** (`h5_standalone`, `h5_rpc`): Python converter
   (`scripts/jsonl_to_h5.py`) reads JSONL and writes HDF5 to `output/`.
 - **Stage 3** (`pdfs_standalone`, `pdfs_rpc`, `hcn_landscape`):
-  `rgpycrumbs.chemgp.plt_gp batch` reads HDF5 and produces PDFs in
+  `chemparseplot.scripts.plot_gp batch` reads HDF5 and produces PDFs in
   `output/`, configured via `figures.toml`.
 - **Stage 4** (`pdf_to_png`): `pdftoppm` converts PDFs to 300 DPI PNGs
   in `docs/source/_static/figures/`.

@@ -72,8 +72,8 @@ adjustText    = ">=1.0"
 cmcrameri     = ">=1.4"
 jax           = ">=0.4"
 rich          = ">=13.0"
-rgpycrumbs    = { path = "external/rgpycrumbs", editable = true }
-chemparseplot = { path = "external/chemparseplot", editable = true }
+rgpycrumbs    = ">=1.4.0"
+chemparseplot = ">=0.5.0"
 
 [feature.dev.tasks.test]
 cmd = "cargo test -p chemgp-core"

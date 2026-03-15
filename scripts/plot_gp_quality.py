@@ -23,7 +23,7 @@ from _theme import CORAL, MAGENTA, SKY, TEAL, YELLOW, HAS_PARSERS, plt
 from matplotlib.patches import Patch
 
 if HAS_PARSERS:
-    from rgpycrumbs.parsers.chemgp import parse_gp_quality_jsonl
+    from chemparseplot.parse.chemgp_jsonl import parse_gp_quality_jsonl
 
 OUTDIR = Path("scripts/figures/tutorial/output")
 

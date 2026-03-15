@@ -313,7 +313,7 @@ rule pdfs_standalone:
     output:
         expand(os.path.join(OUTDIR, "{p}"), p=PDF_STANDALONE),
     shell:
-        "cd {ROOT} && pixi run -e dev python -m rgpycrumbs.chemgp.plt_gp "
+        "cd {ROOT} && pixi run -e dev python -m chemparseplot.scripts.plot_gp "
         "batch --config {input.toml}"
 
 rule pdfs_rpc:
@@ -323,7 +323,7 @@ rule pdfs_rpc:
     output:
         expand(os.path.join(OUTDIR, "{p}"), p=PDF_RPC),
     shell:
-        "cd {ROOT} && pixi run -e dev python -m rgpycrumbs.chemgp.plt_gp "
+        "cd {ROOT} && pixi run -e dev python -m chemparseplot.scripts.plot_gp "
         "batch --config {input.toml}"
 
 
@@ -370,7 +370,7 @@ rule system100_landscape:
     resources:
         rpc_slot=1,
     shell:
-        "cd {ROOT} && pixi run -e dev python -m rgpycrumbs.chemgp.plt_gp "
+        "cd {ROOT} && pixi run -e dev python -m chemparseplot.scripts.plot_gp "
         "batch --config {input.toml}"
 
 

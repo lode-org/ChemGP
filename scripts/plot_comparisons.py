@@ -18,7 +18,7 @@ sys.path.insert(0, str(Path(__file__).parent))
 from _theme import CORAL, TEAL, YELLOW, HAS_PARSERS, plt
 
 if HAS_PARSERS:
-    from rgpycrumbs.parsers.chemgp import parse_comparison_jsonl
+    from chemparseplot.parse.chemgp_jsonl import parse_comparison_jsonl
 
 OUTDIR = Path("scripts/figures/tutorial/output")
 

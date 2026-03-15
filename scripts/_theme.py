@@ -60,7 +60,7 @@ except ImportError:
 
 # Try rgpycrumbs parsers; scripts that need them import directly
 try:
-    from rgpycrumbs.parsers.chemgp import (  # noqa: F401
+    from chemparseplot.parse.chemgp_jsonl import (  # noqa: F401
         parse_comparison_jsonl,
         parse_rff_quality_jsonl,
         parse_gp_quality_jsonl,
