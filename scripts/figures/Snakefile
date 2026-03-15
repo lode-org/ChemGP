@@ -151,8 +151,8 @@ rule archive:
         paths.add("docs/source/_static/figures/")
         # Model files
         paths.add("models/")
-        # Snakemake cache (DAG, metadata, logs)
-        paths.add(".snakemake/")
+        # Config files for reproduction
+        paths.add("config/")
         # Root-level JSONL files (expected by jsonl_to_h5.py)
         for j in ALL_JSONL:
             p = os.path.join(ROOT, j)
