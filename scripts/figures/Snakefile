@@ -127,37 +127,61 @@ ARCHIVE = os.path.join(ROOT, "scripts/figures/tutorial/chemgp_tutorial_data.tar.
 rule archive:
     """Create rehydration archive: extract to repo root to restore exact submission state.
 
-    Includes all generated data (JSONL, HDF5, PDF, .con, .dat), the PET-MAD
-    model, JSONL source files in repo root, and PNG figures for docs. Extract
-    with: tar -xJf chemgp_tutorial_data.tar.xz -C /path/to/ChemGP/
+    Captures ALL runtime artifacts so the repo can be rehydrated to the exact
+    state at submission. Extract with:
+        tar -xJf chemgp_tutorial_data.tar.xz -C /path/to/ChemGP/
     """
     input:
         jsonl=expand(os.path.join(OUTDIR, "{j}"), j=ALL_JSONL),
         pdfs=expand(os.path.join(OUTDIR, "{p}"), p=ALL_PDFS),
         pngs=expand(os.path.join(FIGDIR, "{s}.png"), s=ALL_STEMS),
         model=PETMAD_MODEL,
+        readme_md=README_MD,
         root_jsonl=expand(os.path.join(ROOT, "{j}"), j=ALL_JSONL),
     output: ARCHIVE
-    shell:
-        "tar -cJf {output} -C {ROOT} "
-        "  scripts/figures/tutorial/output/ "
-        "  docs/source/_static/figures/ "
-        "  models/ "
-        + " ".join(ALL_JSONL) + " "
-        + " ".join(
-            f for f in [
-                "system100_neb_path_neb.con", "system100_neb_path_aie.con",
-                "system100_neb_path_oie.con", "system100_neb_sp_neb.con",
-                "system100_neb_sp_aie.con", "system100_neb_sp_oie.con",
-                "system100_neb_neb.dat", "system100_neb_aie.dat",
-                "system100_neb_oie.dat",
-            ]
-        )
+    run:
+        import glob
+        # Collect all runtime artifacts relative to ROOT
+        paths = set()
+        # Pipeline output (JSONL, HDF5, PDF, .con, .dat)
+        paths.add("scripts/figures/tutorial/output/")
+        # Documentation figures (PNG)
+        paths.add("docs/source/_static/figures/")
+        # Model files
+        paths.add("models/")
+        # Snakemake cache (DAG, metadata, logs)
+        paths.add(".snakemake/")
+        # Root-level JSONL files (expected by jsonl_to_h5.py)
+        for j in ALL_JSONL:
+            p = os.path.join(ROOT, j)
+            if os.path.exists(p):
+                paths.add(j)
+        # Root-level .con/.dat files (system100 NEB paths)
+        for pat in ["*.con", "*.dat"]:
+            for f in glob.glob(os.path.join(ROOT, pat)):
+                paths.add(os.path.basename(f))
+        # Materials Cloud README
+        readme_md = os.path.join(ROOT, "scripts/figures/README.md")
+        if os.path.exists(readme_md):
+            paths.add("scripts/figures/README.md")
+
+        path_args = " ".join(sorted(paths))
+        shell(f"tar -cJf {{output}} -C {{ROOT}} {path_args}")
 
 
 # ============================================================
 # Stage 0: Model download (for RPC figures)
 # ============================================================
+
+README_ORG = os.path.join(ROOT, "scripts/figures/README.org")
+README_MD = os.path.join(ROOT, "scripts/figures/README.md")
+
+rule readme_md:
+    """Convert README.org to README.md via pandoc for Materials Cloud Archive."""
+    input: README_ORG
+    output: README_MD
+    shell:
+        "pandoc -f org -t gfm --wrap=none {input} -o {output}"
 
 rule get_petmad_model:
     """Download PET-MAD checkpoint from HuggingFace, export to .pt, verify hash."""

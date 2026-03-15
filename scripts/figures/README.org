@@ -157,3 +157,57 @@ output. The JSONL files contain the exact data used to generate manuscript figur
 
 TikZ figures (1, 2, 5, 6, 8, 10, 16, 17, S1, S2, TOC) are in =src/figures/tikz/=
 of the manuscript repository and compiled via =pixi run tikz-figs=.
+
+* Data formats (FAIR)
+
+| Format | Extension | Description | Reader |
+|--------+-----------+-------------+--------|
+| JSON Lines | =.jsonl= | One JSON object per line. Records contain method, step, energy (eV), force (eV/A), oracle calls | Any JSON parser |
+| HDF5 | =.h5= | Structured groups (=/table=, =/grids/{name}=, =/paths/{name}=, =/points/{name}=) with NumPy arrays | h5py, HDFView |
+| eOn CON | =.con= | Atomic configurations (cell, species, positions). Human readable | ASE, readcon, eOn |
+| TSV | =.dat= | Tab-separated NEB path data (reaction coordinate, energy, forces) | Any text reader |
+| PDF | =.pdf= | Vector figures from rgpycrumbs | Any PDF viewer |
+| PNG | =.png= | Raster figures (300 DPI) for documentation | Any image viewer |
+| PyTorch | =.pt= | PET-MAD-XS v1.5.0 exported model | PyTorch, metatensor |
+
+* Computational provenance
+
+| Surface | System | Atoms | DOF | Potential |
+|---------+--------+-------+-----+-----------|
+| Muller-Brown | 2D analytical | N/A | 2 | Built-in (=potentials.rs=) |
+| LEPS | H + H2 collinear | 3 | 9 | Built-in (=potentials.rs=) |
+| PET-MAD minimize | Molecular | 9 | 27 | PET-MAD-XS v1.5.0 |
+| PET-MAD dimer (C3H5) | Allyl radical | 8 | 24 | PET-MAD-XS v1.5.0 |
+| PET-MAD NEB (System100) | C2H4 + N2O cycloaddition | 9 | 27 | PET-MAD-XS v1.5.0 |
+
+** Model
+
+- PET-MAD-XS v1.5.0 from [[https://huggingface.co/lab-cosmo/pet-mad][lab-cosmo/pet-mad]]
+- Exported via =mtt export= (metatrain)
+- SHA256: =5ea4404e44f281087fa5f294040546b10bf3b9c8110b166fdf4755fc39aa4a59=
+- Served via eOn =--serve metatomic:12345= for RPC examples
+
+** Software versions
+
+- chemgp-core 0.1.0 (Rust, deterministic seeds via =StdRng::seed_from_u64=)
+- eOn >= 2.12.0 (serve mode with metatomic potential)
+- rgpycrumbs (Python, editable install)
+- chemparseplot (Python, editable install)
+
+* License
+
+- Data and figures: CC-BY-4.0
+- Code (chemgp-core): MIT
+- PET-MAD model: see [[https://huggingface.co/lab-cosmo/pet-mad][lab-cosmo/pet-mad]] license
+
+* Citation
+
+#+begin_src bibtex
+@article{goswami2026bayesian,
+  author  = {Goswami, Rohit},
+  title   = {Bayesian Optimization with Gaussian Processes to Accelerate
+             Stationary Point Searches},
+  journal = {ACS Physical Chemistry Au},
+  year    = {2026},
+}
+#+end_src
