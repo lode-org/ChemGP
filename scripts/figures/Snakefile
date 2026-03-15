@@ -125,28 +125,34 @@ rule rpc_pdfs:
 ARCHIVE = os.path.join(ROOT, "scripts/figures/tutorial/chemgp_tutorial_data.tar.xz")
 
 rule archive:
-    """Create Materials Cloud Archive tarball with all data, figures, and model."""
+    """Create rehydration archive: extract to repo root to restore exact submission state.
+
+    Includes all generated data (JSONL, HDF5, PDF, .con, .dat), the PET-MAD
+    model, JSONL source files in repo root, and PNG figures for docs. Extract
+    with: tar -xJf chemgp_tutorial_data.tar.xz -C /path/to/ChemGP/
+    """
     input:
         jsonl=expand(os.path.join(OUTDIR, "{j}"), j=ALL_JSONL),
         pdfs=expand(os.path.join(OUTDIR, "{p}"), p=ALL_PDFS),
+        pngs=expand(os.path.join(FIGDIR, "{s}.png"), s=ALL_STEMS),
         model=PETMAD_MODEL,
-        config=os.path.join(ROOT, "config/eon_serve_petmad.ini"),
-        readme=os.path.join(ROOT, "scripts/figures/README.org"),
-        figures_toml=TOML,
-        landscape_toml=LANDSCAPE_TOML,
-        h5_script=H5SCRIPT,
+        root_jsonl=expand(os.path.join(ROOT, "{j}"), j=ALL_JSONL),
     output: ARCHIVE
     shell:
-        "mkdir -p {OUTDIR}/archive_staging && "
-        "cp -r {OUTDIR}/*.jsonl {OUTDIR}/*.h5 {OUTDIR}/*.pdf {OUTDIR}/archive_staging/ 2>/dev/null; "
-        "cp {OUTDIR}/*.con {OUTDIR}/*.dat {OUTDIR}/archive_staging/ 2>/dev/null; "
-        "cp {input.model} {OUTDIR}/archive_staging/ && "
-        "cp {input.config} {OUTDIR}/archive_staging/ && "
-        "cp {input.readme} {OUTDIR}/archive_staging/ && "
-        "cp {input.figures_toml} {input.landscape_toml} {OUTDIR}/archive_staging/ && "
-        "cp {input.h5_script} {OUTDIR}/archive_staging/ && "
-        "tar -cJf {output} -C {OUTDIR}/archive_staging . && "
-        "trash {OUTDIR}/archive_staging"
+        "tar -cJf {output} -C {ROOT} "
+        "  scripts/figures/tutorial/output/ "
+        "  docs/source/_static/figures/ "
+        "  models/ "
+        + " ".join(ALL_JSONL) + " "
+        + " ".join(
+            f for f in [
+                "system100_neb_path_neb.con", "system100_neb_path_aie.con",
+                "system100_neb_path_oie.con", "system100_neb_sp_neb.con",
+                "system100_neb_sp_aie.con", "system100_neb_sp_oie.con",
+                "system100_neb_neb.dat", "system100_neb_aie.dat",
+                "system100_neb_oie.dat",
+            ]
+        )
 
 
 # ============================================================

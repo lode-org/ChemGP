@@ -91,8 +91,27 @@ pixi run -e dev snakemake serve_petmad -s scripts/figures/Snakefile
 pixi run -e dev snakemake archive -s scripts/figures/Snakefile -j12 --resources rpc_slot=1
 #+end_src
 
-The archive target produces =scripts/figures/tutorial/chemgp_tutorial_data.tar.xz=
-containing all JSONL, HDF5, and PDF outputs.
+The archive target produces =scripts/figures/tutorial/chemgp_tutorial_data.tar.xz=.
+
+** Rehydrating from the archive
+
+The archive is a full snapshot. Extract it at the repo root to restore the exact
+state at submission time:
+
+#+begin_src bash
+cd /path/to/ChemGP
+tar -xJf scripts/figures/tutorial/chemgp_tutorial_data.tar.xz
+#+end_src
+
+This restores:
+- =scripts/figures/tutorial/output/= (JSONL, HDF5, PDF, .con, .dat)
+- =docs/source/_static/figures/= (PNG figures for documentation)
+- =models/= (PET-MAD-XS v1.5.0 .pt file)
+- Root-level JSONL files (expected by =jsonl_to_h5.py=)
+- Root-level .con/.dat files (system100 NEB path data)
+
+After rehydration, no recomputation is needed. The figures can be regenerated
+from the JSONL data without re-running the Rust examples or the RPC server.
 
 ** Configuration
 
