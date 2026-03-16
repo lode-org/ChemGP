@@ -1388,6 +1388,7 @@ checksum = "dc897dd8d9e8bd1ed8cdad82b5966c3e0ecae09fb1907d58efaa013543185d0a"
 [[package]]
 name = "rgpot-core"
 version = "1.0.1"
+source = "git+https://github.com/OmniPotentRPC/rgpot#c0b1c42e92f3f5e0498be61518bd7c6361d20b49"
 dependencies = [
  "capnp",
  "capnp-rpc",
