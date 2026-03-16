@@ -15,9 +15,34 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+
+      - uses: astral-sh/setup-uv@v6
+
       - uses: prefix-dev/setup-pixi@v0.8.10
         with:
-          environments: docs
+          environments: dev docs rpc
+
+      - name: Download PET-MAD model
+        run: |
+          mkdir -p models
+          uvx --from 'metatrain>=2026.2.1' mtt export \
+            lab-cosmo/upet models/pet-mad-xs-v1.5.0.ckpt \
+            -o models/pet-mad-xs-v1.5.0.pt
+
+      - name: Start PET-MAD server
+        run: |
+          pixi run -e rpc eonclient -p metatomic \
+            --config config/eon_serve_petmad.ini &
+          sleep 3
+
+      - name: Generate all figures
+        run: pixi run -e dev snakemake -j4 -s scripts/figures/Snakefile --resources rpc_slot=1
+
+      - name: Stop server
+        run: kill %1 || true
 
       - name: Build documentation
         run: pixi run -e docs docbld

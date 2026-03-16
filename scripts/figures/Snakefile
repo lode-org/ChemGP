@@ -17,6 +17,7 @@ ROOT = os.path.abspath(os.path.join(workflow.basedir, "../.."))
 OUTDIR = os.path.join(ROOT, "scripts/figures/tutorial/output")
 FIGDIR = os.path.join(ROOT, "docs/source/_static/figures")
 TOML = os.path.join(ROOT, "scripts/figures/tutorial/figures.toml")
+TOML_STANDALONE = os.path.join(ROOT, "scripts/figures/tutorial/figures_standalone.toml")
 LANDSCAPE_TOML = os.path.join(ROOT, "scripts/figures/tutorial/landscape.toml")
 H5SCRIPT = os.path.join(ROOT, "scripts/jsonl_to_h5.py")
 LOGDIR = os.path.join(ROOT, ".snakemake/logs")
@@ -303,7 +304,7 @@ rule h5_rpc:
 rule pdfs_standalone:
     input:
         expand(os.path.join(OUTDIR, "{h}"), h=H5_STANDALONE),
-        toml=TOML,
+        toml=TOML_STANDALONE,
     output:
         expand(os.path.join(OUTDIR, "{p}"), p=PDF_STANDALONE),
     shell:

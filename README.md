@@ -5,6 +5,10 @@ Gaussian Process accelerated optimization for computational chemistry.
 ChemGP provides GP surrogate models for energy surface exploration,
 reducing expensive oracle (electronic structure) evaluations by 3-22x.
 
+> **Paper:** R. Goswami, "Bayesian Optimization with Gaussian Processes to
+> Accelerate Stationary Point Searches," arXiv:2603.10992, Mar. 2026.
+> [doi:10.48550/arXiv.2603.10992](https://doi.org/10.48550/arXiv.2603.10992)
+
 Two kernel types are provided: `MolInvDistSE` for molecular systems
 (operates on inverse interatomic distances, providing rotational and
 translational invariance) and `CartesianSE` for arbitrary smooth
@@ -62,17 +66,9 @@ All manuscript figures are generated via a Snakemake pipeline in
 `scripts/figures/`. See [`scripts/figures/README.org`](scripts/figures/README.org)
 for the full workflow.
 
-A rehydration archive (`chemgp_tutorial_data.tar.xz`) contains the exact
-computational state at submission: all data, figures, the PET-MAD model, and
-Snakemake cache. Extract at repo root to restore without recomputation:
-
-```shell
-tar -xJf scripts/figures/tutorial/chemgp_tutorial_data.tar.xz
-```
-
-The archive is deposited on Materials Cloud Archive:
+A rehydration archive is deposited on Materials Cloud Archive for exact
+reproduction without recomputation.
 <!-- TODO: replace with actual DOI after submission -->
-`doi:10.24435/materialscloud:XXXX`
 
 # Documentation
 

@@ -10,6 +10,23 @@
 :Author: `Rohit Goswami <https://rgoswami.me>`_
 #+end_export
 
+* Citation
+
+If you use ChemGP, please cite the tutorial review:
+
+#+begin_export rst
+.. admonition:: Primary citation
+
+   R. Goswami, "Bayesian Optimization with Gaussian Processes to Accelerate
+   Stationary Point Searches," arXiv:2603.10992, Mar. 2026.
+   `doi:10.48550/arXiv.2603.10992 <https://doi.org/10.48550/arXiv.2603.10992>`_
+
+ChemGP builds on methods and analysis from these related publications:
+
+.. bibliography::
+   :all:
+#+end_export
+
 * Overview
 
 Gaussian Process accelerated optimization for computational chemistry.

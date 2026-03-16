@@ -1,0 +1,84 @@
+# Batch config for standalone (non-RPC) figure generation.
+# Subset of figures.toml that does not require an RPC server.
+
+[defaults]
+input_dir = "output"
+output_dir = "output"
+
+# --- Convergence plots ---
+
+[[plots]]
+input = "leps_minimize.h5"
+output = "leps_minimize_convergence.pdf"
+type = "convergence"
+
+[[plots]]
+input = "leps_aie_oie.h5"
+output = "leps_aie_oie.pdf"
+type = "convergence"
+
+# --- Surface contour plots ---
+
+[[plots]]
+input = "leps_neb.h5"
+output = "leps_neb.pdf"
+type = "surface"
+
+[[plots]]
+input = "mb_neb.h5"
+output = "mb_neb.pdf"
+type = "surface"
+
+# --- GP quality progression ---
+
+[[plots]]
+input = "mb_gp.h5"
+output = "mb_gp_progression.pdf"
+type = "quality"
+
+[[plots]]
+input = "mb_gp_scattered.h5"
+output = "mb_gp_progression_scattered.pdf"
+type = "quality"
+
+# --- RFF quality ---
+
+[[plots]]
+input = "leps_rff.h5"
+output = "leps_rff_quality.pdf"
+type = "rff"
+
+# --- NLL landscape ---
+
+[[plots]]
+input = "leps_nll.h5"
+output = "leps_nll_landscape.pdf"
+type = "nll"
+
+# --- Hyperparameter sensitivity ---
+
+[[plots]]
+input = "mb_hyperparams.h5"
+output = "mb_hyperparams.pdf"
+type = "sensitivity"
+
+# --- Trust region ---
+
+[[plots]]
+input = "mb_trust.h5"
+output = "mb_trust_region.pdf"
+type = "trust"
+
+# --- Variance overlay ---
+
+[[plots]]
+input = "mb_variance.h5"
+output = "mb_variance.pdf"
+type = "variance"
+
+# --- FPS projection ---
+
+[[plots]]
+input = "leps_fps.h5"
+output = "leps_fps.pdf"
+type = "fps"

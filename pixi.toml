@@ -16,19 +16,20 @@ nodejs = ">=22,<26"
 emacs  = ">=30.2,<31"
 
 [feature.docs.pypi-dependencies]
-shibuya        = ">=2025.12.13, <2026"
-sphinx         = ">=8.0, <10"
-sphinx-sitemap = ">=2.9.0, <3"
+shibuya            = ">=2025.12.13, <2026"
+sphinx             = ">=8.0, <10"
+sphinx-sitemap     = ">=2.9.0, <3"
+sphinxcontrib-bibtex = ">=2.6, <3"
 
 [feature.docs.tasks.mkrst]
 cwd = "docs"
 cmd = "emacs --batch --load export.el"
 
 [feature.docs.tasks.cpfigs]
-cmd = "bash -c 'mkdir -p docs/source/_static/figures && for f in scripts/figures/tutorial/output/*.pdf; do pdftoppm -png -r 300 -singlefile \"$f\" \"docs/source/_static/figures/$(basename $f .pdf)\"; done'"
+cmd = "bash -c 'command -v pdftoppm >/dev/null 2>&1 && ls scripts/figures/tutorial/output/*.pdf >/dev/null 2>&1 && for f in scripts/figures/tutorial/output/*.pdf; do pdftoppm -png -r 300 -singlefile \"$f\" \"docs/source/_static/figures/$(basename $f .pdf)\"; done || true'"
 
 [feature.docs.tasks.sphinxbld]
-depends-on = ["mkrst", "cpfigs"]
+depends-on = ["mkrst"]
 cmd = "sphinx-build -d docs/doctrees docs/source/ docs/build"
 
 [feature.docs.tasks.docbld]
@@ -55,7 +56,8 @@ npx html-minifier-terser \
 """
 
 [feature.dev.dependencies]
-rust = ">=1.75"
+rust    = ">=1.75"
+poppler = ">=24"
 snakemake = ">=9.16.3,<10"
 
 [feature.dev.activation]
@@ -112,8 +114,9 @@ cmd = "snakemake -j12 -s scripts/figures/Snakefile --resources rpc_slot=1"
 description = "Build all figures. Requires: pixi run -e rpc serve-petmad (in another terminal)"
 
 [feature.rpc.dependencies]
-eon  = ">=2.12.0,<3"
-rust = ">=1.75"
+eon        = ">=2.12.0,<3"
+rust       = ">=1.75"
+capnproto  = ">=1.0"
 
 [feature.rpc.pypi-dependencies]
 matplotlib = ">=3.8, <4"

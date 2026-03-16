@@ -50,7 +50,7 @@ jobs:
 
       - uses: Swatinem/rust-cache@v2
 
-      - uses: prefix-dev/setup-pixi@v0.8.1
+      - uses: prefix-dev/setup-pixi@v0.8.10
         with:
           environments: rpc
 
@@ -61,7 +61,7 @@ jobs:
         run: sleep 2
 
       - name: RPC smoke test
-        run: cargo run --release --features rgpot --example rpc_smoke_test
+        run: pixi run -e rpc cargo run --release --features rgpot --example rpc_smoke_test
 
       - name: Stop server
         run: kill %1 || true
