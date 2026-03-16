@@ -1,0 +1,187 @@
+
+
+Scalability: FPS + RFF
+----------------------
+
+This tutorial covers the two mechanisms that allow GP methods to scale beyond
+small training sets: Farthest Point Sampling (FPS) for hyperparameter
+training and Random Fourier Features (RFF) for prediction.
+
+The scaling problem
+~~~~~~~~~~~~~~~~~~~
+
+The GP covariance matrix :math:`\mathbf{K}` has size :math:`N(1+D) \times N(1+D)` for :math:`N` training points
+in :math:`D` dimensions. Cholesky factorization costs :math:`\mathcal{O}(N^3(1+D)^3)`. For a 3-atom
+system (:math:`D=9`) with 30 training points, :math:`\mathbf{K}` is :math:`300 \times 300` (fast). For a 50-atom
+system (:math:`D=150`) with 30 points, :math:`\mathbf{K}` is :math:`4530 \times 4530` (expensive). Inner
+optimization loops that call predict hundreds of times make this worse.
+
+Two strategies solve this:
+
+1. **FPS subset**: train hyperparameters on a subset of :math:`K` training points
+   (keep Cholesky at :math:`K^3` instead of :math:`N^3`)
+
+2. **RFF approximation**: replace exact GP prediction with a $D\ :sub:`\mathrm{rff}`\$-dimensional
+   linear model (:math:`\mathcal{O}(D_{\mathrm{rff}})` per prediction instead of :math:`\mathcal{O}(N(1+D))`)
+
+Farthest Point Sampling
+~~~~~~~~~~~~~~~~~~~~~~~
+
+FPS selects a subset of training points that maximally covers the feature
+space. Starting from the most recent point, FPS iteratively adds the point
+farthest from the current subset (in EMD or Euclidean distance).
+
+The key insight: hyperparameter training via SCG requires a Cholesky
+factorization at each iteration. With :math:`K` subset points, this costs :math:`\mathcal{O}(K^3(1+D)^3)`
+instead of :math:`\mathcal{O}(N^3(1+D)^3)`. For :math:`K = 15` and :math:`N = 50` with :math:`D = 9`, that is a
+:math:`15^3/50^3 \approx 27\times` speedup per SCG iteration.
+
+FPS guarantees that the subset spans the training data: the selected points
+are spread out, so the GP trained on the subset still captures the global
+covariance structure. The unselected points contribute to prediction (via
+the full-data PredModel) but not to hyperparameter training.
+
+Per-bead FPS for NEB
+^^^^^^^^^^^^^^^^^^^^
+
+Standard FPS selects :math:`K` points globally. For NEB with :math:`I` images, this can
+leave individual images without nearby training data. Per-bead FPS selects
+the :math:`K` nearest points to *each* image, then takes their union. This ensures
+every image has local coverage.
+
+If the union exceeds ``max_gp_points``, global FPS trims it back. This
+two-level strategy balances local coverage with global budget.
+
+Random Fourier Features
+~~~~~~~~~~~~~~~~~~~~~~~
+
+RFF replaces the exact GP kernel with a finite-dimensional feature map:
+
+
+
+.. math::
+
+    z_j(\mathbf{x}) = c \cos(\mathbf{w}_j^\top \boldsymbol{\phi}(\mathbf{x}) + b_j)
+
+where :math:`\mathbf{w}_j \sim \mathcal{N}(\mathbf{0}, 2\theta^2 \mathbf{I})`, :math:`b_j \sim \mathcal{U}(0, 2\pi)`, and :math:`c = \sigma \sqrt{2 / D_{\mathrm{rff}}}`.
+
+By Bochner's theorem, :math:`\mathbb{E}[\mathbf{z}(\mathbf{x})^\top \mathbf{z}(\mathbf{y})] = k(\mathbf{x}, \mathbf{y})`, so the inner product of RFF
+features approximates the kernel. The approximation improves with more
+features (:math:`D_{\mathrm{rff}}`), and is exact in the limit :math:`D_{\mathrm{rff}} \to \infty`.
+
+See ``scripts/sympy/t5_rff_expectation.py`` for the proof.
+
+Why RFF works for GP prediction
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+With RFF features, the GP posterior reduces to a linear regression:
+
+
+
+.. math::
+
+    \mathbf{Z} = \begin{bmatrix} \mathbf{z}(\mathbf{x}_1) \\ \vdots \\ \mathbf{z}(\mathbf{x}_N) \end{bmatrix}, \quad
+    \mathbf{A} = \mathbf{Z}^\top \mathbf{P} \mathbf{Z} + \mathbf{I}
+
+
+
+.. math::
+
+    \boldsymbol{\alpha} = \mathbf{A}^{-1} \mathbf{Z}^\top \mathbf{P} \mathbf{y}
+
+
+
+.. math::
+
+    \mu(\mathbf{x}_*) = \mathbf{z}(\mathbf{x}_*)^\top \boldsymbol{\alpha}, \quad
+    \sigma^2(\mathbf{x}_*) = \| \mathbf{L}^{-1} \mathbf{z}(\mathbf{x}_*) \|^2
+
+where :math:`\mathbf{Z}` is the :math:`N(1+D) \times D_{\mathrm{rff}}` design matrix, :math:`\mathbf{A}` is the :math:`D_{\mathrm{rff}} \times D_{\mathrm{rff}}` Gram matrix,
+:math:`\mathbf{P}` is a diagonal noise precision matrix, and :math:`\mathbf{L} = \mathrm{chol}(\mathbf{A})`. Prediction costs :math:`\mathcal{O}(D_{\mathrm{rff}})` per point instead
+of :math:`\mathcal{O}(N(1+D))`.
+
+Force predictions with RFF
+^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+For force predictions, the RFF model needs the Jacobian of the features:
+
+
+
+.. math::
+
+    \frac{\partial z_j}{\partial x_d} = -c \sin(\mathbf{w}_j^\top \boldsymbol{\phi}(\mathbf{x}) + b_j) \sum_l w_{jl} \frac{\partial \phi_l}{\partial x_d}
+
+This is the chain rule through the feature map: RFF frequencies :math:`\mathbf{w}_j`
+multiply the Jacobian of the underlying features (inverse distances for
+``MolInvDistSE``, identity for ``CartesianSE``).
+
+Seeded RFF for reproducibility
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+RFF sampling is stochastic: different random seeds give different frequency
+matrices and slightly different predictions. In OIE NEB, this stochasticity
+causes the LCB scoring to oscillate (different images are selected each
+iteration, and the path never settles).
+
+ChemGP uses seeded RFF (``seed=42``, or other fixed seeds) to eliminate this
+source of non-determinism. The seed is fixed at RFF construction time, so
+the same hyperparameters always produce the same RFF model.
+
+Choosing FPS and RFF parameters
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+.. table::
+
+    +-------------------+----------------------------------------------------+
+    | Parameter         | Guidance                                           |
+    +===================+====================================================+
+    | ``fps_history``   | 10-30 for small systems, 30-50 for large           |
+    +-------------------+----------------------------------------------------+
+    | ``rff_features``  | 200-500 (must exceed :math:`N(1+D)` of FPS subset) |
+    +-------------------+----------------------------------------------------+
+    | ``max_gp_points`` | 50 (NEB: trigger per-bead FPS above this)          |
+    +-------------------+----------------------------------------------------+
+
+Rules of thumb:
+
+- Use exact GP (rff\ :sub:`features`\ = 0) when :math:`N < 20` and :math:`D < 10`
+
+- Switch to RFF when the inner optimization loop is slow
+
+- If RFF error is noticeable, increase :math:`D_{\mathrm{rff}}` (check with ``leps_rff_quality``)
+
+RFF quality on LEPS
+~~~~~~~~~~~~~~~~~~~
+
+.. code:: bash
+
+    cargo run --release --example leps_rff_quality
+
+This evaluates RFF approximation quality for :math:`D_{\mathrm{rff}} = 25, 50, 100, 150, 200,
+300, 500` against exact GP and true LEPS values. Typical results:
+
+.. table::
+
+    +--------------------------+--------------------+----------------------+
+    | :math:`D_{\mathrm{rff}}` | Energy MAE vs true | Gradient MAE vs true |
+    +==========================+====================+======================+
+    |                       50 | ~ 0.01             | ~ 0.05               |
+    +--------------------------+--------------------+----------------------+
+    |                      200 | ~ 0.005            | ~ 0.02               |
+    +--------------------------+--------------------+----------------------+
+    |                      500 | ~ 0.002            | ~ 0.01               |
+    +--------------------------+--------------------+----------------------+
+
+For inner optimization loops, $D\ :sub:`\mathrm{rff}`\ = 200$--:math:`500` provides sufficient accuracy.
+
+SymPy verification
+~~~~~~~~~~~~~~~~~~
+
+The RFF expectation proof (Bochner's theorem) is verified in:
+
+.. code:: bash
+
+    python scripts/sympy/t5_rff_expectation.py
+
+This includes the symbolic proof for 1D, Monte Carlo verification for
+1D and 9D, and the force prediction Jacobian construction.

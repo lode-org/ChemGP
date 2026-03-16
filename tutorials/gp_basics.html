@@ -1,0 +1,591 @@
+<!DOCTYPE html>
+<html lang="en" data-accent-color="teal" data-content_root="../">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"><title>GP Basics - ChemGP documentation</title><link rel="index" title="Index" href="../genindex.html" /><link rel="search" title="Search" href="../search.html" /><link rel="next" title="Minimization" href="minimization.html" /><link rel="prev" title="Installation" href="../installation.html" />
+      <link rel="canonical" href="chemgp.rgoswami.me/tutorials/gp_basics.html" /><script>
+    function setColorMode(t){let e=document.documentElement;e.setAttribute("data-color-mode",t);let a=window.matchMedia&&window.matchMedia("(prefers-color-scheme: dark)").matches,s=t;"auto"===t&&(s=a?"dark":"light"),"light"===s?(e.classList.remove("dark"),e.classList.add("light")):(e.classList.remove("light"),e.classList.add("dark"))}
+    setColorMode(localStorage._theme||"auto");
+  </script><link rel="stylesheet" type="text/css" href="../_static/pygments.css?v=e1a1ceaf" />
+    <link rel="stylesheet" type="text/css" href="../_static/shibuya.css?v=a318c5d4" />
+    <link media="print" rel="stylesheet" type="text/css" href="../_static/print.css?v=20ff2c19" />
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+:root {
+  --sy-f-text: "Inter", var(--sy-f-sys), var(--sy-f-cjk), sans-serif;
+  --sy-f-heading: "Inter", var(--sy-f-sys), var(--sy-f-cjk), sans-serif;
+}
+</style>
+    <meta property="og:type" content="website"/>
+  <meta property="og:url" content="chemgp.rgoswami.me/tutorials/gp_basics.html"/>
+  <meta property="og:title" content="GP Basics"/>
+    <meta name="twitter:card" content="summary"/>
+  <!-- Plausible injection -->
+<script
+  defer
+  data-domain="chemgp.rgoswami.me"
+  src="https://analytics.turtletech.us/js/script.hash.outbound-links.js"
+></script>
+<script>
+  window.plausible =
+    window.plausible ||
+    function () {
+      (window.plausible.q = window.plausible.q || []).push(arguments);
+    };
+</script></head>
+<body><div class="sy-head">
+  <div class="sy-head-blur"></div>
+  <div class="sy-head-inner sy-container mx-auto">
+    <a class="sy-head-brand" href="../index.html">
+      
+      
+      <strong>ChemGP</strong>
+    </a>
+    <div class="sy-head-nav" id="head-nav">
+      <nav class="sy-head-links"><ul>
+      <li class="link"><button class="js-menu" type="button" id="nav-trigger-1" aria-controls="nav-children-1">
+            <span>Ecosystem</span>
+            <i class="i-lucide chevron-down"></i>
+          </button>
+        <ul id="nav-children-1" aria-labelledby="nav-trigger-1"><li><a href="https://rgpycrumbs.rgoswami.me">
+                <span>rgpycrumbs</span>
+                <small>Analytical and visualization suite for chemical physics</small>
+              </a></li><li><a href="https://eondocs.org">
+                <span>eOn</span>
+                <small>Long-timescale molecular dynamics engine</small>
+              </a></li><li><a href="https://github.com/OmniPotentRPC/rgpot">
+                <span>rgpot</span>
+                <small>RPC potential evaluation for GP-accelerated optimization</small>
+              </a></li></ul>
+      </li><li class="link">
+          <a href="https://crates.io/crates/chemgp-core">
+            <span>crates.io</span><i class="i-lucide external-link"></i></a>
+        </li></ul></nav>
+      <div class="sy-head-extra flex items-center print:hidden"><form class="searchbox flex items-center" action="../search.html" method="get">
+  <input type="text" name="q" placeholder="Search" />
+  <kbd>/</kbd>
+</form><div class="sy-head-socials">
+  <a href="https://github.com/lode-org/ChemGP" aria-label="GitHub">
+    <iconify-icon icon="simple-icons:github"></iconify-icon>
+  </a></div></div>
+    </div>
+    <div class="sy-head-actions flex items-center shrink-0 print:hidden"><button class="js-theme theme-switch flex items-center"
+data-aria-auto="Switch to light color mode"
+data-aria-light="Switch to dark color mode"
+data-aria-dark="Switch to auto color mode">
+<i class="i-lucide theme-icon"></i>
+</button><button class="md:hidden flex items-center js-menu" aria-label="Menu" type="button" aria-controls="head-nav" aria-expanded="false">
+        <div class="hamburger">
+          <span class="hamburger_1"></span>
+          <span class="hamburger_2"></span>
+          <span class="hamburger_3"></span>
+        </div>
+      </button>
+    </div>
+  </div>
+</div>
+<div class="sy-page sy-container flex mx-auto">
+  <aside id="lside" class="sy-lside md:w-72 md:shrink-0 print:hidden">
+    <div class="sy-lside-inner md:sticky">
+      <div class="sy-scrollbar p-6">
+        <div class="globaltoc" data-expand-depth="1"><p class="caption" role="heading" aria-level="3"><span class="caption-text">Getting Started</span></p>
+<ul>
+<li class="toctree-l1 _expand"><a class="reference internal" href="../quickstart.html">Quickstart</a></li>
+<li class="toctree-l1 _expand"><a class="reference internal" href="../installation.html">Installation</a></li>
+</ul>
+<p class="caption" role="heading" aria-level="3"><span class="caption-text">Tutorials</span></p>
+<ul class="current">
+<li class="toctree-l1 current"><a class="current reference internal" href="#">GP Basics</a></li>
+<li class="toctree-l1 _expand"><a class="reference internal" href="minimization.html">Minimization</a></li>
+<li class="toctree-l1 _expand"><a class="reference internal" href="molecular_kernels.html">Molecular Kernels</a></li>
+<li class="toctree-l1 _expand"><a class="reference internal" href="hyperparameter_training.html">Hyperparameter Training</a></li>
+<li class="toctree-l1 _expand"><a class="reference internal" href="scalability.html">Scalability: FPS + RFF</a></li>
+<li class="toctree-l1 _expand"><a class="reference internal" href="dimer_method.html">Dimer Method</a></li>
+<li class="toctree-l1 _expand"><a class="reference internal" href="neb_method.html">Nudged Elastic Band</a></li>
+<li class="toctree-l1 _expand"><a class="reference internal" href="otgpd.html">OTGPD</a></li>
+<li class="toctree-l1 _expand"><a class="reference internal" href="constant_kernel.html">Constant Kernel</a></li>
+<li class="toctree-l1 _expand"><a class="reference internal" href="production_minimize.html">Production Minimization</a></li>
+<li class="toctree-l1 _expand"><a class="reference internal" href="production_saddle.html">Production Saddle Search</a></li>
+<li class="toctree-l1 _expand"><a class="reference internal" href="production_neb.html">Production NEB</a></li>
+</ul>
+<p class="caption" role="heading" aria-level="3"><span class="caption-text">Reference</span></p>
+<ul>
+<li class="toctree-l1 _expand"><a class="reference internal" href="../reference/architecture.html">Architecture</a></li>
+<li class="toctree-l1 _expand"><a class="reference internal" href="../reference/kernel_design.html">Kernel Design</a></li>
+<li class="toctree-l1 _expand"><a class="reference internal" href="../reference/trust_regions.html">Trust Regions</a></li>
+<li class="toctree-l1 _expand"><a class="reference internal" href="../api/index.html">API Reference</a></li>
+</ul>
+        </div>
+      </div>
+    </div>
+  </aside>
+  <div class="lside-overlay js-menu" role="button" aria-label="Close left sidebar" aria-controls="lside" aria-expanded="false"></div>
+  <aside id="rside" class="sy-rside pb-3 w-64 shrink-0 order-last">
+    <button class="rside-close js-menu xl:hidden" aria-label="Close Table of Contents" type="button" aria-controls="rside" aria-expanded="false">
+      <i class="i-lucide close"></i>
+    </button>
+    <div class="sy-scrollbar sy-rside-inner px-6 xl:top-16 xl:sticky xl:pl-0 pt-6 pb-4"><div class="localtoc"><h3>On this page</h3><ul>
+<li><a class="reference internal" href="#why-gaussian-processes-for-pes">Why Gaussian Processes for PES?</a></li>
+<li><a class="reference internal" href="#information-density-why-energy-gradient-matters">Information density: why energy+gradient matters</a></li>
+<li><a class="reference internal" href="#gaussian-process-regression">Gaussian Process regression</a></li>
+<li><a class="reference internal" href="#kernels">Kernels</a><ul>
+<li><a class="reference internal" href="#molinvdistse-molecular-systems">MolInvDistSE (molecular systems)</a></li>
+<li><a class="reference internal" href="#cartesianse-arbitrary-surfaces">CartesianSE (arbitrary surfaces)</a></li>
+</ul>
+</li>
+<li><a class="reference internal" href="#kernel-blocks">Kernel blocks</a></li>
+<li><a class="reference internal" href="#training-via-map-nll">Training via MAP-NLL</a></li>
+<li><a class="reference internal" href="#data-dependent-initialization">Data-dependent initialization</a></li>
+<li><a class="reference internal" href="#predmodel-dispatch">PredModel dispatch</a></li>
+<li><a class="reference internal" href="#gp-quality-on-muller-brown">GP quality on Muller-Brown</a><ul>
+<li><a class="reference internal" href="#gp-surrogate-progression">GP surrogate progression</a></li>
+<li><a class="reference internal" href="#variance-and-uncertainty">Variance and uncertainty</a></li>
+<li><a class="reference internal" href="#prediction-error">Prediction error</a></li>
+</ul>
+</li>
+<li><a class="reference internal" href="#sympy-verification">SymPy verification</a></li>
+<li><a class="reference internal" href="#computational-cost-summary">Computational cost summary</a></li>
+</ul>
+</div><a class="js-repo-stats repo-stats flex items-center" href="https://github.com/lode-org/ChemGP"
+  data-type="github" data-user="lode-org" data-repo="ChemGP">
+  <span class="w-8 flex items-center justify-around shrink-0 text-3xl">
+    <iconify-icon icon="simple-icons:github"></iconify-icon>
+  </span>
+  <span class="flex-grow px-2 break-all">
+    
+    
+      <span>lode-org/ChemGP</span>
+    
+    <span class="flex text-sm repo-stats-count">
+      <span class="flex items-center pr-3">
+        <iconify-icon icon="lucide:star"></iconify-icon>
+        <strong class="js-repo-stars ml-1">0</strong>
+      </span>
+      <span class="flex items-center">
+        <iconify-icon icon="lucide:git-fork"></iconify-icon>
+        <strong class="js-repo-forks ml-1">0</strong>
+      </span>
+    </span>
+  </span>
+</a><div class="edit-this-page">
+  <a href="https://github.com/lode-org/ChemGP/blob/main/docs/source/tutorials/gp_basics.rst">Edit this page</a>
+</div></div>
+  </aside>
+  <div class="rside-overlay js-menu" role="button" aria-label="Close Table of Contents" aria-controls="rside" aria-expanded="false"></div>
+  <main class="sy-main w-full max-sm:max-w-full print:pt-6">
+<div class="sy-breadcrumbs" role="navigation">
+  <div class="sy-breadcrumbs-inner flex items-center">
+    <div class="md:hidden mr-3">
+      <button class="js-menu" aria-label="Menu" type="button" aria-controls="lside" aria-expanded="false">
+        <i class="i-lucide menu"></i>
+      </button>
+    </div>
+    <ol class="flex-1" itemscope itemtype="https://schema.org/BreadcrumbList"><li itemprop="itemListElement" itemscope itemtype="https://schema.org/ListItem">
+        <a itemprop="item" href="../index.html"><span itemprop="name">ChemGP</span></a>
+        <span>/</span>
+        <meta itemprop="position" content="1" />
+      </li><li itemprop="itemListElement" itemscope itemtype="https://schema.org/ListItem">
+        <strong itemprop="name">GP Basics</strong>
+        <meta itemprop="position" content="2" />
+      </li></ol>
+    <div class="xl:hidden ml-1">
+      <button class="js-menu" aria-label="Show table of contents" type="button" aria-controls="rside"
+        aria-expanded="false">
+        <i class="i-lucide outdent"></i>
+      </button>
+    </div>
+  </div>
+</div><div class="flex flex-col break-words justify-between">
+      <div class="relative min-w-0 max-w-6xl px-6 pb-6 pt-8 xl:px-12">
+  <div class="copy-page-wrapper relative pb-4 lg:absolute lg:top-8 lg:right-6 xl:right-12">
+  <div id="copy-page-trigger">
+    <button
+      type="button"
+      class="js-copy px-3 py-1 inline-flex items-center gap-1"
+      data-url="chemgp.rgoswami.me/_sources/tutorials/gp_basics.rst.txt"
+    >
+      <i class="i-lucide" data-icon="copy"></i>
+      <span>Copy page</span>
+    </button>
+    <button class="js-menu px-2 py-1" type="button" aria-label="More actions"
+      aria-haspopup="menu" aria-expanded="false" aria-controls="copy-page-content">
+      <i class="i-lucide chevron-down"></i>
+    </button>
+  </div>
+  <div id="copy-page-content" role="menu" aria-orientation="vertical" aria-hidden="true">
+    <div role="presentation">
+      <div class="flex flex-col" role="group">
+        <button class="js-copy" type="button" role="menuitem"
+          data-url="chemgp.rgoswami.me/_sources/tutorials/gp_basics.rst.txt">
+          <span class="iconify-icon">
+            <i class="i-lucide" data-icon="copy"></i>
+          </span>
+          <span>Copy page</span>
+        </button>
+        <a role="menuitem" href="chemgp.rgoswami.me/_sources/tutorials/gp_basics.rst.txt" target="_blank" rel="nofollow"><iconify-icon icon="bi:code-slash"></iconify-icon>
+            <span>View Source</span></a><a role="menuitem" href="https://chatgpt.com/?hints=search&q=Read%20chemgp.rgoswami.me/_sources/tutorials/gp_basics.rst.txt%20so%20I%20can%20ask%20questions%20about%20it." target="_blank" rel="nofollow">
+          <iconify-icon icon="bi:openai"></iconify-icon>
+          <span>Open in ChatGPT</span>
+        </a><a role="menuitem" href="https://claude.ai/new?q=Read%20chemgp.rgoswami.me/_sources/tutorials/gp_basics.rst.txt%20so%20I%20can%20ask%20questions%20about%20it." target="_blank" rel="nofollow">
+          <iconify-icon icon="bi:claude"></iconify-icon>
+          <span>Open in Claude</span>
+        </a></div>
+    </div>
+  </div>
+</div><article class="yue dark-code" role="main">
+          <section id="gp-basics">
+<h1>GP Basics<a class="headerlink" href="#gp-basics" title="Link to this heading">¶</a></h1>
+<p>This tutorial introduces the Gaussian Process machinery underlying all
+ChemGP optimizers. Understanding the GP model, its kernels, and its
+computational costs motivates the design decisions throughout the library.</p>
+<section id="why-gaussian-processes-for-pes">
+<h2>Why Gaussian Processes for PES?<a class="headerlink" href="#why-gaussian-processes-for-pes" title="Link to this heading">¶</a></h2>
+<p>A potential energy surface (PES) maps atomic coordinates to energies and forces.
+Computing this map from first principles (DFT, coupled cluster) is expensive:
+minutes per evaluation for molecules of practical size. An optimizer that needs
+200 evaluations to converge therefore takes hours.</p>
+<p>A Gaussian Process learns a surrogate of the PES from a small number of true
+evaluations. The surrogate has two properties that make it ideal for optimization:</p>
+<ol class="arabic simple">
+<li><p><strong>Predictions are cheap.</strong> Once trained, the GP evaluates in microseconds. An
+inner optimization loop that would need 50 oracle calls can run entirely on
+the GP surrogate.</p></li>
+<li><p><strong>Uncertainty is quantified.</strong> The GP posterior provides not just a predicted
+energy/gradient, but also a variance. This tells the optimizer where the
+surrogate is reliable and where it needs more oracle data. This is the basis
+for trust regions and LCB exploration.</p></li>
+</ol>
+</section>
+<section id="information-density-why-energy-gradient-matters">
+<h2>Information density: why energy+gradient matters<a class="headerlink" href="#information-density-why-energy-gradient-matters" title="Link to this heading">¶</a></h2>
+<p>Most GPs in machine learning model a scalar function <span class="math notranslate nohighlight">\(f(\mathbf{x})\)</span>. For PES modeling,
+we jointly model the energy <span class="math notranslate nohighlight">\(E(\mathbf{x})\)</span> and its gradient <span class="math notranslate nohighlight">\(\mathbf{G}(\mathbf{x}) = dE/d\mathbf{x}\)</span>.</p>
+<p>For a system with <span class="math notranslate nohighlight">\(D\)</span> Cartesian degrees of freedom, each oracle call returns:</p>
+<ul class="simple">
+<li><p>1 energy value</p></li>
+<li><p><span class="math notranslate nohighlight">\(D\)</span> gradient components</p></li>
+</ul>
+<p>That is <span class="math notranslate nohighlight">\(1 + D\)</span> observations per call. For a 3-atom system (<span class="math notranslate nohighlight">\(D = 9\)</span>), each call
+provides 10 observations. For a 50-atom system (<span class="math notranslate nohighlight">\(D = 150\)</span>), each call provides 151
+observations.</p>
+<p>This information density is why GP-accelerated methods converge in so few oracle
+calls: a handful of energy+gradient evaluations gives the GP enough data to build
+a useful surrogate. Energy-only GPs (without gradients) converge much more slowly
+because each call provides only 1 observation.</p>
+<p>The price is computational: the GP covariance matrix has <span class="math notranslate nohighlight">\(N(1+D)\)</span> rows and columns
+for <span class="math notranslate nohighlight">\(N\)</span> training points, so Cholesky factorization costs <span class="math notranslate nohighlight">\(\mathcal{O}(N^3(1+D)^3)\)</span>. For LEPS
+with 3 atoms and 30 training points, this is a 300x300 matrix (manageable). For
+50 atoms and 30 points, it would be 4530x4530 (expensive). This scaling
+motivates FPS subset selection and RFF approximation.</p>
+</section>
+<section id="gaussian-process-regression">
+<h2>Gaussian Process regression<a class="headerlink" href="#gaussian-process-regression" title="Link to this heading">¶</a></h2>
+<p>Given training data <span class="math notranslate nohighlight">\(\{(\mathbf{x}_i, E_i, \mathbf{G}_i)\}\)</span> for <span class="math notranslate nohighlight">\(i = 1 \ldots N\)</span>, the GP posterior at a new
+point <span class="math notranslate nohighlight">\(\mathbf{x}^*\)</span> is:</p>
+<div class="math-wrapper docutils container">
+<div class="math notranslate nohighlight">
+\[\mu(\mathbf{x}^*) = \mathbf{k}(\mathbf{x}^*, X) K^{-1} \mathbf{y}\]</div>
+</div>
+<div class="math-wrapper docutils container">
+<div class="math notranslate nohighlight">
+\[\sigma^2(\mathbf{x}^*) = k(\mathbf{x}^*, \mathbf{x}^*) - \mathbf{k}(\mathbf{x}^*, X) K^{-1} \mathbf{k}(X, \mathbf{x}^*)\]</div>
+</div>
+<p>where <span class="math notranslate nohighlight">\(K\)</span> is the <span class="math notranslate nohighlight">\(N(1+D) \times N(1+D)\)</span> covariance matrix of the training data, <span class="math notranslate nohighlight">\(\mathbf{y}\)</span> is
+the vector of energies and gradients, and <span class="math notranslate nohighlight">\(\mathbf{k}(\mathbf{x}^*, X)\)</span> is the covariance between the
+test point and all training data.</p>
+<p>The mean gives predictions; the variance gives uncertainty. Both are used by the
+optimizer: the mean drives the inner optimization loop, and the variance drives
+trust and exploration decisions.</p>
+</section>
+<section id="kernels">
+<h2>Kernels<a class="headerlink" href="#kernels" title="Link to this heading">¶</a></h2>
+<p>The kernel <span class="math notranslate nohighlight">\(k(\mathbf{x}, \mathbf{y})\)</span> defines the covariance structure. ChemGP provides two kernels
+via the <code class="docutils literal notranslate"><span class="pre">Kernel</span></code> enum.</p>
+<section id="molinvdistse-molecular-systems">
+<h3>MolInvDistSE (molecular systems)<a class="headerlink" href="#molinvdistse-molecular-systems" title="Link to this heading">¶</a></h3>
+<p>For molecules, raw Cartesian coordinates are not a good input to the kernel:
+rotating or translating a molecule changes the coordinates but not the physics.
+The <code class="docutils literal notranslate"><span class="pre">MolInvDistSE</span></code> kernel solves this by mapping coordinates to inverse
+interatomic distances:</p>
+<div class="math-wrapper docutils container">
+<div class="math notranslate nohighlight">
+\[f_{ij}(\mathbf{x}) = \frac{1}{\|\mathbf{x}_i - \mathbf{x}_j\|}\]</div>
+</div>
+<p>These features are invariant under rotation and translation by construction. The
+kernel then applies a squared exponential in feature space:</p>
+<div class="math-wrapper docutils container">
+<div class="math notranslate nohighlight">
+\[k(\mathbf{x}, \mathbf{y}) = \sigma^2 \exp\!\left(-\sum_p \theta_p^2 \|f_p(\mathbf{x}) - f_p(\mathbf{y})\|^2\right)\]</div>
+</div>
+<p>Each pair type <span class="math notranslate nohighlight">\(p\)</span> (H-H, H-C, C-C, etc.) has its own length scale <span class="math notranslate nohighlight">\(\theta_p\)</span>. This
+lets the kernel distinguish between stretching a C-C bond (stiff, small
+displacement matters) and a van der Waals contact (soft, large displacement
+needed to change the energy).</p>
+<div class="highlight-rust notranslate"><div class="highlight"><pre><span></span><span data-line="1"><span class="k">use</span><span class="w"> </span><span class="n">chemgp_core</span><span class="p">::</span><span class="n">kernel</span><span class="p">::{</span><span class="n">Kernel</span><span class="p">,</span><span class="w"> </span><span class="n">MolInvDistSE</span><span class="p">};</span>
+</span><span data-line="2"><span class="c1">// Isotropic: all pair types share the same length scale initially</span>
+</span><span data-line="3"><span class="kd">let</span><span class="w"> </span><span class="n">kernel</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">Kernel</span><span class="p">::</span><span class="n">MolInvDist</span><span class="p">(</span>
+</span><span data-line="4"><span class="w">    </span><span class="n">MolInvDistSE</span><span class="p">::</span><span class="n">isotropic</span><span class="p">(</span><span class="mf">1.0</span><span class="p">,</span><span class="w"> </span><span class="mf">1.0</span><span class="p">,</span><span class="w"> </span><span class="fm">vec!</span><span class="p">[])</span>
+</span><span data-line="5"><span class="p">);</span>
+</span></pre></div>
+</div>
+<p>The <code class="docutils literal notranslate"><span class="pre">isotropic</span></code> constructor sets uniform initial length scales. SCG training
+adjusts them independently per pair type.</p>
+</section>
+<section id="cartesianse-arbitrary-surfaces">
+<h3>CartesianSE (arbitrary surfaces)<a class="headerlink" href="#cartesianse-arbitrary-surfaces" title="Link to this heading">¶</a></h3>
+<p>For non-molecular surfaces (Muller-Brown, 2D test potentials), coordinates <em>are</em>
+the natural input. The <code class="docutils literal notranslate"><span class="pre">CartesianSE</span></code> kernel operates directly:</p>
+<div class="math-wrapper docutils container">
+<div class="math notranslate nohighlight">
+\[k(\mathbf{x}, \mathbf{y}) = \sigma^2 \exp\!\left(-\theta^2 \|\mathbf{x} - \mathbf{y}\|^2\right)\]</div>
+</div>
+<p>Two hyperparameters: signal variance <span class="math notranslate nohighlight">\(\sigma^2\)</span> (controls the output scale) and
+inverse length scale <span class="math notranslate nohighlight">\(\theta\)</span> (controls how quickly correlation decays with
+distance).</p>
+<div class="highlight-rust notranslate"><div class="highlight"><pre><span></span><span data-line="1"><span class="k">use</span><span class="w"> </span><span class="n">chemgp_core</span><span class="p">::</span><span class="n">kernel</span><span class="p">::{</span><span class="n">Kernel</span><span class="p">,</span><span class="w"> </span><span class="n">CartesianSE</span><span class="p">};</span>
+</span><span data-line="2"><span class="kd">let</span><span class="w"> </span><span class="n">kernel</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">Kernel</span><span class="p">::</span><span class="n">Cartesian</span><span class="p">(</span><span class="n">CartesianSE</span><span class="p">::</span><span class="n">new</span><span class="p">(</span><span class="mf">100.0</span><span class="p">,</span><span class="w"> </span><span class="mf">2.0</span><span class="p">));</span>
+</span></pre></div>
+</div>
+<p>Use <code class="docutils literal notranslate"><span class="pre">CartesianSE</span></code> only for systems where rotational invariance is meaningless.
+For real molecules, always use <code class="docutils literal notranslate"><span class="pre">MolInvDistSE</span></code>. See <a class="reference external" href="molecular_kernels.rst">Molecular Kernels</a> for a
+detailed comparison and the invariance argument.</p>
+</section>
+</section>
+<section id="kernel-blocks">
+<h2>Kernel blocks<a class="headerlink" href="#kernel-blocks" title="Link to this heading">¶</a></h2>
+<p>For two training points, the kernel computes four blocks reflecting the joint
+energy+gradient model:</p>
+<dl class="simple">
+<dt><span class="math notranslate nohighlight">\(k_{ee}\)</span></dt><dd><p>Energy-energy covariance (scalar). How correlated are the energies
+at two points?</p>
+</dd>
+<dt><span class="math notranslate nohighlight">\(k_{ef}\)</span> / <span class="math notranslate nohighlight">\(k_{fe}\)</span></dt><dd><p>Energy-gradient cross-covariance ($D$-vectors). How does
+knowing the energy at one point inform the gradient at another?</p>
+</dd>
+<dt><span class="math notranslate nohighlight">\(k_{ff}\)</span></dt><dd><p>Gradient-gradient covariance (<span class="math notranslate nohighlight">\(D \times D\)</span> matrix). How correlated are the
+gradient components at two points?</p>
+</dd>
+</dl>
+<p>These blocks are arranged into the full <span class="math notranslate nohighlight">\(N(1+D) \times N(1+D)\)</span> covariance matrix:</p>
+<div class="math-wrapper docutils container">
+<div class="math notranslate nohighlight">
+\[\begin{split}K = \begin{bmatrix}
+k_{ee} + \nu_e &amp; k_{ee} &amp; \cdots &amp; k_{ef} &amp; k_{ef} &amp; \cdots &amp; k_{ef} \\
+k_{ee} &amp; k_{ee} + \nu_e &amp; \cdots &amp; k_{ef} &amp; k_{ef} &amp; \cdots &amp; k_{ef} \\
+\vdots &amp; \vdots &amp; \ddots &amp; \vdots &amp; \vdots &amp; &amp; \vdots \\
+k_{fe} &amp; k_{fe} &amp; \cdots &amp; k_{ff} + \nu_g &amp; k_{ff} &amp; \cdots &amp; k_{ff} \\
+\vdots &amp; \vdots &amp; &amp; \vdots &amp; \vdots &amp; \ddots &amp; \vdots
+\end{bmatrix}\end{split}\]</div>
+</div>
+<p>where <span class="math notranslate nohighlight">\(\nu_e\)</span> is the energy noise variance (accounts for observation noise or oracle
+numerical error) and <span class="math notranslate nohighlight">\(\nu_g\)</span> is the gradient noise variance.</p>
+<p>The cross-covariance blocks <span class="math notranslate nohighlight">\(k_{ef}\)</span> and <span class="math notranslate nohighlight">\(k_{fe}\)</span> are what make the joint model powerful:
+knowing the gradient at one point constrains the energy prediction at nearby
+points, and vice versa. This coupling is why gradient information is so valuable.</p>
+</section>
+<section id="training-via-map-nll">
+<h2>Training via MAP-NLL<a class="headerlink" href="#training-via-map-nll" title="Link to this heading">¶</a></h2>
+<p>Hyperparameters (<span class="math notranslate nohighlight">\(\sigma^2\)</span>, <span class="math notranslate nohighlight">\(\theta_p\)</span>) are optimized by minimizing the negative
+log-marginal-likelihood (NLL) with a Maximum A Posteriori (MAP) prior:</p>
+<div class="math-wrapper docutils container">
+<div class="math notranslate nohighlight">
+\[\mathrm{NLL} = \frac{1}{2}\left(\mathbf{y}^\top K^{-1} \mathbf{y} + \log|K| + N(1+D)\log(2\pi)\right)\]</div>
+</div>
+<div class="math-wrapper docutils container">
+<div class="math notranslate nohighlight">
+\[\mathrm{MAP} = \mathrm{NLL} + \mathrm{prior\_penalty}\]</div>
+</div>
+<p>The prior prevents overfitting when training data is sparse. This is the typical
+regime in GP-accelerated optimization: after only 5-10 oracle calls, the GP must
+extrapolate, and unconstrained hyperparameters can produce overconfident
+predictions.</p>
+<p>The prior variance is adaptive per pair type: pair types with fewer distances
+(e.g., a single H atom has no H-H pair) get tighter priors to prevent their
+length scales from wandering.</p>
+<p>Training uses the Scaled Conjugate Gradient (SCG) optimizer, which requires
+analytical gradients of the NLL with respect to log-space hyperparameters.
+Both kernel types provide these gradients via <code class="docutils literal notranslate"><span class="pre">kernel_blocks_and_hypergrads</span></code>.
+See <a class="reference external" href="hyperparameter_training.rst">Hyperparameter Training</a> for the full NLL gradient derivation and
+NLL landscape visualization.</p>
+</section>
+<section id="data-dependent-initialization">
+<h2>Data-dependent initialization<a class="headerlink" href="#data-dependent-initialization" title="Link to this heading">¶</a></h2>
+<p>Good starting hyperparameters matter. The <code class="docutils literal notranslate"><span class="pre">init_kernel</span></code> function estimates
+initial values from the training data:</p>
+<ul class="simple">
+<li><p><strong>Signal variance</strong> (<span class="math notranslate nohighlight">\(\sigma^2\)</span>): estimated from the range of observed energies.</p></li>
+<li><p><strong>Length scales</strong> (<span class="math notranslate nohighlight">\(\theta_p\)</span>): estimated from pairwise feature distances, scaled by
+<code class="docutils literal notranslate"><span class="pre">NORMINV_075</span></code> (the 75th percentile of a standard normal). This follows the
+MATLAB GPstuff initialization strategy.</p></li>
+</ul>
+<p>This avoids pathological starting points where the GP is either too stiff
+(length scales too small, every point uncorrelated) or too smooth (length scales
+too large, all points equally correlated).</p>
+</section>
+<section id="predmodel-dispatch">
+<h2>PredModel dispatch<a class="headerlink" href="#predmodel-dispatch" title="Link to this heading">¶</a></h2>
+<p>Once hyperparameters are trained, predictions can use either the exact GP or a
+Random Fourier Feature (RFF) approximation. The <code class="docutils literal notranslate"><span class="pre">PredModel</span></code> enum dispatches
+transparently:</p>
+<div class="highlight-rust notranslate"><div class="highlight"><pre><span></span><span data-line="1"><span class="k">pub</span><span class="w"> </span><span class="k">enum</span><span class="w"> </span><span class="nc">PredModel</span><span class="w"> </span><span class="p">{</span>
+</span><span data-line="2"><span class="w">    </span><span class="n">Gp</span><span class="p">(</span><span class="n">GPModel</span><span class="p">),</span>
+</span><span data-line="3"><span class="w">    </span><span class="n">Rff</span><span class="p">(</span><span class="n">RffModel</span><span class="p">),</span>
+</span><span data-line="4"><span class="p">}</span>
+</span></pre></div>
+</div>
+<p>All optimizers use <code class="docutils literal notranslate"><span class="pre">build_pred_model()</span></code> to construct the appropriate variant.
+The key insight: hyperparameters are always trained on the exact GP (via SCG on
+the FPS subset), because SCG needs exact NLL gradients. Only the prediction
+model can be approximate. This means RFF inherits well-tuned hyperparameters
+without the cost of exact GP prediction.</p>
+<p>When <code class="docutils literal notranslate"><span class="pre">rff_features</span> <span class="pre">&gt;</span> <span class="pre">0</span></code>, the RFF model provides <span class="math notranslate nohighlight">\(\mathcal{O}(D_{\mathrm{rff}})\)</span> prediction cost instead
+of <span class="math notranslate nohighlight">\(\mathcal{O}((N(1+D))^2)\)</span> for exact GP. For inner optimization loops that call predict
+hundreds of times, this speedup is essential. See <a class="reference external" href="scalability.rst">Scalability</a> for
+the theory behind FPS and RFF.</p>
+</section>
+<section id="gp-quality-on-muller-brown">
+<h2>GP quality on Muller-Brown<a class="headerlink" href="#gp-quality-on-muller-brown" title="Link to this heading">¶</a></h2>
+<p>The following figures demonstrate GP behavior as training data accumulates.
+Run <code class="docutils literal notranslate"><span class="pre">cargo</span> <span class="pre">run</span> <span class="pre">--release</span> <span class="pre">--example</span> <span class="pre">mb_gp_quality</span></code> followed by
+<code class="docutils literal notranslate"><span class="pre">python</span> <span class="pre">scripts/plot_gp_quality.py</span></code> to regenerate.</p>
+<section id="gp-surrogate-progression">
+<h3>GP surrogate progression<a class="headerlink" href="#gp-surrogate-progression" title="Link to this heading">¶</a></h3>
+<figure class="align-default" id="id1">
+<a class="reference internal image-reference" href="../_images/mb_gp_progression.png"><img alt="../_images/mb_gp_progression.png" src="../_images/mb_gp_progression.png" style="width: 100%;" />
+</a>
+<figcaption>
+<p><span class="caption-text">GP predicted energy surface at N = 5, 15, 21, 30 training points. White
+circles mark training locations. With only 5 points, the GP captures the
+general topology; by 21, it resolves all three minima and both saddle points.</span><a class="headerlink" href="#id1" title="Link to this image">¶</a></p>
+</figcaption>
+</figure>
+</section>
+<section id="variance-and-uncertainty">
+<h3>Variance and uncertainty<a class="headerlink" href="#variance-and-uncertainty" title="Link to this heading">¶</a></h3>
+<figure class="align-default" id="id2">
+<a class="reference internal image-reference" href="../_images/mb_variance.png"><img alt="../_images/mb_variance.png" src="../_images/mb_variance.png" style="width: 80%;" />
+</a>
+<figcaption>
+<p><span class="caption-text">GP variance overlay with crosshatching. Dashed blue contours mark medium
+variance; solid magenta contours mark high variance. Training points (white
+circles) suppress local variance; regions far from training data show high
+uncertainty. The downward triangle marks the point of maximum variance,
+which is where the next oracle call would be most informative.</span><a class="headerlink" href="#id2" title="Link to this image">¶</a></p>
+</figcaption>
+</figure>
+</section>
+<section id="prediction-error">
+<h3>Prediction error<a class="headerlink" href="#prediction-error" title="Link to this heading">¶</a></h3>
+<figure class="align-default" id="id3">
+<a class="reference internal image-reference" href="_static/figures/mb_gp_error.png"><img alt="_static/figures/mb_gp_error.png" src="_static/figures/mb_gp_error.png" style="width: 80%;" />
+</a>
+<figcaption>
+<p><span class="caption-text">GP prediction error (predicted minus true energy) at N = 21. The diverging
+colormap highlights regions of over-prediction (red) and under-prediction
+(blue). Errors are smallest near training points and largest in under-sampled
+regions, as expected from the variance map above.</span><a class="headerlink" href="#id3" title="Link to this image">¶</a></p>
+</figcaption>
+</figure>
+</section>
+</section>
+<section id="sympy-verification">
+<h2>SymPy verification<a class="headerlink" href="#sympy-verification" title="Link to this heading">¶</a></h2>
+<p>The CartesianSE kernel block derivations (<span class="math notranslate nohighlight">\(k_{ee}\)</span>, <span class="math notranslate nohighlight">\(k_{ef}\)</span>, <span class="math notranslate nohighlight">\(k_{fe}\)</span>, <span class="math notranslate nohighlight">\(k_{ff}\)</span>) are
+verified in:</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span><span data-line="1">python<span class="w"> </span>scripts/sympy/t1_cartesian_se_blocks.py
+</span></pre></div>
+</div>
+<p>This derives all four blocks symbolically and confirms the antisymmetry
+<span class="math notranslate nohighlight">\(k_{ef} = -k_{fe}\)</span> and the diagonal/off-diagonal structure of <span class="math notranslate nohighlight">\(k_{ff}\)</span>.</p>
+</section>
+<section id="computational-cost-summary">
+<h2>Computational cost summary<a class="headerlink" href="#computational-cost-summary" title="Link to this heading">¶</a></h2>
+<div class="table-wrapper docutils container">
+<table class="docutils align-default">
+<thead>
+<tr class="row-odd"><th class="head"><p>Operation</p></th>
+<th class="head"><p>Exact GP</p></th>
+<th class="head"><p>RFF</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p>Build covariance</p></td>
+<td><p><span class="math notranslate nohighlight">\(\mathcal{O}(N^2 (1+D)^2)\)</span></p></td>
+<td><p><span class="math notranslate nohighlight">\(\mathcal{O}(N D D_{\mathrm{rff}})\)</span></p></td>
+</tr>
+<tr class="row-odd"><td><p>Cholesky factor</p></td>
+<td><p><span class="math notranslate nohighlight">\(\mathcal{O}(N^3 (1+D)^3)\)</span></p></td>
+<td><p><span class="math notranslate nohighlight">\(\mathcal{O}(D_{\mathrm{rff}}^3)\)</span></p></td>
+</tr>
+<tr class="row-even"><td><p>One prediction</p></td>
+<td><p><span class="math notranslate nohighlight">\(\mathcal{O}(N (1+D))\)</span></p></td>
+<td><p><span class="math notranslate nohighlight">\(\mathcal{O}(D_{\mathrm{rff}})\)</span></p></td>
+</tr>
+<tr class="row-odd"><td><p>SCG training (<span class="math notranslate nohighlight">\(M\)</span> iters)</p></td>
+<td><p><span class="math notranslate nohighlight">\(M \times\)</span> Cholesky</p></td>
+<td><p><span class="math notranslate nohighlight">\(M \times\)</span> Cholesky</p></td>
+</tr>
+</tbody>
+</table>
+</div>
+<p>For LEPS (<span class="math notranslate nohighlight">\(D=9\)</span>) with 30 training points: exact GP operates on a 300x300 matrix.
+For a 50-atom system (<span class="math notranslate nohighlight">\(D=150\)</span>) with 30 points: exact GP needs a 4530x4530 matrix.
+RFF with 500 features: always 500x500, regardless of <span class="math notranslate nohighlight">\(N\)</span> or <span class="math notranslate nohighlight">\(D\)</span>.</p>
+</section>
+</section>
+
+        </article><button class="back-to-top" type="button">
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
+    <path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8v12z"></path>
+  </svg>
+  <span>Back to top</span>
+</button><div class="navigation flex print:hidden"><div class="navigation-prev">
+    <a href="../installation.html">
+      <i class="i-lucide chevron-left"></i>
+      <div class="page-info">
+        <span>Previous</span><div class="title">Installation</div></div>
+    </a>
+  </div><div class="navigation-next">
+    <a href="minimization.html">
+      <div class="page-info">
+        <span>Next</span>
+        <div class="title">Minimization</div>
+      </div>
+      <i class="i-lucide chevron-right"></i>
+    </a>
+  </div></div></div>
+    </div>
+  </main>
+</div>
+<footer class="sy-foot">
+  <div class="sy-foot-inner sy-container mx-auto">
+    <div class="sy-foot-reserved md:flex justify-between items-center">
+      <div class="sy-foot-copyright"><p>2026, Rohit Goswami</p>
+  
+  <p>
+    Made with
+    
+    <a href="https://www.sphinx-doc.org/">Sphinx</a> and
+    
+    <a href="https://shibuya.lepture.com">Shibuya theme</a>.
+  </p>
+</div> <div class="sy-foot-socials">
+<a href="https://github.com/lode-org/ChemGP" aria-label="GitHub">
+  <iconify-icon icon="simple-icons:github"></iconify-icon>
+</a></div>
+    </div>
+    <div class="sy-foot-reserved" style="text-align: center; font-size: 0.85em; padding-top: 0.5em;">
+      Analytics by <a href="https://plausible.io" rel="noopener">Plausible</a>
+      provided by <a href="https://turtletech.is" rel="noopener">TurtleTech ehf</a>
+      | <a href="https://rgoswami.me" rel="noopener">Rohit Goswami</a>
+    </div>
+  </div>
+</footer>
+      <script src="../_static/documentation_options.js?v=5929fcd5"></script>
+      <script src="../_static/doctools.js?v=fd6eb6e6"></script>
+      <script src="../_static/sphinx_highlight.js?v=6ffebe34"></script>
+      <script src="../_static/shibuya.js?v=cac61aee"></script>
+      <script defer="defer" src="https://cdn.jsdelivr.net/npm/mathjax@4/tex-mml-chtml.js"></script></body>
+</html>

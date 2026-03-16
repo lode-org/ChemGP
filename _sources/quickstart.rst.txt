@@ -1,0 +1,150 @@
+
+
+Quickstart
+----------
+
+This page covers running the included examples and interpreting their output.
+
+From Rust
+~~~~~~~~~
+
+Add ``chemgp-core`` to your ``Cargo.toml``:
+
+.. code:: toml
+
+    [dependencies]
+    chemgp-core = "0.1"
+
+Run the Muller-Brown minimization example (2D, ``CartesianSE`` kernel):
+
+.. code:: bash
+
+    cargo run --release --example mb_minimize
+
+Expected output:
+
+::
+
+    GP minimize: 7 oracle calls, final E = -108.1667, converged = true
+    Direct minimize: 34 oracle calls, final E = -108.1667
+    Output: mb_minimize_comparison.jsonl
+
+The GP minimizer found the same minimum in 7 oracle calls that gradient descent
+needed 34 for. The ``.jsonl`` file contains per-step convergence data.
+
+Examples
+~~~~~~~~
+
+Four self-contained examples demonstrate the core methods. Each produces a
+``.jsonl`` file with per-step data:
+
+mb\ :sub:`minimize`\ (2D, CartesianSE)
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+GP-guided minimization on the Muller-Brown 2D surface. Demonstrates the
+``CartesianSE`` kernel and the importance of ``dedup_tol`` for non-molecular
+surfaces. GP: 7 calls, direct GD: 34 calls.
+
+.. code:: bash
+
+    cargo run --release --example mb_minimize
+
+leps\ :sub:`minimize`\ (molecular, MolInvDistSE)
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+GP-guided minimization on the LEPS surface (collinear H + H2). Demonstrates the
+``MolInvDistSE`` kernel with molecular invariances. GP: 9 calls, direct GD: 200+
+calls (still not converged).
+
+.. code:: bash
+
+    cargo run --release --example leps_minimize
+
+leps\ :sub:`dimer`\ (saddle point search)
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+Standard dimer vs GP-Dimer vs OTGPD for transition state search. Demonstrates
+how the GP surrogate reduces saddle point search cost by ~3.5x.
+
+.. code:: bash
+
+    cargo run --release --example leps_dimer
+
+leps\ :sub:`neb`\ (minimum energy path)
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+Standard NEB vs GP-NEB AIE vs GP-NEB OIE for finding the minimum energy path.
+Demonstrates per-bead FPS and LCB image selection. OIE: 49 calls, standard: 127
+calls.
+
+.. code:: bash
+
+    cargo run --release --example leps_neb
+
+Interpreting JSONL output
+~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Each example writes a ``.jsonl`` file (one JSON object per line). The fields vary
+by method:
+
+Minimize JSONL
+^^^^^^^^^^^^^^
+
+::
+
+    {"method":"gp_minimize","step":0,"energy":-45.123,"oracle_calls":1}
+    {"method":"gp_minimize","step":1,"energy":-87.456,"oracle_calls":2}
+    ...
+    {"method":"direct_minimize","step":0,"energy":-45.123,"oracle_calls":1}
+
+- ``method``: "gp\ :sub:`minimize`\" or "direct\ :sub:`minimize`\"
+
+- ``step``: iteration index
+
+- ``energy``: energy at this step
+
+- ``oracle_calls``: cumulative oracle call count
+
+Plot ``energy`` vs ``oracle_calls`` to compare GP efficiency against direct GD.
+
+Dimer JSONL
+^^^^^^^^^^^
+
+::
+
+    {"method":"gp_dimer","step":5,"energy":-0.012,"force":0.045,"oracle_calls":8}
+
+- ``force``: gradient norm (should decrease toward convergence)
+
+Plot ``force`` vs ``oracle_calls`` on a log scale to compare convergence rates.
+
+NEB JSONL
+^^^^^^^^^
+
+::
+
+    {"method":"gp_neb_oie","step":10,"max_force":0.078,"oracle_calls":30}
+
+- ``max_force``: maximum NEB force across all images
+
+Plot ``max_force`` vs ``oracle_calls`` on a log scale.
+
+Plotting
+~~~~~~~~
+
+Generate comparison plots from the JSONL data:
+
+.. code:: bash
+
+    pixi run -e dev figures
+
+This runs all examples and produces PDF figures in ``scripts/figures/tutorial/output/``.
+
+Next steps
+~~~~~~~~~~
+
+- `GP Basics <tutorials/gp_basics.rst>`_: understand the GP model underlying all methods
+
+- `Minimization <tutorials/minimization.rst>`_: detailed tutorial on GP-guided minimization
+
+- `Architecture <reference/architecture.rst>`_: how the four shared components work together

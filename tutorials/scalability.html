@@ -1,0 +1,455 @@
+<!DOCTYPE html>
+<html lang="en" data-accent-color="teal" data-content_root="../">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"><title>Scalability: FPS + RFF - ChemGP documentation</title><link rel="index" title="Index" href="../genindex.html" /><link rel="search" title="Search" href="../search.html" /><link rel="next" title="Dimer Method" href="dimer_method.html" /><link rel="prev" title="Hyperparameter Training" href="hyperparameter_training.html" />
+      <link rel="canonical" href="chemgp.rgoswami.me/tutorials/scalability.html" /><script>
+    function setColorMode(t){let e=document.documentElement;e.setAttribute("data-color-mode",t);let a=window.matchMedia&&window.matchMedia("(prefers-color-scheme: dark)").matches,s=t;"auto"===t&&(s=a?"dark":"light"),"light"===s?(e.classList.remove("dark"),e.classList.add("light")):(e.classList.remove("light"),e.classList.add("dark"))}
+    setColorMode(localStorage._theme||"auto");
+  </script><link rel="stylesheet" type="text/css" href="../_static/pygments.css?v=e1a1ceaf" />
+    <link rel="stylesheet" type="text/css" href="../_static/shibuya.css?v=a318c5d4" />
+    <link media="print" rel="stylesheet" type="text/css" href="../_static/print.css?v=20ff2c19" />
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+:root {
+  --sy-f-text: "Inter", var(--sy-f-sys), var(--sy-f-cjk), sans-serif;
+  --sy-f-heading: "Inter", var(--sy-f-sys), var(--sy-f-cjk), sans-serif;
+}
+</style>
+    <meta property="og:type" content="website"/>
+  <meta property="og:url" content="chemgp.rgoswami.me/tutorials/scalability.html"/>
+  <meta property="og:title" content="Scalability: FPS + RFF"/>
+    <meta name="twitter:card" content="summary"/>
+  <!-- Plausible injection -->
+<script
+  defer
+  data-domain="chemgp.rgoswami.me"
+  src="https://analytics.turtletech.us/js/script.hash.outbound-links.js"
+></script>
+<script>
+  window.plausible =
+    window.plausible ||
+    function () {
+      (window.plausible.q = window.plausible.q || []).push(arguments);
+    };
+</script></head>
+<body><div class="sy-head">
+  <div class="sy-head-blur"></div>
+  <div class="sy-head-inner sy-container mx-auto">
+    <a class="sy-head-brand" href="../index.html">
+      
+      
+      <strong>ChemGP</strong>
+    </a>
+    <div class="sy-head-nav" id="head-nav">
+      <nav class="sy-head-links"><ul>
+      <li class="link"><button class="js-menu" type="button" id="nav-trigger-1" aria-controls="nav-children-1">
+            <span>Ecosystem</span>
+            <i class="i-lucide chevron-down"></i>
+          </button>
+        <ul id="nav-children-1" aria-labelledby="nav-trigger-1"><li><a href="https://rgpycrumbs.rgoswami.me">
+                <span>rgpycrumbs</span>
+                <small>Analytical and visualization suite for chemical physics</small>
+              </a></li><li><a href="https://eondocs.org">
+                <span>eOn</span>
+                <small>Long-timescale molecular dynamics engine</small>
+              </a></li><li><a href="https://github.com/OmniPotentRPC/rgpot">
+                <span>rgpot</span>
+                <small>RPC potential evaluation for GP-accelerated optimization</small>
+              </a></li></ul>
+      </li><li class="link">
+          <a href="https://crates.io/crates/chemgp-core">
+            <span>crates.io</span><i class="i-lucide external-link"></i></a>
+        </li></ul></nav>
+      <div class="sy-head-extra flex items-center print:hidden"><form class="searchbox flex items-center" action="../search.html" method="get">
+  <input type="text" name="q" placeholder="Search" />
+  <kbd>/</kbd>
+</form><div class="sy-head-socials">
+  <a href="https://github.com/lode-org/ChemGP" aria-label="GitHub">
+    <iconify-icon icon="simple-icons:github"></iconify-icon>
+  </a></div></div>
+    </div>
+    <div class="sy-head-actions flex items-center shrink-0 print:hidden"><button class="js-theme theme-switch flex items-center"
+data-aria-auto="Switch to light color mode"
+data-aria-light="Switch to dark color mode"
+data-aria-dark="Switch to auto color mode">
+<i class="i-lucide theme-icon"></i>
+</button><button class="md:hidden flex items-center js-menu" aria-label="Menu" type="button" aria-controls="head-nav" aria-expanded="false">
+        <div class="hamburger">
+          <span class="hamburger_1"></span>
+          <span class="hamburger_2"></span>
+          <span class="hamburger_3"></span>
+        </div>
+      </button>
+    </div>
+  </div>
+</div>
+<div class="sy-page sy-container flex mx-auto">
+  <aside id="lside" class="sy-lside md:w-72 md:shrink-0 print:hidden">
+    <div class="sy-lside-inner md:sticky">
+      <div class="sy-scrollbar p-6">
+        <div class="globaltoc" data-expand-depth="1"><p class="caption" role="heading" aria-level="3"><span class="caption-text">Getting Started</span></p>
+<ul>
+<li class="toctree-l1 _expand"><a class="reference internal" href="../quickstart.html">Quickstart</a></li>
+<li class="toctree-l1 _expand"><a class="reference internal" href="../installation.html">Installation</a></li>
+</ul>
+<p class="caption" role="heading" aria-level="3"><span class="caption-text">Tutorials</span></p>
+<ul class="current">
+<li class="toctree-l1 _expand"><a class="reference internal" href="gp_basics.html">GP Basics</a></li>
+<li class="toctree-l1 _expand"><a class="reference internal" href="minimization.html">Minimization</a></li>
+<li class="toctree-l1 _expand"><a class="reference internal" href="molecular_kernels.html">Molecular Kernels</a></li>
+<li class="toctree-l1 _expand"><a class="reference internal" href="hyperparameter_training.html">Hyperparameter Training</a></li>
+<li class="toctree-l1 current"><a class="current reference internal" href="#">Scalability: FPS + RFF</a></li>
+<li class="toctree-l1 _expand"><a class="reference internal" href="dimer_method.html">Dimer Method</a></li>
+<li class="toctree-l1 _expand"><a class="reference internal" href="neb_method.html">Nudged Elastic Band</a></li>
+<li class="toctree-l1 _expand"><a class="reference internal" href="otgpd.html">OTGPD</a></li>
+<li class="toctree-l1 _expand"><a class="reference internal" href="constant_kernel.html">Constant Kernel</a></li>
+<li class="toctree-l1 _expand"><a class="reference internal" href="production_minimize.html">Production Minimization</a></li>
+<li class="toctree-l1 _expand"><a class="reference internal" href="production_saddle.html">Production Saddle Search</a></li>
+<li class="toctree-l1 _expand"><a class="reference internal" href="production_neb.html">Production NEB</a></li>
+</ul>
+<p class="caption" role="heading" aria-level="3"><span class="caption-text">Reference</span></p>
+<ul>
+<li class="toctree-l1 _expand"><a class="reference internal" href="../reference/architecture.html">Architecture</a></li>
+<li class="toctree-l1 _expand"><a class="reference internal" href="../reference/kernel_design.html">Kernel Design</a></li>
+<li class="toctree-l1 _expand"><a class="reference internal" href="../reference/trust_regions.html">Trust Regions</a></li>
+<li class="toctree-l1 _expand"><a class="reference internal" href="../api/index.html">API Reference</a></li>
+</ul>
+        </div>
+      </div>
+    </div>
+  </aside>
+  <div class="lside-overlay js-menu" role="button" aria-label="Close left sidebar" aria-controls="lside" aria-expanded="false"></div>
+  <aside id="rside" class="sy-rside pb-3 w-64 shrink-0 order-last">
+    <button class="rside-close js-menu xl:hidden" aria-label="Close Table of Contents" type="button" aria-controls="rside" aria-expanded="false">
+      <i class="i-lucide close"></i>
+    </button>
+    <div class="sy-scrollbar sy-rside-inner px-6 xl:top-16 xl:sticky xl:pl-0 pt-6 pb-4"><div class="localtoc"><h3>On this page</h3><ul>
+<li><a class="reference internal" href="#the-scaling-problem">The scaling problem</a></li>
+<li><a class="reference internal" href="#farthest-point-sampling">Farthest Point Sampling</a><ul>
+<li><a class="reference internal" href="#per-bead-fps-for-neb">Per-bead FPS for NEB</a></li>
+</ul>
+</li>
+<li><a class="reference internal" href="#random-fourier-features">Random Fourier Features</a><ul>
+<li><a class="reference internal" href="#why-rff-works-for-gp-prediction">Why RFF works for GP prediction</a></li>
+<li><a class="reference internal" href="#force-predictions-with-rff">Force predictions with RFF</a></li>
+<li><a class="reference internal" href="#seeded-rff-for-reproducibility">Seeded RFF for reproducibility</a></li>
+</ul>
+</li>
+<li><a class="reference internal" href="#choosing-fps-and-rff-parameters">Choosing FPS and RFF parameters</a></li>
+<li><a class="reference internal" href="#rff-quality-on-leps">RFF quality on LEPS</a></li>
+<li><a class="reference internal" href="#sympy-verification">SymPy verification</a></li>
+</ul>
+</div><a class="js-repo-stats repo-stats flex items-center" href="https://github.com/lode-org/ChemGP"
+  data-type="github" data-user="lode-org" data-repo="ChemGP">
+  <span class="w-8 flex items-center justify-around shrink-0 text-3xl">
+    <iconify-icon icon="simple-icons:github"></iconify-icon>
+  </span>
+  <span class="flex-grow px-2 break-all">
+    
+    
+      <span>lode-org/ChemGP</span>
+    
+    <span class="flex text-sm repo-stats-count">
+      <span class="flex items-center pr-3">
+        <iconify-icon icon="lucide:star"></iconify-icon>
+        <strong class="js-repo-stars ml-1">0</strong>
+      </span>
+      <span class="flex items-center">
+        <iconify-icon icon="lucide:git-fork"></iconify-icon>
+        <strong class="js-repo-forks ml-1">0</strong>
+      </span>
+    </span>
+  </span>
+</a><div class="edit-this-page">
+  <a href="https://github.com/lode-org/ChemGP/blob/main/docs/source/tutorials/scalability.rst">Edit this page</a>
+</div></div>
+  </aside>
+  <div class="rside-overlay js-menu" role="button" aria-label="Close Table of Contents" aria-controls="rside" aria-expanded="false"></div>
+  <main class="sy-main w-full max-sm:max-w-full print:pt-6">
+<div class="sy-breadcrumbs" role="navigation">
+  <div class="sy-breadcrumbs-inner flex items-center">
+    <div class="md:hidden mr-3">
+      <button class="js-menu" aria-label="Menu" type="button" aria-controls="lside" aria-expanded="false">
+        <i class="i-lucide menu"></i>
+      </button>
+    </div>
+    <ol class="flex-1" itemscope itemtype="https://schema.org/BreadcrumbList"><li itemprop="itemListElement" itemscope itemtype="https://schema.org/ListItem">
+        <a itemprop="item" href="../index.html"><span itemprop="name">ChemGP</span></a>
+        <span>/</span>
+        <meta itemprop="position" content="1" />
+      </li><li itemprop="itemListElement" itemscope itemtype="https://schema.org/ListItem">
+        <strong itemprop="name">Scalability: FPS + RFF</strong>
+        <meta itemprop="position" content="2" />
+      </li></ol>
+    <div class="xl:hidden ml-1">
+      <button class="js-menu" aria-label="Show table of contents" type="button" aria-controls="rside"
+        aria-expanded="false">
+        <i class="i-lucide outdent"></i>
+      </button>
+    </div>
+  </div>
+</div><div class="flex flex-col break-words justify-between">
+      <div class="relative min-w-0 max-w-6xl px-6 pb-6 pt-8 xl:px-12">
+  <div class="copy-page-wrapper relative pb-4 lg:absolute lg:top-8 lg:right-6 xl:right-12">
+  <div id="copy-page-trigger">
+    <button
+      type="button"
+      class="js-copy px-3 py-1 inline-flex items-center gap-1"
+      data-url="chemgp.rgoswami.me/_sources/tutorials/scalability.rst.txt"
+    >
+      <i class="i-lucide" data-icon="copy"></i>
+      <span>Copy page</span>
+    </button>
+    <button class="js-menu px-2 py-1" type="button" aria-label="More actions"
+      aria-haspopup="menu" aria-expanded="false" aria-controls="copy-page-content">
+      <i class="i-lucide chevron-down"></i>
+    </button>
+  </div>
+  <div id="copy-page-content" role="menu" aria-orientation="vertical" aria-hidden="true">
+    <div role="presentation">
+      <div class="flex flex-col" role="group">
+        <button class="js-copy" type="button" role="menuitem"
+          data-url="chemgp.rgoswami.me/_sources/tutorials/scalability.rst.txt">
+          <span class="iconify-icon">
+            <i class="i-lucide" data-icon="copy"></i>
+          </span>
+          <span>Copy page</span>
+        </button>
+        <a role="menuitem" href="chemgp.rgoswami.me/_sources/tutorials/scalability.rst.txt" target="_blank" rel="nofollow"><iconify-icon icon="bi:code-slash"></iconify-icon>
+            <span>View Source</span></a><a role="menuitem" href="https://chatgpt.com/?hints=search&q=Read%20chemgp.rgoswami.me/_sources/tutorials/scalability.rst.txt%20so%20I%20can%20ask%20questions%20about%20it." target="_blank" rel="nofollow">
+          <iconify-icon icon="bi:openai"></iconify-icon>
+          <span>Open in ChatGPT</span>
+        </a><a role="menuitem" href="https://claude.ai/new?q=Read%20chemgp.rgoswami.me/_sources/tutorials/scalability.rst.txt%20so%20I%20can%20ask%20questions%20about%20it." target="_blank" rel="nofollow">
+          <iconify-icon icon="bi:claude"></iconify-icon>
+          <span>Open in Claude</span>
+        </a></div>
+    </div>
+  </div>
+</div><article class="yue dark-code" role="main">
+          <section id="scalability-fps-rff">
+<h1>Scalability: FPS + RFF<a class="headerlink" href="#scalability-fps-rff" title="Link to this heading">¶</a></h1>
+<p>This tutorial covers the two mechanisms that allow GP methods to scale beyond
+small training sets: Farthest Point Sampling (FPS) for hyperparameter
+training and Random Fourier Features (RFF) for prediction.</p>
+<section id="the-scaling-problem">
+<h2>The scaling problem<a class="headerlink" href="#the-scaling-problem" title="Link to this heading">¶</a></h2>
+<p>The GP covariance matrix <span class="math notranslate nohighlight">\(\mathbf{K}\)</span> has size <span class="math notranslate nohighlight">\(N(1+D) \times N(1+D)\)</span> for <span class="math notranslate nohighlight">\(N\)</span> training points
+in <span class="math notranslate nohighlight">\(D\)</span> dimensions. Cholesky factorization costs <span class="math notranslate nohighlight">\(\mathcal{O}(N^3(1+D)^3)\)</span>. For a 3-atom
+system (<span class="math notranslate nohighlight">\(D=9\)</span>) with 30 training points, <span class="math notranslate nohighlight">\(\mathbf{K}\)</span> is <span class="math notranslate nohighlight">\(300 \times 300\)</span> (fast). For a 50-atom
+system (<span class="math notranslate nohighlight">\(D=150\)</span>) with 30 points, <span class="math notranslate nohighlight">\(\mathbf{K}\)</span> is <span class="math notranslate nohighlight">\(4530 \times 4530\)</span> (expensive). Inner
+optimization loops that call predict hundreds of times make this worse.</p>
+<p>Two strategies solve this:</p>
+<ol class="arabic simple">
+<li><p><strong>FPS subset</strong>: train hyperparameters on a subset of <span class="math notranslate nohighlight">\(K\)</span> training points
+(keep Cholesky at <span class="math notranslate nohighlight">\(K^3\)</span> instead of <span class="math notranslate nohighlight">\(N^3\)</span>)</p></li>
+<li><p><strong>RFF approximation</strong>: replace exact GP prediction with a $D<sub>mathrm{rff}</sub>$-dimensional
+linear model (<span class="math notranslate nohighlight">\(\mathcal{O}(D_{\mathrm{rff}})\)</span> per prediction instead of <span class="math notranslate nohighlight">\(\mathcal{O}(N(1+D))\)</span>)</p></li>
+</ol>
+</section>
+<section id="farthest-point-sampling">
+<h2>Farthest Point Sampling<a class="headerlink" href="#farthest-point-sampling" title="Link to this heading">¶</a></h2>
+<p>FPS selects a subset of training points that maximally covers the feature
+space. Starting from the most recent point, FPS iteratively adds the point
+farthest from the current subset (in EMD or Euclidean distance).</p>
+<p>The key insight: hyperparameter training via SCG requires a Cholesky
+factorization at each iteration. With <span class="math notranslate nohighlight">\(K\)</span> subset points, this costs <span class="math notranslate nohighlight">\(\mathcal{O}(K^3(1+D)^3)\)</span>
+instead of <span class="math notranslate nohighlight">\(\mathcal{O}(N^3(1+D)^3)\)</span>. For <span class="math notranslate nohighlight">\(K = 15\)</span> and <span class="math notranslate nohighlight">\(N = 50\)</span> with <span class="math notranslate nohighlight">\(D = 9\)</span>, that is a
+<span class="math notranslate nohighlight">\(15^3/50^3 \approx 27\times\)</span> speedup per SCG iteration.</p>
+<p>FPS guarantees that the subset spans the training data: the selected points
+are spread out, so the GP trained on the subset still captures the global
+covariance structure. The unselected points contribute to prediction (via
+the full-data PredModel) but not to hyperparameter training.</p>
+<section id="per-bead-fps-for-neb">
+<h3>Per-bead FPS for NEB<a class="headerlink" href="#per-bead-fps-for-neb" title="Link to this heading">¶</a></h3>
+<p>Standard FPS selects <span class="math notranslate nohighlight">\(K\)</span> points globally. For NEB with <span class="math notranslate nohighlight">\(I\)</span> images, this can
+leave individual images without nearby training data. Per-bead FPS selects
+the <span class="math notranslate nohighlight">\(K\)</span> nearest points to <em>each</em> image, then takes their union. This ensures
+every image has local coverage.</p>
+<p>If the union exceeds <code class="docutils literal notranslate"><span class="pre">max_gp_points</span></code>, global FPS trims it back. This
+two-level strategy balances local coverage with global budget.</p>
+</section>
+</section>
+<section id="random-fourier-features">
+<h2>Random Fourier Features<a class="headerlink" href="#random-fourier-features" title="Link to this heading">¶</a></h2>
+<p>RFF replaces the exact GP kernel with a finite-dimensional feature map:</p>
+<div class="math-wrapper docutils container">
+<div class="math notranslate nohighlight">
+\[z_j(\mathbf{x}) = c \cos(\mathbf{w}_j^\top \boldsymbol{\phi}(\mathbf{x}) + b_j)\]</div>
+</div>
+<p>where <span class="math notranslate nohighlight">\(\mathbf{w}_j \sim \mathcal{N}(\mathbf{0}, 2\theta^2 \mathbf{I})\)</span>, <span class="math notranslate nohighlight">\(b_j \sim \mathcal{U}(0, 2\pi)\)</span>, and <span class="math notranslate nohighlight">\(c = \sigma \sqrt{2 / D_{\mathrm{rff}}}\)</span>.</p>
+<p>By Bochner’s theorem, <span class="math notranslate nohighlight">\(\mathbb{E}[\mathbf{z}(\mathbf{x})^\top \mathbf{z}(\mathbf{y})] = k(\mathbf{x}, \mathbf{y})\)</span>, so the inner product of RFF
+features approximates the kernel. The approximation improves with more
+features (<span class="math notranslate nohighlight">\(D_{\mathrm{rff}}\)</span>), and is exact in the limit <span class="math notranslate nohighlight">\(D_{\mathrm{rff}} \to \infty\)</span>.</p>
+<p>See <code class="docutils literal notranslate"><span class="pre">scripts/sympy/t5_rff_expectation.py</span></code> for the proof.</p>
+<section id="why-rff-works-for-gp-prediction">
+<h3>Why RFF works for GP prediction<a class="headerlink" href="#why-rff-works-for-gp-prediction" title="Link to this heading">¶</a></h3>
+<p>With RFF features, the GP posterior reduces to a linear regression:</p>
+<div class="math-wrapper docutils container">
+<div class="math notranslate nohighlight">
+\[\begin{split}\mathbf{Z} = \begin{bmatrix} \mathbf{z}(\mathbf{x}_1) \\ \vdots \\ \mathbf{z}(\mathbf{x}_N) \end{bmatrix}, \quad
+\mathbf{A} = \mathbf{Z}^\top \mathbf{P} \mathbf{Z} + \mathbf{I}\end{split}\]</div>
+</div>
+<div class="math-wrapper docutils container">
+<div class="math notranslate nohighlight">
+\[\boldsymbol{\alpha} = \mathbf{A}^{-1} \mathbf{Z}^\top \mathbf{P} \mathbf{y}\]</div>
+</div>
+<div class="math-wrapper docutils container">
+<div class="math notranslate nohighlight">
+\[\mu(\mathbf{x}_*) = \mathbf{z}(\mathbf{x}_*)^\top \boldsymbol{\alpha}, \quad
+\sigma^2(\mathbf{x}_*) = \| \mathbf{L}^{-1} \mathbf{z}(\mathbf{x}_*) \|^2\]</div>
+</div>
+<p>where <span class="math notranslate nohighlight">\(\mathbf{Z}\)</span> is the <span class="math notranslate nohighlight">\(N(1+D) \times D_{\mathrm{rff}}\)</span> design matrix, <span class="math notranslate nohighlight">\(\mathbf{A}\)</span> is the <span class="math notranslate nohighlight">\(D_{\mathrm{rff}} \times D_{\mathrm{rff}}\)</span> Gram matrix,
+<span class="math notranslate nohighlight">\(\mathbf{P}\)</span> is a diagonal noise precision matrix, and <span class="math notranslate nohighlight">\(\mathbf{L} = \mathrm{chol}(\mathbf{A})\)</span>. Prediction costs <span class="math notranslate nohighlight">\(\mathcal{O}(D_{\mathrm{rff}})\)</span> per point instead
+of <span class="math notranslate nohighlight">\(\mathcal{O}(N(1+D))\)</span>.</p>
+</section>
+<section id="force-predictions-with-rff">
+<h3>Force predictions with RFF<a class="headerlink" href="#force-predictions-with-rff" title="Link to this heading">¶</a></h3>
+<p>For force predictions, the RFF model needs the Jacobian of the features:</p>
+<div class="math-wrapper docutils container">
+<div class="math notranslate nohighlight">
+\[\frac{\partial z_j}{\partial x_d} = -c \sin(\mathbf{w}_j^\top \boldsymbol{\phi}(\mathbf{x}) + b_j) \sum_l w_{jl} \frac{\partial \phi_l}{\partial x_d}\]</div>
+</div>
+<p>This is the chain rule through the feature map: RFF frequencies <span class="math notranslate nohighlight">\(\mathbf{w}_j\)</span>
+multiply the Jacobian of the underlying features (inverse distances for
+<code class="docutils literal notranslate"><span class="pre">MolInvDistSE</span></code>, identity for <code class="docutils literal notranslate"><span class="pre">CartesianSE</span></code>).</p>
+</section>
+<section id="seeded-rff-for-reproducibility">
+<h3>Seeded RFF for reproducibility<a class="headerlink" href="#seeded-rff-for-reproducibility" title="Link to this heading">¶</a></h3>
+<p>RFF sampling is stochastic: different random seeds give different frequency
+matrices and slightly different predictions. In OIE NEB, this stochasticity
+causes the LCB scoring to oscillate (different images are selected each
+iteration, and the path never settles).</p>
+<p>ChemGP uses seeded RFF (<code class="docutils literal notranslate"><span class="pre">seed=42</span></code>, or other fixed seeds) to eliminate this
+source of non-determinism. The seed is fixed at RFF construction time, so
+the same hyperparameters always produce the same RFF model.</p>
+</section>
+</section>
+<section id="choosing-fps-and-rff-parameters">
+<h2>Choosing FPS and RFF parameters<a class="headerlink" href="#choosing-fps-and-rff-parameters" title="Link to this heading">¶</a></h2>
+<div class="table-wrapper docutils container">
+<table class="docutils align-default">
+<thead>
+<tr class="row-odd"><th class="head"><p>Parameter</p></th>
+<th class="head"><p>Guidance</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">fps_history</span></code></p></td>
+<td><p>10-30 for small systems, 30-50 for large</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">rff_features</span></code></p></td>
+<td><p>200-500 (must exceed <span class="math notranslate nohighlight">\(N(1+D)\)</span> of FPS subset)</p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">max_gp_points</span></code></p></td>
+<td><p>50 (NEB: trigger per-bead FPS above this)</p></td>
+</tr>
+</tbody>
+</table>
+</div>
+<p>Rules of thumb:</p>
+<ul class="simple">
+<li><p>Use exact GP (rff<sub>features</sub>= 0) when <span class="math notranslate nohighlight">\(N &lt; 20\)</span> and <span class="math notranslate nohighlight">\(D &lt; 10\)</span></p></li>
+<li><p>Switch to RFF when the inner optimization loop is slow</p></li>
+<li><p>If RFF error is noticeable, increase <span class="math notranslate nohighlight">\(D_{\mathrm{rff}}\)</span> (check with <code class="docutils literal notranslate"><span class="pre">leps_rff_quality</span></code>)</p></li>
+</ul>
+</section>
+<section id="rff-quality-on-leps">
+<h2>RFF quality on LEPS<a class="headerlink" href="#rff-quality-on-leps" title="Link to this heading">¶</a></h2>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span><span data-line="1">cargo<span class="w"> </span>run<span class="w"> </span>--release<span class="w"> </span>--example<span class="w"> </span>leps_rff_quality
+</span></pre></div>
+</div>
+<p>This evaluates RFF approximation quality for <span class="math notranslate nohighlight">\(D_{\mathrm{rff}} = 25, 50, 100, 150, 200,
+300, 500\)</span> against exact GP and true LEPS values. Typical results:</p>
+<div class="table-wrapper docutils container">
+<table class="docutils align-default">
+<thead>
+<tr class="row-odd"><th class="head"><p><span class="math notranslate nohighlight">\(D_{\mathrm{rff}}\)</span></p></th>
+<th class="head"><p>Energy MAE vs true</p></th>
+<th class="head"><p>Gradient MAE vs true</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p>50</p></td>
+<td><p>~ 0.01</p></td>
+<td><p>~ 0.05</p></td>
+</tr>
+<tr class="row-odd"><td><p>200</p></td>
+<td><p>~ 0.005</p></td>
+<td><p>~ 0.02</p></td>
+</tr>
+<tr class="row-even"><td><p>500</p></td>
+<td><p>~ 0.002</p></td>
+<td><p>~ 0.01</p></td>
+</tr>
+</tbody>
+</table>
+</div>
+<p>For inner optimization loops, $D<sub>mathrm{rff}</sub>= 200$–<span class="math notranslate nohighlight">\(500\)</span> provides sufficient accuracy.</p>
+</section>
+<section id="sympy-verification">
+<h2>SymPy verification<a class="headerlink" href="#sympy-verification" title="Link to this heading">¶</a></h2>
+<p>The RFF expectation proof (Bochner’s theorem) is verified in:</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span><span data-line="1">python<span class="w"> </span>scripts/sympy/t5_rff_expectation.py
+</span></pre></div>
+</div>
+<p>This includes the symbolic proof for 1D, Monte Carlo verification for
+1D and 9D, and the force prediction Jacobian construction.</p>
+</section>
+</section>
+
+        </article><button class="back-to-top" type="button">
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
+    <path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8v12z"></path>
+  </svg>
+  <span>Back to top</span>
+</button><div class="navigation flex print:hidden"><div class="navigation-prev">
+    <a href="hyperparameter_training.html">
+      <i class="i-lucide chevron-left"></i>
+      <div class="page-info">
+        <span>Previous</span><div class="title">Hyperparameter Training</div></div>
+    </a>
+  </div><div class="navigation-next">
+    <a href="dimer_method.html">
+      <div class="page-info">
+        <span>Next</span>
+        <div class="title">Dimer Method</div>
+      </div>
+      <i class="i-lucide chevron-right"></i>
+    </a>
+  </div></div></div>
+    </div>
+  </main>
+</div>
+<footer class="sy-foot">
+  <div class="sy-foot-inner sy-container mx-auto">
+    <div class="sy-foot-reserved md:flex justify-between items-center">
+      <div class="sy-foot-copyright"><p>2026, Rohit Goswami</p>
+  
+  <p>
+    Made with
+    
+    <a href="https://www.sphinx-doc.org/">Sphinx</a> and
+    
+    <a href="https://shibuya.lepture.com">Shibuya theme</a>.
+  </p>
+</div> <div class="sy-foot-socials">
+<a href="https://github.com/lode-org/ChemGP" aria-label="GitHub">
+  <iconify-icon icon="simple-icons:github"></iconify-icon>
+</a></div>
+    </div>
+    <div class="sy-foot-reserved" style="text-align: center; font-size: 0.85em; padding-top: 0.5em;">
+      Analytics by <a href="https://plausible.io" rel="noopener">Plausible</a>
+      provided by <a href="https://turtletech.is" rel="noopener">TurtleTech ehf</a>
+      | <a href="https://rgoswami.me" rel="noopener">Rohit Goswami</a>
+    </div>
+  </div>
+</footer>
+      <script src="../_static/documentation_options.js?v=5929fcd5"></script>
+      <script src="../_static/doctools.js?v=fd6eb6e6"></script>
+      <script src="../_static/sphinx_highlight.js?v=6ffebe34"></script>
+      <script src="../_static/shibuya.js?v=cac61aee"></script>
+      <script defer="defer" src="https://cdn.jsdelivr.net/npm/mathjax@4/tex-mml-chtml.js"></script></body>
+</html>

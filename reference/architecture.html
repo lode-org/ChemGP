@@ -1,0 +1,481 @@
+<!DOCTYPE html>
+<html lang="en" data-accent-color="teal" data-content_root="../">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"><title>Architecture - ChemGP documentation</title><link rel="index" title="Index" href="../genindex.html" /><link rel="search" title="Search" href="../search.html" /><link rel="next" title="Kernel Design" href="kernel_design.html" /><link rel="prev" title="Production NEB" href="../tutorials/production_neb.html" />
+      <link rel="canonical" href="chemgp.rgoswami.me/reference/architecture.html" /><script>
+    function setColorMode(t){let e=document.documentElement;e.setAttribute("data-color-mode",t);let a=window.matchMedia&&window.matchMedia("(prefers-color-scheme: dark)").matches,s=t;"auto"===t&&(s=a?"dark":"light"),"light"===s?(e.classList.remove("dark"),e.classList.add("light")):(e.classList.remove("light"),e.classList.add("dark"))}
+    setColorMode(localStorage._theme||"auto");
+  </script><link rel="stylesheet" type="text/css" href="../_static/pygments.css?v=e1a1ceaf" />
+    <link rel="stylesheet" type="text/css" href="../_static/shibuya.css?v=a318c5d4" />
+    <link media="print" rel="stylesheet" type="text/css" href="../_static/print.css?v=20ff2c19" />
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+:root {
+  --sy-f-text: "Inter", var(--sy-f-sys), var(--sy-f-cjk), sans-serif;
+  --sy-f-heading: "Inter", var(--sy-f-sys), var(--sy-f-cjk), sans-serif;
+}
+</style>
+    <meta property="og:type" content="website"/>
+  <meta property="og:url" content="chemgp.rgoswami.me/reference/architecture.html"/>
+  <meta property="og:title" content="Architecture"/>
+    <meta name="twitter:card" content="summary"/>
+  <!-- Plausible injection -->
+<script
+  defer
+  data-domain="chemgp.rgoswami.me"
+  src="https://analytics.turtletech.us/js/script.hash.outbound-links.js"
+></script>
+<script>
+  window.plausible =
+    window.plausible ||
+    function () {
+      (window.plausible.q = window.plausible.q || []).push(arguments);
+    };
+</script></head>
+<body><div class="sy-head">
+  <div class="sy-head-blur"></div>
+  <div class="sy-head-inner sy-container mx-auto">
+    <a class="sy-head-brand" href="../index.html">
+      
+      
+      <strong>ChemGP</strong>
+    </a>
+    <div class="sy-head-nav" id="head-nav">
+      <nav class="sy-head-links"><ul>
+      <li class="link"><button class="js-menu" type="button" id="nav-trigger-1" aria-controls="nav-children-1">
+            <span>Ecosystem</span>
+            <i class="i-lucide chevron-down"></i>
+          </button>
+        <ul id="nav-children-1" aria-labelledby="nav-trigger-1"><li><a href="https://rgpycrumbs.rgoswami.me">
+                <span>rgpycrumbs</span>
+                <small>Analytical and visualization suite for chemical physics</small>
+              </a></li><li><a href="https://eondocs.org">
+                <span>eOn</span>
+                <small>Long-timescale molecular dynamics engine</small>
+              </a></li><li><a href="https://github.com/OmniPotentRPC/rgpot">
+                <span>rgpot</span>
+                <small>RPC potential evaluation for GP-accelerated optimization</small>
+              </a></li></ul>
+      </li><li class="link">
+          <a href="https://crates.io/crates/chemgp-core">
+            <span>crates.io</span><i class="i-lucide external-link"></i></a>
+        </li></ul></nav>
+      <div class="sy-head-extra flex items-center print:hidden"><form class="searchbox flex items-center" action="../search.html" method="get">
+  <input type="text" name="q" placeholder="Search" />
+  <kbd>/</kbd>
+</form><div class="sy-head-socials">
+  <a href="https://github.com/lode-org/ChemGP" aria-label="GitHub">
+    <iconify-icon icon="simple-icons:github"></iconify-icon>
+  </a></div></div>
+    </div>
+    <div class="sy-head-actions flex items-center shrink-0 print:hidden"><button class="js-theme theme-switch flex items-center"
+data-aria-auto="Switch to light color mode"
+data-aria-light="Switch to dark color mode"
+data-aria-dark="Switch to auto color mode">
+<i class="i-lucide theme-icon"></i>
+</button><button class="md:hidden flex items-center js-menu" aria-label="Menu" type="button" aria-controls="head-nav" aria-expanded="false">
+        <div class="hamburger">
+          <span class="hamburger_1"></span>
+          <span class="hamburger_2"></span>
+          <span class="hamburger_3"></span>
+        </div>
+      </button>
+    </div>
+  </div>
+</div>
+<div class="sy-page sy-container flex mx-auto">
+  <aside id="lside" class="sy-lside md:w-72 md:shrink-0 print:hidden">
+    <div class="sy-lside-inner md:sticky">
+      <div class="sy-scrollbar p-6">
+        <div class="globaltoc" data-expand-depth="1"><p class="caption" role="heading" aria-level="3"><span class="caption-text">Getting Started</span></p>
+<ul>
+<li class="toctree-l1 _expand"><a class="reference internal" href="../quickstart.html">Quickstart</a></li>
+<li class="toctree-l1 _expand"><a class="reference internal" href="../installation.html">Installation</a></li>
+</ul>
+<p class="caption" role="heading" aria-level="3"><span class="caption-text">Tutorials</span></p>
+<ul>
+<li class="toctree-l1 _expand"><a class="reference internal" href="../tutorials/gp_basics.html">GP Basics</a></li>
+<li class="toctree-l1 _expand"><a class="reference internal" href="../tutorials/minimization.html">Minimization</a></li>
+<li class="toctree-l1 _expand"><a class="reference internal" href="../tutorials/molecular_kernels.html">Molecular Kernels</a></li>
+<li class="toctree-l1 _expand"><a class="reference internal" href="../tutorials/hyperparameter_training.html">Hyperparameter Training</a></li>
+<li class="toctree-l1 _expand"><a class="reference internal" href="../tutorials/scalability.html">Scalability: FPS + RFF</a></li>
+<li class="toctree-l1 _expand"><a class="reference internal" href="../tutorials/dimer_method.html">Dimer Method</a></li>
+<li class="toctree-l1 _expand"><a class="reference internal" href="../tutorials/neb_method.html">Nudged Elastic Band</a></li>
+<li class="toctree-l1 _expand"><a class="reference internal" href="../tutorials/otgpd.html">OTGPD</a></li>
+<li class="toctree-l1 _expand"><a class="reference internal" href="../tutorials/constant_kernel.html">Constant Kernel</a></li>
+<li class="toctree-l1 _expand"><a class="reference internal" href="../tutorials/production_minimize.html">Production Minimization</a></li>
+<li class="toctree-l1 _expand"><a class="reference internal" href="../tutorials/production_saddle.html">Production Saddle Search</a></li>
+<li class="toctree-l1 _expand"><a class="reference internal" href="../tutorials/production_neb.html">Production NEB</a></li>
+</ul>
+<p class="caption" role="heading" aria-level="3"><span class="caption-text">Reference</span></p>
+<ul class="current">
+<li class="toctree-l1 current"><a class="current reference internal" href="#">Architecture</a></li>
+<li class="toctree-l1 _expand"><a class="reference internal" href="kernel_design.html">Kernel Design</a></li>
+<li class="toctree-l1 _expand"><a class="reference internal" href="trust_regions.html">Trust Regions</a></li>
+<li class="toctree-l1 _expand"><a class="reference internal" href="../api/index.html">API Reference</a></li>
+</ul>
+        </div>
+      </div>
+    </div>
+  </aside>
+  <div class="lside-overlay js-menu" role="button" aria-label="Close left sidebar" aria-controls="lside" aria-expanded="false"></div>
+  <aside id="rside" class="sy-rside pb-3 w-64 shrink-0 order-last">
+    <button class="rside-close js-menu xl:hidden" aria-label="Close Table of Contents" type="button" aria-controls="rside" aria-expanded="false">
+      <i class="i-lucide close"></i>
+    </button>
+    <div class="sy-scrollbar sy-rside-inner px-6 xl:top-16 xl:sticky xl:pl-0 pt-6 pb-4"><div class="localtoc"><h3>On this page</h3><ul>
+<li><a class="reference internal" href="#workspace-layout">Workspace Layout</a></li>
+<li><a class="reference internal" href="#the-four-shared-components">The four shared components</a><ul>
+<li><a class="reference internal" href="#fps-subset-selection">FPS subset selection</a></li>
+<li><a class="reference internal" href="#trust-region-clipping">Trust region clipping</a></li>
+<li><a class="reference internal" href="#rff-approximation">RFF approximation</a></li>
+<li><a class="reference internal" href="#lcb-exploration">LCB exploration</a></li>
+</ul>
+</li>
+<li><a class="reference internal" href="#kernel-dispatch">Kernel dispatch</a></li>
+<li><a class="reference internal" href="#predmodel-dispatch">PredModel dispatch</a></li>
+<li><a class="reference internal" href="#outer-loop-pattern">Outer loop pattern</a></li>
+<li><a class="reference internal" href="#stopreason">StopReason</a></li>
+</ul>
+</div><a class="js-repo-stats repo-stats flex items-center" href="https://github.com/lode-org/ChemGP"
+  data-type="github" data-user="lode-org" data-repo="ChemGP">
+  <span class="w-8 flex items-center justify-around shrink-0 text-3xl">
+    <iconify-icon icon="simple-icons:github"></iconify-icon>
+  </span>
+  <span class="flex-grow px-2 break-all">
+    
+    
+      <span>lode-org/ChemGP</span>
+    
+    <span class="flex text-sm repo-stats-count">
+      <span class="flex items-center pr-3">
+        <iconify-icon icon="lucide:star"></iconify-icon>
+        <strong class="js-repo-stars ml-1">0</strong>
+      </span>
+      <span class="flex items-center">
+        <iconify-icon icon="lucide:git-fork"></iconify-icon>
+        <strong class="js-repo-forks ml-1">0</strong>
+      </span>
+    </span>
+  </span>
+</a><div class="edit-this-page">
+  <a href="https://github.com/lode-org/ChemGP/blob/main/docs/source/reference/architecture.rst">Edit this page</a>
+</div></div>
+  </aside>
+  <div class="rside-overlay js-menu" role="button" aria-label="Close Table of Contents" aria-controls="rside" aria-expanded="false"></div>
+  <main class="sy-main w-full max-sm:max-w-full print:pt-6">
+<div class="sy-breadcrumbs" role="navigation">
+  <div class="sy-breadcrumbs-inner flex items-center">
+    <div class="md:hidden mr-3">
+      <button class="js-menu" aria-label="Menu" type="button" aria-controls="lside" aria-expanded="false">
+        <i class="i-lucide menu"></i>
+      </button>
+    </div>
+    <ol class="flex-1" itemscope itemtype="https://schema.org/BreadcrumbList"><li itemprop="itemListElement" itemscope itemtype="https://schema.org/ListItem">
+        <a itemprop="item" href="../index.html"><span itemprop="name">ChemGP</span></a>
+        <span>/</span>
+        <meta itemprop="position" content="1" />
+      </li><li itemprop="itemListElement" itemscope itemtype="https://schema.org/ListItem">
+        <strong itemprop="name">Architecture</strong>
+        <meta itemprop="position" content="2" />
+      </li></ol>
+    <div class="xl:hidden ml-1">
+      <button class="js-menu" aria-label="Show table of contents" type="button" aria-controls="rside"
+        aria-expanded="false">
+        <i class="i-lucide outdent"></i>
+      </button>
+    </div>
+  </div>
+</div><div class="flex flex-col break-words justify-between">
+      <div class="relative min-w-0 max-w-6xl px-6 pb-6 pt-8 xl:px-12">
+  <div class="copy-page-wrapper relative pb-4 lg:absolute lg:top-8 lg:right-6 xl:right-12">
+  <div id="copy-page-trigger">
+    <button
+      type="button"
+      class="js-copy px-3 py-1 inline-flex items-center gap-1"
+      data-url="chemgp.rgoswami.me/_sources/reference/architecture.rst.txt"
+    >
+      <i class="i-lucide" data-icon="copy"></i>
+      <span>Copy page</span>
+    </button>
+    <button class="js-menu px-2 py-1" type="button" aria-label="More actions"
+      aria-haspopup="menu" aria-expanded="false" aria-controls="copy-page-content">
+      <i class="i-lucide chevron-down"></i>
+    </button>
+  </div>
+  <div id="copy-page-content" role="menu" aria-orientation="vertical" aria-hidden="true">
+    <div role="presentation">
+      <div class="flex flex-col" role="group">
+        <button class="js-copy" type="button" role="menuitem"
+          data-url="chemgp.rgoswami.me/_sources/reference/architecture.rst.txt">
+          <span class="iconify-icon">
+            <i class="i-lucide" data-icon="copy"></i>
+          </span>
+          <span>Copy page</span>
+        </button>
+        <a role="menuitem" href="chemgp.rgoswami.me/_sources/reference/architecture.rst.txt" target="_blank" rel="nofollow"><iconify-icon icon="bi:code-slash"></iconify-icon>
+            <span>View Source</span></a><a role="menuitem" href="https://chatgpt.com/?hints=search&q=Read%20chemgp.rgoswami.me/_sources/reference/architecture.rst.txt%20so%20I%20can%20ask%20questions%20about%20it." target="_blank" rel="nofollow">
+          <iconify-icon icon="bi:openai"></iconify-icon>
+          <span>Open in ChatGPT</span>
+        </a><a role="menuitem" href="https://claude.ai/new?q=Read%20chemgp.rgoswami.me/_sources/reference/architecture.rst.txt%20so%20I%20can%20ask%20questions%20about%20it." target="_blank" rel="nofollow">
+          <iconify-icon icon="bi:claude"></iconify-icon>
+          <span>Open in Claude</span>
+        </a></div>
+    </div>
+  </div>
+</div><article class="yue dark-code" role="main">
+          <section id="architecture">
+<h1>Architecture<a class="headerlink" href="#architecture" title="Link to this heading">¶</a></h1>
+<section id="workspace-layout">
+<h2>Workspace Layout<a class="headerlink" href="#workspace-layout" title="Link to this heading">¶</a></h2>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span data-line="1"><span class="n">ChemGP</span><span class="o">/</span>
+</span><span data-line="2">  <span class="n">Cargo</span><span class="o">.</span><span class="n">toml</span>              <span class="c1"># workspace root</span>
+</span><span data-line="3">  <span class="n">crates</span><span class="o">/</span>
+</span><span data-line="4">    <span class="n">chemgp</span><span class="o">-</span><span class="n">core</span><span class="o">/</span>          <span class="c1"># all GP + optimizer logic</span>
+</span><span data-line="5">      <span class="n">src</span><span class="o">/</span>
+</span><span data-line="6">        <span class="n">lib</span><span class="o">.</span><span class="n">rs</span>            <span class="c1"># module exports, StopReason enum</span>
+</span><span data-line="7">        <span class="n">invdist</span><span class="o">.</span><span class="n">rs</span>        <span class="c1"># inverse distance features + Jacobian</span>
+</span><span data-line="8">        <span class="n">kernel</span><span class="o">.</span><span class="n">rs</span>         <span class="c1"># Kernel enum, MolInvDistSE, CartesianSE</span>
+</span><span data-line="9">        <span class="n">types</span><span class="o">.</span><span class="n">rs</span>          <span class="c1"># TrainingData, GPModel, init_kernel</span>
+</span><span data-line="10">        <span class="n">covariance</span><span class="o">.</span><span class="n">rs</span>     <span class="c1"># build_full_covariance, robust_cholesky</span>
+</span><span data-line="11">        <span class="n">predict</span><span class="o">.</span><span class="n">rs</span>        <span class="c1"># GP posterior, PredModel, build_pred_model</span>
+</span><span data-line="12">        <span class="n">nll</span><span class="o">.</span><span class="n">rs</span>            <span class="c1"># MAP NLL + analytical gradient</span>
+</span><span data-line="13">        <span class="n">scg</span><span class="o">.</span><span class="n">rs</span>            <span class="c1"># Moller (1993) SCG optimizer</span>
+</span><span data-line="14">        <span class="n">train</span><span class="o">.</span><span class="n">rs</span>          <span class="c1"># train_model dispatcher</span>
+</span><span data-line="15">        <span class="n">distances</span><span class="o">.</span><span class="n">rs</span>      <span class="c1"># max_1d_log, euclidean distance</span>
+</span><span data-line="16">        <span class="n">emd</span><span class="o">.</span><span class="n">rs</span>            <span class="c1"># brute-force EMD</span>
+</span><span data-line="17">        <span class="n">sampling</span><span class="o">.</span><span class="n">rs</span>       <span class="c1"># FPS, select_optim_subset, prune</span>
+</span><span data-line="18">        <span class="n">lbfgs</span><span class="o">.</span><span class="n">rs</span>          <span class="c1"># L-BFGS two-loop recursion</span>
+</span><span data-line="19">        <span class="n">optim_step</span><span class="o">.</span><span class="n">rs</span>     <span class="c1"># FIRE/LBFGS unified step</span>
+</span><span data-line="20">        <span class="n">trust</span><span class="o">.</span><span class="n">rs</span>          <span class="c1"># adaptive trust thresholds, EMD-based trust</span>
+</span><span data-line="21">        <span class="n">rff</span><span class="o">.</span><span class="n">rs</span>            <span class="c1"># Random Fourier Features</span>
+</span><span data-line="22">        <span class="n">minimize</span><span class="o">.</span><span class="n">rs</span>       <span class="c1"># gp_minimize</span>
+</span><span data-line="23">        <span class="n">dimer</span><span class="o">.</span><span class="n">rs</span>          <span class="c1"># gp_dimer, standard_dimer</span>
+</span><span data-line="24">        <span class="n">neb_path</span><span class="o">.</span><span class="n">rs</span>       <span class="c1"># NEBConfig, NEBPath, NEB force computation</span>
+</span><span data-line="25">        <span class="n">idpp</span><span class="o">.</span><span class="n">rs</span>           <span class="c1"># IDPP/sIDPP path initialization</span>
+</span><span data-line="26">        <span class="n">neb</span><span class="o">.</span><span class="n">rs</span>            <span class="c1"># neb_optimize, gp_neb_aie</span>
+</span><span data-line="27">        <span class="n">neb_oie</span><span class="o">.</span><span class="n">rs</span>        <span class="c1"># gp_neb_oie (LCB-guided image selection)</span>
+</span><span data-line="28">        <span class="n">otgpd</span><span class="o">.</span><span class="n">rs</span>          <span class="c1"># otgpd (HOD, adaptive threshold)</span>
+</span><span data-line="29">        <span class="n">potentials</span><span class="o">.</span><span class="n">rs</span>     <span class="c1"># LJ, Muller-Brown, LEPS</span>
+</span><span data-line="30">        <span class="n">io</span><span class="o">.</span><span class="n">rs</span>             <span class="c1"># readcon-core + chemfiles (feature-gated)</span>
+</span><span data-line="31">        <span class="n">oracle</span><span class="o">.</span><span class="n">rs</span>         <span class="c1"># rgpot-core wrapper (feature-gated)</span>
+</span><span data-line="32">      <span class="n">examples</span><span class="o">/</span>
+</span><span data-line="33">        <span class="n">mb_minimize</span><span class="o">.</span><span class="n">rs</span>    <span class="c1"># GP minimize on Muller-Brown (CartesianSE)</span>
+</span><span data-line="34">        <span class="n">mb_gp_quality</span><span class="o">.</span><span class="n">rs</span>  <span class="c1"># GP quality grids on Muller-Brown</span>
+</span><span data-line="35">        <span class="n">leps_minimize</span><span class="o">.</span><span class="n">rs</span>  <span class="c1"># GP minimize on LEPS (MolInvDistSE)</span>
+</span><span data-line="36">        <span class="n">leps_rff_quality</span><span class="o">.</span><span class="n">rs</span> <span class="c1"># RFF vs exact GP on LEPS</span>
+</span><span data-line="37">        <span class="n">leps_neb</span><span class="o">.</span><span class="n">rs</span>       <span class="c1"># NEB vs AIE vs OIE</span>
+</span><span data-line="38">        <span class="n">leps_dimer</span><span class="o">.</span><span class="n">rs</span>     <span class="c1"># GP-Dimer vs OTGPD</span>
+</span><span data-line="39">  <span class="n">docs</span><span class="o">/</span>
+</span><span data-line="40">    <span class="n">export</span><span class="o">.</span><span class="n">el</span>             <span class="c1"># ox-rst batch export</span>
+</span><span data-line="41">    <span class="n">orgmode</span><span class="o">/</span>              <span class="c1"># org source files (single source of truth)</span>
+</span><span data-line="42">    <span class="n">source</span><span class="o">/</span>               <span class="c1"># generated RST (gitignored)</span>
+</span><span data-line="43">  <span class="n">scripts</span><span class="o">/</span>                <span class="c1"># figure generation and plotting</span>
+</span><span data-line="44">  <span class="n">data</span><span class="o">/</span>                   <span class="c1"># test structures (HCN, system100)</span>
+</span></pre></div>
+</div>
+</section>
+<section id="the-four-shared-components">
+<h2>The four shared components<a class="headerlink" href="#the-four-shared-components" title="Link to this heading">¶</a></h2>
+<p>Every GP-accelerated optimizer in ChemGP shares four mechanisms. Each exists
+because the naive approach (exact GP on all data, no trust, no exploration)
+fails for practical problem sizes.</p>
+<section id="fps-subset-selection">
+<h3>FPS subset selection<a class="headerlink" href="#fps-subset-selection" title="Link to this heading">¶</a></h3>
+<p><strong>Problem</strong>: the GP covariance matrix for <span class="math notranslate nohighlight">\(N\)</span> training points with $D$-dimensional
+gradients is <span class="math notranslate nohighlight">\(N(1+D) \times N(1+D)\)</span>. Cholesky factorization costs <span class="math notranslate nohighlight">\(\mathcal{O}(N^3(1+D)^3)\)</span>.
+With 50 training points and <span class="math notranslate nohighlight">\(D=9\)</span> (LEPS), the matrix is <span class="math notranslate nohighlight">\(500 \times 500\)</span>. With <span class="math notranslate nohighlight">\(D=150\)</span> (50
+atoms), it is <span class="math notranslate nohighlight">\(7550 \times 7550\)</span>. Training with SCG calls Cholesky at every iteration
+(~50 iterations), making the cost prohibitive.</p>
+<p><strong>Solution</strong>: Farthest Point Sampling selects <span class="math notranslate nohighlight">\(K \ll N\)</span> points that are spread out
+and cover the local neighborhood. Training happens on the $K$-point subset, keeping
+Cholesky cost at <span class="math notranslate nohighlight">\(\mathcal{O}(K^3(1+D)^3)\)</span>.</p>
+<p><strong>Tradeoff</strong>: fewer training points means less information for hyperparameter
+optimization. The <code class="docutils literal notranslate"><span class="pre">fps_latest_points</span></code> parameter always includes the most recent
+points (which are near the current position) to avoid losing critical local data.</p>
+</section>
+<section id="trust-region-clipping">
+<h3>Trust region clipping<a class="headerlink" href="#trust-region-clipping" title="Link to this heading">¶</a></h3>
+<p><strong>Problem</strong>: a GP extrapolating far from its training data produces arbitrary
+predictions. The posterior mean reverts to the prior (zero mean), and the
+optimizer can chase phantom minima or saddle points that do not exist on the true
+PES.</p>
+<p><strong>Solution</strong>: measure the distance between a proposed point and the nearest
+training data. If this distance exceeds <code class="docutils literal notranslate"><span class="pre">trust_radius</span></code>, clip the step. For
+molecular systems, the distance is measured in the invariant feature space (Earth
+Mover’s Distance on inverse distances). For Cartesian surfaces, plain Euclidean
+distance suffices.</p>
+<p><strong>Why EMD for molecules</strong>: Euclidean distance in Cartesian coordinates is sensitive
+to rotation and translation. Two geometries that differ only by a rigid-body
+motion have large Euclidean distance but zero EMD (their interatomic distances
+are identical). EMD provides a meaningful measure of structural similarity.</p>
+</section>
+<section id="rff-approximation">
+<h3>RFF approximation<a class="headerlink" href="#rff-approximation" title="Link to this heading">¶</a></h3>
+<p><strong>Problem</strong>: even with FPS keeping the training set small, inner optimization loops
+call <code class="docutils literal notranslate"><span class="pre">predict</span></code> hundreds of times. Each exact GP prediction costs <span class="math notranslate nohighlight">\(\mathcal{O}(N(1+D))\)</span>,
+and each <code class="docutils literal notranslate"><span class="pre">predict_with_variance</span></code> needs the Cholesky solve.</p>
+<p><strong>Solution</strong>: Random Fourier Features approximate the kernel with a finite-rank
+feature map. The resulting linear model has <span class="math notranslate nohighlight">\(\mathcal{O}(D_{\text{rff}})\)</span> prediction cost, independent
+of <span class="math notranslate nohighlight">\(N\)</span>. Hyperparameters are trained exactly (SCG on the FPS subset), then the RFF
+model is built on the full training data.</p>
+<p><strong>Why not Nystrom</strong>: the alternative sparse GP approximation (Nystrom) uses a
+Woodbury matrix inversion that amplifies noise. For gradient observations with
+small noise variance (1e-4), this causes instability. RFF avoids the Woodbury
+identity entirely.</p>
+<p><strong>Tradeoff</strong>: RFF introduces approximation error. With <span class="math notranslate nohighlight">\(D_{\text{rff}} = 500\)</span> features, the
+approximation is excellent for LEPS (3 atoms). Larger systems may need more
+features, but the <span class="math notranslate nohighlight">\(\mathcal{O}(D_{\text{rff}}^3)\)</span> cost is always independent of <span class="math notranslate nohighlight">\(N\)</span> and <span class="math notranslate nohighlight">\(D\)</span>.</p>
+<figure class="align-default" id="id1">
+<a class="reference internal image-reference" href="_static/figures/leps_rff_quality.pdf"><img alt="_static/figures/leps_rff_quality.pdf" src="_static/figures/leps_rff_quality.pdf" style="width: 100%;" />
+</a>
+<figcaption>
+<p><span class="caption-text">RFF approximation quality on the LEPS surface. Energy and gradient MAE
+decrease with increasing D_rff, converging toward the exact GP baseline
+(dotted coral line). At D_rff = 150, the RFF error is within 2x of the
+exact GP for both energy and gradient.</span><a class="headerlink" href="#id1" title="Link to this image">¶</a></p>
+</figcaption>
+</figure>
+</section>
+<section id="lcb-exploration">
+<h3>LCB exploration<a class="headerlink" href="#lcb-exploration" title="Link to this heading">¶</a></h3>
+<p><strong>Problem</strong>: the optimizer can get trapped in regions where the GP is confident
+but wrong. This happens when training data covers a local area well but the true
+PES has features (a lower minimum, a pass through a barrier) just outside the
+data region.</p>
+<p><strong>Solution</strong>: Lower Confidence Bound penalizes low-variance regions:
+<span class="math notranslate nohighlight">\(E_{\text{lcb}} = E_{\text{gp}} + \kappa \, \sigma\)</span>. Points with high variance become more
+attractive, encouraging the optimizer to sample uncertain regions before
+committing to a direction.</p>
+<p><strong>Adaptation per method</strong>:</p>
+<ul class="simple">
+<li><p><strong>Minimization</strong>: standard LCB on the energy. Encourages exploring uncertain
+regions around the predicted minimum.</p></li>
+<li><p><strong>NEB OIE</strong>: LCB on the perpendicular force variance. Selects the image where
+the NEB force is most uncertain, which is where the path might not be converged.</p></li>
+<li><p><strong>Dimer/OTGPD</strong>: no LCB for point selection (always evaluates the midpoint).
+Instead, the GP uncertainty feeds into the adaptive trust threshold.</p></li>
+<li><p><strong>NEB AIE</strong>: no LCB (all images are evaluated at every outer iteration).</p></li>
+</ul>
+</section>
+</section>
+<section id="kernel-dispatch">
+<h2>Kernel dispatch<a class="headerlink" href="#kernel-dispatch" title="Link to this heading">¶</a></h2>
+<p>The <code class="docutils literal notranslate"><span class="pre">Kernel</span></code> enum wraps <code class="docutils literal notranslate"><span class="pre">MolInvDistSE</span></code> (molecules) and <code class="docutils literal notranslate"><span class="pre">CartesianSE</span></code> (arbitrary
+surfaces). All code accepts <code class="docutils literal notranslate"><span class="pre">&amp;Kernel</span></code> and dispatches through unified methods.
+This avoids trait objects and monomorphization bloat while supporting both kernel
+types with zero runtime overhead. See <a class="reference external" href="kernel_design.rst">Kernel Design</a> for details.</p>
+</section>
+<section id="predmodel-dispatch">
+<h2>PredModel dispatch<a class="headerlink" href="#predmodel-dispatch" title="Link to this heading">¶</a></h2>
+<p>The <code class="docutils literal notranslate"><span class="pre">PredModel</span></code> enum in <code class="docutils literal notranslate"><span class="pre">predict.rs</span></code> dispatches between exact GP and RFF:</p>
+<div class="highlight-rust notranslate"><div class="highlight"><pre><span></span><span data-line="1"><span class="k">pub</span><span class="w"> </span><span class="k">enum</span><span class="w"> </span><span class="nc">PredModel</span><span class="w"> </span><span class="p">{</span>
+</span><span data-line="2"><span class="w">    </span><span class="n">Gp</span><span class="p">(</span><span class="n">GPModel</span><span class="p">),</span>
+</span><span data-line="3"><span class="w">    </span><span class="n">Rff</span><span class="p">(</span><span class="n">RffModel</span><span class="p">),</span>
+</span><span data-line="4"><span class="p">}</span>
+</span></pre></div>
+</div>
+<p>The asymmetry is deliberate: hyperparameters are always trained on the <em>exact</em> GP
+(SCG needs exact NLL gradients), but the prediction model can be approximate.
+This means RFF inherits well-tuned hyperparameters without paying the exact GP
+prediction cost.</p>
+<p>All optimizers (minimize, dimer, otgpd, neb, neb<sub>oie</sub>) use <code class="docutils literal notranslate"><span class="pre">build_pred_model()</span></code>
+to construct the appropriate variant.</p>
+</section>
+<section id="outer-loop-pattern">
+<h2>Outer loop pattern<a class="headerlink" href="#outer-loop-pattern" title="Link to this heading">¶</a></h2>
+<p>All GP-accelerated optimizers follow the same outer loop:</p>
+<ol class="arabic simple">
+<li><p><strong>FPS subset selection</strong>: select the K most informative training points.
+<em>Why</em>: keeps Cholesky cost manageable.</p></li>
+<li><p><strong>Train GP</strong>: SCG-optimize hyperparameters on the subset.
+<em>Why</em>: hyperparameters must adapt as the optimizer explores new regions.</p></li>
+<li><p><strong>Build PredModel</strong>: construct exact GP or RFF on full training data.
+<em>Why</em>: prediction should use all available data, even points not in the
+training subset.</p></li>
+<li><p><strong>Inner optimization</strong>: optimize on the surrogate (L-BFGS for minimize/dimer,
+FIRE/L-BFGS for NEB).
+<em>Why</em>: the GP surrogate is cheap to evaluate, so aggressive optimization
+is free.</p></li>
+<li><p><strong>Trust clip</strong>: clip the proposed step to the trust region.
+<em>Why</em>: prevents stepping into extrapolation territory.</p></li>
+<li><p><strong>Oracle call</strong>: evaluate the true potential at the new point.
+<em>Why</em>: the GP prediction must be validated; the new data improves the GP.</p></li>
+<li><p><strong>Convergence check</strong>: compare force to tolerance.</p></li>
+</ol>
+<p>The method-specific differences (translation force for dimer, perpendicular force
+for NEB, adaptive threshold for OTGPD) happen within steps 4-6.</p>
+</section>
+<section id="stopreason">
+<h2>StopReason<a class="headerlink" href="#stopreason" title="Link to this heading">¶</a></h2>
+<p>All optimizer result types carry a <code class="docutils literal notranslate"><span class="pre">StopReason</span></code> enum:</p>
+<div class="highlight-rust notranslate"><div class="highlight"><pre><span></span><span data-line="1"><span class="k">pub</span><span class="w"> </span><span class="k">enum</span><span class="w"> </span><span class="nc">StopReason</span><span class="w"> </span><span class="p">{</span>
+</span><span data-line="2"><span class="w">    </span><span class="n">Converged</span><span class="p">,</span>
+</span><span data-line="3"><span class="w">    </span><span class="n">MaxIterations</span><span class="p">,</span>
+</span><span data-line="4"><span class="w">    </span><span class="n">OracleCap</span><span class="p">,</span>
+</span><span data-line="5"><span class="w">    </span><span class="n">ForceStagnation</span><span class="p">,</span>
+</span><span data-line="6"><span class="p">}</span>
+</span></pre></div>
+</div>
+<p><code class="docutils literal notranslate"><span class="pre">ForceStagnation</span></code> triggers when the force norm changes by less than 1e-10 for 3
+consecutive steps. This catches situations where the GP is stuck (e.g., due to
+dedup<sub>tol</sub>rejecting all new training points).</p>
+</section>
+</section>
+
+        </article><button class="back-to-top" type="button">
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
+    <path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8v12z"></path>
+  </svg>
+  <span>Back to top</span>
+</button><div class="navigation flex print:hidden"><div class="navigation-prev">
+    <a href="../tutorials/production_neb.html">
+      <i class="i-lucide chevron-left"></i>
+      <div class="page-info">
+        <span>Previous</span><div class="title">Production NEB</div></div>
+    </a>
+  </div><div class="navigation-next">
+    <a href="kernel_design.html">
+      <div class="page-info">
+        <span>Next</span>
+        <div class="title">Kernel Design</div>
+      </div>
+      <i class="i-lucide chevron-right"></i>
+    </a>
+  </div></div></div>
+    </div>
+  </main>
+</div>
+<footer class="sy-foot">
+  <div class="sy-foot-inner sy-container mx-auto">
+    <div class="sy-foot-reserved md:flex justify-between items-center">
+      <div class="sy-foot-copyright"><p>2026, Rohit Goswami</p>
+  
+  <p>
+    Made with
+    
+    <a href="https://www.sphinx-doc.org/">Sphinx</a> and
+    
+    <a href="https://shibuya.lepture.com">Shibuya theme</a>.
+  </p>
+</div> <div class="sy-foot-socials">
+<a href="https://github.com/lode-org/ChemGP" aria-label="GitHub">
+  <iconify-icon icon="simple-icons:github"></iconify-icon>
+</a></div>
+    </div>
+    <div class="sy-foot-reserved" style="text-align: center; font-size: 0.85em; padding-top: 0.5em;">
+      Analytics by <a href="https://plausible.io" rel="noopener">Plausible</a>
+      provided by <a href="https://turtletech.is" rel="noopener">TurtleTech ehf</a>
+      | <a href="https://rgoswami.me" rel="noopener">Rohit Goswami</a>
+    </div>
+  </div>
+</footer>
+      <script src="../_static/documentation_options.js?v=5929fcd5"></script>
+      <script src="../_static/doctools.js?v=fd6eb6e6"></script>
+      <script src="../_static/sphinx_highlight.js?v=6ffebe34"></script>
+      <script src="../_static/shibuya.js?v=cac61aee"></script>
+      <script defer="defer" src="https://cdn.jsdelivr.net/npm/mathjax@4/tex-mml-chtml.js"></script></body>
+</html>

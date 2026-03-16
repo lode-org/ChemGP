@@ -1,0 +1,206 @@
+
+
+Nudged Elastic Band
+-------------------
+
+Why minimum energy paths?
+~~~~~~~~~~~~~~~~~~~~~~~~~
+
+A minimum energy path (MEP) between two states (reactant and product) reveals
+the reaction mechanism: the sequence of structural changes the molecule undergoes,
+the transition state geometry, and the energy barrier that controls the rate.
+
+Unlike saddle point search (dimer), which finds a single transition state, NEB
+maps the *entire* pathway. This is essential when the reaction involves multiple
+intermediate states, or when the connectivity between reactant and product is
+unknown.
+
+How NEB works
+~~~~~~~~~~~~~
+
+An elastic band of I images (geometries) is initialized between fixed endpoints
+(reactant and product). At each iteration:
+
+1. **Tangent**: compute the path tangent at each image from its neighbors.
+
+2. **Force decomposition**: the true force at each image is decomposed into:
+
+   - Perpendicular component (drives relaxation toward the MEP)
+
+   - Parallel component (removed, replaced by spring force)
+
+3. **Spring force**: artificial springs between adjacent images keep them
+   distributed along the path: ``F_spring = k * (||x_{i+1} - x_i|| - ||x_i - x_{i-1}||) * tangent``.
+
+4. **NEB force**: the total force on each image is ``F_neb = F_perp + F_spring``.
+   This nudges images toward the MEP while keeping them evenly spaced.
+
+5. **Relaxation**: images are moved under NEB forces until convergence.
+
+Climbing image
+^^^^^^^^^^^^^^
+
+Once the band is partially converged, the highest-energy image is modified: its
+NEB force is replaced by the full force with the parallel component *reversed*.
+This drives the highest image uphill along the path, refining the saddle point
+estimate. CI-NEB gives a better saddle energy than plain NEB.
+
+Path initialization
+~~~~~~~~~~~~~~~~~~~
+
+The initial path matters: a poor initial guess requires many more iterations.
+
+- **Linear interpolation**: straight-line in Cartesian coordinates. Simple, fast,
+  but can produce unphysical geometries (atoms passing through each other).
+
+- **IDPP (Image Dependent Pair Potential)**: optimizes the initial path so that
+  interatomic distances are interpolated smoothly between endpoints. Produces
+  physically reasonable starting paths for molecular rearrangements. Recommended
+  for molecular systems.
+
+GP-NEB: AIE and OIE
+~~~~~~~~~~~~~~~~~~~
+
+The standard NEB evaluates the oracle at every image at every iteration. For I
+images and M iterations, that is I\*M oracle calls. GP-NEB reduces this by
+training a GP surrogate and relaxing on it.
+
+AIE (All Image Evaluation)
+^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+Each outer iteration evaluates *all* images with the oracle, then relaxes the
+band on the GP surrogate for several inner iterations.
+
+- Cost: I oracle calls per outer iteration
+
+- Advantage: every image has fresh oracle data, so the GP is well-trained
+
+- On LEPS: ~62 total oracle calls (vs 127 standard)
+
+OIE (One Image Evaluation)
+^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+Each outer iteration evaluates *one* image, selected by an LCB criterion. The
+other images are predicted by the GP.
+
+- Cost: 1 oracle call per outer iteration
+
+- Advantage: maximally oracle-efficient
+
+- Challenge: must choose *which* image to evaluate wisely
+
+- On LEPS: ~49 total oracle calls
+
+OIE is the most oracle-efficient variant, but requires good image selection.
+
+NEB builds on the GP machinery from earlier tutorials: the kernel (`T3 <molecular_kernels.rst>`_),
+hyperparameter training (`T4 <hyperparameter_training.rst>`_), and FPS/RFF scalability (`T5 <scalability.rst>`_).
+The GP-NEB variants use the same ``PredModel`` dispatch and trust region
+clipping as GP minimization.
+
+LCB scoring in OIE
+~~~~~~~~~~~~~~~~~~
+
+OIE selects the image to evaluate by scoring each with:
+
+
+
+.. math::
+
+    s_{i} = \lVert \mathbf{F}^{\perp}_{i} \rVert + \kappa \, \sigma^{\perp}_{i}
+
+where :math:`\lVert \mathbf{F}^{\perp}_{i} \rVert` is the magnitude of the NEB force
+perpendicular to the path (a large perpendicular force means the image is far
+from the MEP) and :math:`\sigma^{\perp}_{i}` is the GP gradient uncertainty projected
+perpendicular to the path (high variance means the GP is uncertain about the
+perpendicular force).
+
+The combination prioritizes images that are both far from the MEP *and*
+uncertain. This is more effective than either criterion alone: force magnitude
+catches images the GP thinks are wrong; variance catches images where the GP does
+not know. See ``scripts/sympy/t7_lcb_scoring.py`` for the derivation.
+
+Priority cascade: before LCB scoring, two special cases take precedence:
+
+1. **Early-stop image**: if an image's force increased after the last oracle call,
+   it is re-evaluated immediately (the GP went wrong there).
+
+2. **Climbing image**: the saddle-point image gets priority to ensure the barrier
+   estimate is accurate.
+
+Scalability
+~~~~~~~~~~~
+
+For N training points in D dimensions, the GP covariance matrix is N\*(1+D) x
+N\*(1+D). In the NEB inner loop with I images and M relaxation steps, each image
+calls predict, for I\*M predict calls. This is untenable with large N.
+
+Per-bead FPS subset
+^^^^^^^^^^^^^^^^^^^
+
+For each NEB image, select the K nearest training points (by trust distance).
+Take the union across all images. If the union exceeds ``max_gp_points``, trim
+with global FPS.
+
+*Why per-bead instead of global FPS*: global FPS selects points spread across
+the entire training set. This can leave individual images without nearby training
+data (all K selected points might cluster near one end of the path). Per-bead FPS
+ensures each image retains local coverage, then the global union merges them.
+
+RFF for inner-loop prediction
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+Train hyperparameters on the FPS subset (exact GP via SCG), then build an RFF
+model on ALL training data. The RFF model has O(D\ :sub:`rff`\) prediction cost vs
+O(N\*(1+D)) for exact GP.
+
+*Why seeded RFF for OIE*: RFF sampling is stochastic (random frequency matrix).
+With different random seeds, the same GP gives slightly different predictions.
+In OIE, this stochasticity causes the LCB scoring to oscillate: different images
+are selected each iteration, and the path never settles. Seeding the RFF
+(``seed=42``, 1000 features) eliminates this source of non-determinism. AIE is
+less sensitive because all images get oracle data anyway.
+
+LEPS example
+~~~~~~~~~~~~
+
+.. code:: bash
+
+    cargo run --release --example leps_neb
+
+On the LEPS surface: OIE converges in ~49 oracle calls, AIE in ~62, standard NEB
+in ~127.
+
+.. figure:: /_static/figures/leps_neb_convergence.png
+   :width: 70%
+
+   Maximum NEB force vs oracle calls for standard NEB, GP-NEB AIE, and GP-NEB
+   OIE on the LEPS surface. OIE converges fastest because it selects only the
+   most informative image at each iteration.
+
+Configuration Reference
+~~~~~~~~~~~~~~~~~~~~~~~
+
+.. table::
+
+    +----------------------+---------------+---------------------------------------------+
+    | Parameter            |       Default | Description                                 |
+    +======================+===============+=============================================+
+    | ``n_images``         |             7 | Number of interior NEB images               |
+    +----------------------+---------------+---------------------------------------------+
+    | ``k_spring``         |           5.0 | Spring constant for image spacing           |
+    +----------------------+---------------+---------------------------------------------+
+    | ``conv_tol``         |          0.05 | Max perpendicular NEB force for convergence |
+    +----------------------+---------------+---------------------------------------------+
+    | ``max_iter``         |           200 | Maximum outer iterations                    |
+    +----------------------+---------------+---------------------------------------------+
+    | ``max_oracle_calls`` | 0 (unlimited) | Oracle call budget                          |
+    +----------------------+---------------+---------------------------------------------+
+    | ``climbing_image``   |          true | Enable CI-NEB for saddle refinement         |
+    +----------------------+---------------+---------------------------------------------+
+    | ``max_gp_points``    |            50 | Trigger per-bead subset when N > this       |
+    +----------------------+---------------+---------------------------------------------+
+    | ``rff_features``     |  0 (exact GP) | RFF feature count (0 = exact GP)            |
+    +----------------------+---------------+---------------------------------------------+
+    | ``use_idpp``         |          true | IDPP path initialization                    |
+    +----------------------+---------------+---------------------------------------------+

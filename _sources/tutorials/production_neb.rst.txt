@@ -1,0 +1,148 @@
+
+
+Production NEB
+--------------
+
+This tutorial covers the full NEB pipeline on a real potential energy surface:
+endpoint minimization, path initialization, and GP-NEB with OIE and AIE.
+
+Full pipeline
+~~~~~~~~~~~~~
+
+A production NEB calculation has three phases:
+
+1. **Minimize endpoints**: ensure reactant and product are at local minima.
+   NEB requires stationary endpoints; if they are not minimized, spring
+   forces at the endpoints introduce artifacts.
+
+2. **Initialize path**: interpolate between minimized endpoints. SIDPP
+   (Symmetrized IDPP) produces physically reasonable starting paths by
+   smoothly interpolating interatomic distances.
+
+3. **Run GP-NEB**: optimize the band on the GP surrogate, calling the oracle
+   selectively to refine the MEP and saddle point estimate.
+
+Running the example
+~~~~~~~~~~~~~~~~~~~
+
+.. code:: bash
+
+    cargo run --release --example hcn_neb --features io,rgpot -- --method oie
+
+The ``--method`` flag selects: ``neb`` (standard), ``aie`` (GP-NEB AIE),
+``oie`` (GP-NEB OIE), or ``all`` (run all three for comparison).
+
+Endpoint minimization
+~~~~~~~~~~~~~~~~~~~~~
+
+The example uses pre-minimized endpoints from the nebviz reference pipeline,
+but also demonstrates GP-guided re-minimization:
+
+.. code:: rust
+
+    let mut min_cfg = MinimizationConfig::default();
+    min_cfg.conv_tol = 0.05;  // eV/A
+    min_cfg.trust_metric = TrustMetric::Emd;
+    min_cfg.atom_types = atomic_numbers.clone();
+    min_cfg.const_sigma2 = 1.0;
+
+    let r_min = gp_minimize(&oracle, &x_start, &kernel, &min_cfg, None);
+
+Each endpoint minimization costs ~5-10 oracle calls with GP acceleration.
+
+OIE vs AIE on molecular systems
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+.. table::
+
+    +--------------+--------------------+-------------------------------------+
+    | Variant      | Oracle calls (HCN) | Strategy                            |
+    +==============+====================+=====================================+
+    | Standard NEB | ~402               | All images, every iteration         |
+    +--------------+--------------------+-------------------------------------+
+    | GP-NEB AIE   | varies             | All images, every outer iteration   |
+    +--------------+--------------------+-------------------------------------+
+    | GP-NEB OIE   | ~134               | One image per outer iteration (LCB) |
+    +--------------+--------------------+-------------------------------------+
+
+OIE is the most oracle-efficient because it selects only the most
+informative image at each iteration. The LCB criterion (T7) balances
+force magnitude (exploitation) with GP uncertainty (exploration).
+
+Configuration for molecular NEB
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+.. code:: rust
+
+    let mut cfg = NEBConfig::default();
+    cfg.images = 10;
+    cfg.conv_tol = 0.1;                // CI force tolerance
+    cfg.climbing_image = true;
+    cfg.ci_activation_tol = 0.5;       // activate CI when max|F| < 0.5
+    cfg.energy_weighted = true;        // variable spring constants
+    cfg.initializer = "sidpp".to_string();
+    cfg.trust_metric = TrustMetric::Emd;
+    cfg.atom_types = atomic_numbers.clone();
+    cfg.const_sigma2 = 1.0;
+
+OIE-specific settings:
+
+.. code:: rust
+
+    cfg.max_neb_oracle_calls = 150;    // total budget
+    cfg.rff_features = 500;            // RFF for inner loop
+    cfg.lcb_kappa = 2.0;               // exploration weight
+    cfg.unc_convergence = 0.05;        // uncertainty convergence gate
+    cfg.hod_max_history = 80;          // HOD training data cap
+
+Energy profile output
+~~~~~~~~~~~~~~~~~~~~~
+
+The example outputs a JSONL file with:
+
+- Convergence history (max NEB force vs oracle calls per method)
+
+- Final path energies (energy at each image along the MEP)
+
+- Per-iteration oracle call counts
+
+This can be plotted with ``scripts/plot_comparisons.py`` to visualize the
+MEP energy profile and convergence curves.
+
+Practical considerations
+~~~~~~~~~~~~~~~~~~~~~~~~
+
+Path initialization
+^^^^^^^^^^^^^^^^^^^
+
+SIDPP is recommended for molecular systems. Linear interpolation in
+Cartesian coordinates can produce unphysical geometries (atoms passing
+through each other), which creates high-energy images that dominate the
+band and slow convergence.
+
+Number of images
+^^^^^^^^^^^^^^^^
+
+More images resolve the MEP better but cost more oracle calls. For
+production use:
+
+- 7-10 images for small molecules (< 20 atoms)
+
+- 10-15 images for larger systems or complex pathways
+
+- Use SIDPP to ensure even spacing
+
+Climbing image convergence
+^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+CI-NEB converges the climbing image force to ``conv_tol`` while the other
+images follow. This gives an accurate saddle energy and geometry. If only
+the barrier height is needed (not the full MEP), CI convergence is
+sufficient.
+
+Post-NEB refinement
+^^^^^^^^^^^^^^^^^^^
+
+For a precise transition state geometry, follow NEB with GP-Dimer or OTGPD
+(see `Production Saddle Search <production_saddle.rst>`_). The NEB climbing image provides the
+starting geometry and the path tangent provides the dimer orientation.

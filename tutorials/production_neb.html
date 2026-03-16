@@ -1,0 +1,422 @@
+<!DOCTYPE html>
+<html lang="en" data-accent-color="teal" data-content_root="../">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"><title>Production NEB - ChemGP documentation</title><link rel="index" title="Index" href="../genindex.html" /><link rel="search" title="Search" href="../search.html" /><link rel="next" title="Architecture" href="../reference/architecture.html" /><link rel="prev" title="Production Saddle Search" href="production_saddle.html" />
+      <link rel="canonical" href="chemgp.rgoswami.me/tutorials/production_neb.html" /><script>
+    function setColorMode(t){let e=document.documentElement;e.setAttribute("data-color-mode",t);let a=window.matchMedia&&window.matchMedia("(prefers-color-scheme: dark)").matches,s=t;"auto"===t&&(s=a?"dark":"light"),"light"===s?(e.classList.remove("dark"),e.classList.add("light")):(e.classList.remove("light"),e.classList.add("dark"))}
+    setColorMode(localStorage._theme||"auto");
+  </script><link rel="stylesheet" type="text/css" href="../_static/pygments.css?v=e1a1ceaf" />
+    <link rel="stylesheet" type="text/css" href="../_static/shibuya.css?v=a318c5d4" />
+    <link media="print" rel="stylesheet" type="text/css" href="../_static/print.css?v=20ff2c19" />
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+:root {
+  --sy-f-text: "Inter", var(--sy-f-sys), var(--sy-f-cjk), sans-serif;
+  --sy-f-heading: "Inter", var(--sy-f-sys), var(--sy-f-cjk), sans-serif;
+}
+</style>
+    <meta property="og:type" content="website"/>
+  <meta property="og:url" content="chemgp.rgoswami.me/tutorials/production_neb.html"/>
+  <meta property="og:title" content="Production NEB"/>
+    <meta name="twitter:card" content="summary"/>
+  <!-- Plausible injection -->
+<script
+  defer
+  data-domain="chemgp.rgoswami.me"
+  src="https://analytics.turtletech.us/js/script.hash.outbound-links.js"
+></script>
+<script>
+  window.plausible =
+    window.plausible ||
+    function () {
+      (window.plausible.q = window.plausible.q || []).push(arguments);
+    };
+</script></head>
+<body><div class="sy-head">
+  <div class="sy-head-blur"></div>
+  <div class="sy-head-inner sy-container mx-auto">
+    <a class="sy-head-brand" href="../index.html">
+      
+      
+      <strong>ChemGP</strong>
+    </a>
+    <div class="sy-head-nav" id="head-nav">
+      <nav class="sy-head-links"><ul>
+      <li class="link"><button class="js-menu" type="button" id="nav-trigger-1" aria-controls="nav-children-1">
+            <span>Ecosystem</span>
+            <i class="i-lucide chevron-down"></i>
+          </button>
+        <ul id="nav-children-1" aria-labelledby="nav-trigger-1"><li><a href="https://rgpycrumbs.rgoswami.me">
+                <span>rgpycrumbs</span>
+                <small>Analytical and visualization suite for chemical physics</small>
+              </a></li><li><a href="https://eondocs.org">
+                <span>eOn</span>
+                <small>Long-timescale molecular dynamics engine</small>
+              </a></li><li><a href="https://github.com/OmniPotentRPC/rgpot">
+                <span>rgpot</span>
+                <small>RPC potential evaluation for GP-accelerated optimization</small>
+              </a></li></ul>
+      </li><li class="link">
+          <a href="https://crates.io/crates/chemgp-core">
+            <span>crates.io</span><i class="i-lucide external-link"></i></a>
+        </li></ul></nav>
+      <div class="sy-head-extra flex items-center print:hidden"><form class="searchbox flex items-center" action="../search.html" method="get">
+  <input type="text" name="q" placeholder="Search" />
+  <kbd>/</kbd>
+</form><div class="sy-head-socials">
+  <a href="https://github.com/lode-org/ChemGP" aria-label="GitHub">
+    <iconify-icon icon="simple-icons:github"></iconify-icon>
+  </a></div></div>
+    </div>
+    <div class="sy-head-actions flex items-center shrink-0 print:hidden"><button class="js-theme theme-switch flex items-center"
+data-aria-auto="Switch to light color mode"
+data-aria-light="Switch to dark color mode"
+data-aria-dark="Switch to auto color mode">
+<i class="i-lucide theme-icon"></i>
+</button><button class="md:hidden flex items-center js-menu" aria-label="Menu" type="button" aria-controls="head-nav" aria-expanded="false">
+        <div class="hamburger">
+          <span class="hamburger_1"></span>
+          <span class="hamburger_2"></span>
+          <span class="hamburger_3"></span>
+        </div>
+      </button>
+    </div>
+  </div>
+</div>
+<div class="sy-page sy-container flex mx-auto">
+  <aside id="lside" class="sy-lside md:w-72 md:shrink-0 print:hidden">
+    <div class="sy-lside-inner md:sticky">
+      <div class="sy-scrollbar p-6">
+        <div class="globaltoc" data-expand-depth="1"><p class="caption" role="heading" aria-level="3"><span class="caption-text">Getting Started</span></p>
+<ul>
+<li class="toctree-l1 _expand"><a class="reference internal" href="../quickstart.html">Quickstart</a></li>
+<li class="toctree-l1 _expand"><a class="reference internal" href="../installation.html">Installation</a></li>
+</ul>
+<p class="caption" role="heading" aria-level="3"><span class="caption-text">Tutorials</span></p>
+<ul class="current">
+<li class="toctree-l1 _expand"><a class="reference internal" href="gp_basics.html">GP Basics</a></li>
+<li class="toctree-l1 _expand"><a class="reference internal" href="minimization.html">Minimization</a></li>
+<li class="toctree-l1 _expand"><a class="reference internal" href="molecular_kernels.html">Molecular Kernels</a></li>
+<li class="toctree-l1 _expand"><a class="reference internal" href="hyperparameter_training.html">Hyperparameter Training</a></li>
+<li class="toctree-l1 _expand"><a class="reference internal" href="scalability.html">Scalability: FPS + RFF</a></li>
+<li class="toctree-l1 _expand"><a class="reference internal" href="dimer_method.html">Dimer Method</a></li>
+<li class="toctree-l1 _expand"><a class="reference internal" href="neb_method.html">Nudged Elastic Band</a></li>
+<li class="toctree-l1 _expand"><a class="reference internal" href="otgpd.html">OTGPD</a></li>
+<li class="toctree-l1 _expand"><a class="reference internal" href="constant_kernel.html">Constant Kernel</a></li>
+<li class="toctree-l1 _expand"><a class="reference internal" href="production_minimize.html">Production Minimization</a></li>
+<li class="toctree-l1 _expand"><a class="reference internal" href="production_saddle.html">Production Saddle Search</a></li>
+<li class="toctree-l1 current"><a class="current reference internal" href="#">Production NEB</a></li>
+</ul>
+<p class="caption" role="heading" aria-level="3"><span class="caption-text">Reference</span></p>
+<ul>
+<li class="toctree-l1 _expand"><a class="reference internal" href="../reference/architecture.html">Architecture</a></li>
+<li class="toctree-l1 _expand"><a class="reference internal" href="../reference/kernel_design.html">Kernel Design</a></li>
+<li class="toctree-l1 _expand"><a class="reference internal" href="../reference/trust_regions.html">Trust Regions</a></li>
+<li class="toctree-l1 _expand"><a class="reference internal" href="../api/index.html">API Reference</a></li>
+</ul>
+        </div>
+      </div>
+    </div>
+  </aside>
+  <div class="lside-overlay js-menu" role="button" aria-label="Close left sidebar" aria-controls="lside" aria-expanded="false"></div>
+  <aside id="rside" class="sy-rside pb-3 w-64 shrink-0 order-last">
+    <button class="rside-close js-menu xl:hidden" aria-label="Close Table of Contents" type="button" aria-controls="rside" aria-expanded="false">
+      <i class="i-lucide close"></i>
+    </button>
+    <div class="sy-scrollbar sy-rside-inner px-6 xl:top-16 xl:sticky xl:pl-0 pt-6 pb-4"><div class="localtoc"><h3>On this page</h3><ul>
+<li><a class="reference internal" href="#full-pipeline">Full pipeline</a></li>
+<li><a class="reference internal" href="#running-the-example">Running the example</a></li>
+<li><a class="reference internal" href="#endpoint-minimization">Endpoint minimization</a></li>
+<li><a class="reference internal" href="#oie-vs-aie-on-molecular-systems">OIE vs AIE on molecular systems</a></li>
+<li><a class="reference internal" href="#configuration-for-molecular-neb">Configuration for molecular NEB</a></li>
+<li><a class="reference internal" href="#energy-profile-output">Energy profile output</a></li>
+<li><a class="reference internal" href="#practical-considerations">Practical considerations</a><ul>
+<li><a class="reference internal" href="#path-initialization">Path initialization</a></li>
+<li><a class="reference internal" href="#number-of-images">Number of images</a></li>
+<li><a class="reference internal" href="#climbing-image-convergence">Climbing image convergence</a></li>
+<li><a class="reference internal" href="#post-neb-refinement">Post-NEB refinement</a></li>
+</ul>
+</li>
+</ul>
+</div><a class="js-repo-stats repo-stats flex items-center" href="https://github.com/lode-org/ChemGP"
+  data-type="github" data-user="lode-org" data-repo="ChemGP">
+  <span class="w-8 flex items-center justify-around shrink-0 text-3xl">
+    <iconify-icon icon="simple-icons:github"></iconify-icon>
+  </span>
+  <span class="flex-grow px-2 break-all">
+    
+    
+      <span>lode-org/ChemGP</span>
+    
+    <span class="flex text-sm repo-stats-count">
+      <span class="flex items-center pr-3">
+        <iconify-icon icon="lucide:star"></iconify-icon>
+        <strong class="js-repo-stars ml-1">0</strong>
+      </span>
+      <span class="flex items-center">
+        <iconify-icon icon="lucide:git-fork"></iconify-icon>
+        <strong class="js-repo-forks ml-1">0</strong>
+      </span>
+    </span>
+  </span>
+</a><div class="edit-this-page">
+  <a href="https://github.com/lode-org/ChemGP/blob/main/docs/source/tutorials/production_neb.rst">Edit this page</a>
+</div></div>
+  </aside>
+  <div class="rside-overlay js-menu" role="button" aria-label="Close Table of Contents" aria-controls="rside" aria-expanded="false"></div>
+  <main class="sy-main w-full max-sm:max-w-full print:pt-6">
+<div class="sy-breadcrumbs" role="navigation">
+  <div class="sy-breadcrumbs-inner flex items-center">
+    <div class="md:hidden mr-3">
+      <button class="js-menu" aria-label="Menu" type="button" aria-controls="lside" aria-expanded="false">
+        <i class="i-lucide menu"></i>
+      </button>
+    </div>
+    <ol class="flex-1" itemscope itemtype="https://schema.org/BreadcrumbList"><li itemprop="itemListElement" itemscope itemtype="https://schema.org/ListItem">
+        <a itemprop="item" href="../index.html"><span itemprop="name">ChemGP</span></a>
+        <span>/</span>
+        <meta itemprop="position" content="1" />
+      </li><li itemprop="itemListElement" itemscope itemtype="https://schema.org/ListItem">
+        <strong itemprop="name">Production NEB</strong>
+        <meta itemprop="position" content="2" />
+      </li></ol>
+    <div class="xl:hidden ml-1">
+      <button class="js-menu" aria-label="Show table of contents" type="button" aria-controls="rside"
+        aria-expanded="false">
+        <i class="i-lucide outdent"></i>
+      </button>
+    </div>
+  </div>
+</div><div class="flex flex-col break-words justify-between">
+      <div class="relative min-w-0 max-w-6xl px-6 pb-6 pt-8 xl:px-12">
+  <div class="copy-page-wrapper relative pb-4 lg:absolute lg:top-8 lg:right-6 xl:right-12">
+  <div id="copy-page-trigger">
+    <button
+      type="button"
+      class="js-copy px-3 py-1 inline-flex items-center gap-1"
+      data-url="chemgp.rgoswami.me/_sources/tutorials/production_neb.rst.txt"
+    >
+      <i class="i-lucide" data-icon="copy"></i>
+      <span>Copy page</span>
+    </button>
+    <button class="js-menu px-2 py-1" type="button" aria-label="More actions"
+      aria-haspopup="menu" aria-expanded="false" aria-controls="copy-page-content">
+      <i class="i-lucide chevron-down"></i>
+    </button>
+  </div>
+  <div id="copy-page-content" role="menu" aria-orientation="vertical" aria-hidden="true">
+    <div role="presentation">
+      <div class="flex flex-col" role="group">
+        <button class="js-copy" type="button" role="menuitem"
+          data-url="chemgp.rgoswami.me/_sources/tutorials/production_neb.rst.txt">
+          <span class="iconify-icon">
+            <i class="i-lucide" data-icon="copy"></i>
+          </span>
+          <span>Copy page</span>
+        </button>
+        <a role="menuitem" href="chemgp.rgoswami.me/_sources/tutorials/production_neb.rst.txt" target="_blank" rel="nofollow"><iconify-icon icon="bi:code-slash"></iconify-icon>
+            <span>View Source</span></a><a role="menuitem" href="https://chatgpt.com/?hints=search&q=Read%20chemgp.rgoswami.me/_sources/tutorials/production_neb.rst.txt%20so%20I%20can%20ask%20questions%20about%20it." target="_blank" rel="nofollow">
+          <iconify-icon icon="bi:openai"></iconify-icon>
+          <span>Open in ChatGPT</span>
+        </a><a role="menuitem" href="https://claude.ai/new?q=Read%20chemgp.rgoswami.me/_sources/tutorials/production_neb.rst.txt%20so%20I%20can%20ask%20questions%20about%20it." target="_blank" rel="nofollow">
+          <iconify-icon icon="bi:claude"></iconify-icon>
+          <span>Open in Claude</span>
+        </a></div>
+    </div>
+  </div>
+</div><article class="yue dark-code" role="main">
+          <section id="production-neb">
+<h1>Production NEB<a class="headerlink" href="#production-neb" title="Link to this heading">¶</a></h1>
+<p>This tutorial covers the full NEB pipeline on a real potential energy surface:
+endpoint minimization, path initialization, and GP-NEB with OIE and AIE.</p>
+<section id="full-pipeline">
+<h2>Full pipeline<a class="headerlink" href="#full-pipeline" title="Link to this heading">¶</a></h2>
+<p>A production NEB calculation has three phases:</p>
+<ol class="arabic simple">
+<li><p><strong>Minimize endpoints</strong>: ensure reactant and product are at local minima.
+NEB requires stationary endpoints; if they are not minimized, spring
+forces at the endpoints introduce artifacts.</p></li>
+<li><p><strong>Initialize path</strong>: interpolate between minimized endpoints. SIDPP
+(Symmetrized IDPP) produces physically reasonable starting paths by
+smoothly interpolating interatomic distances.</p></li>
+<li><p><strong>Run GP-NEB</strong>: optimize the band on the GP surrogate, calling the oracle
+selectively to refine the MEP and saddle point estimate.</p></li>
+</ol>
+</section>
+<section id="running-the-example">
+<h2>Running the example<a class="headerlink" href="#running-the-example" title="Link to this heading">¶</a></h2>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span><span data-line="1">cargo<span class="w"> </span>run<span class="w"> </span>--release<span class="w"> </span>--example<span class="w"> </span>hcn_neb<span class="w"> </span>--features<span class="w"> </span>io,rgpot<span class="w"> </span>--<span class="w"> </span>--method<span class="w"> </span>oie
+</span></pre></div>
+</div>
+<p>The <code class="docutils literal notranslate"><span class="pre">--method</span></code> flag selects: <code class="docutils literal notranslate"><span class="pre">neb</span></code> (standard), <code class="docutils literal notranslate"><span class="pre">aie</span></code> (GP-NEB AIE),
+<code class="docutils literal notranslate"><span class="pre">oie</span></code> (GP-NEB OIE), or <code class="docutils literal notranslate"><span class="pre">all</span></code> (run all three for comparison).</p>
+</section>
+<section id="endpoint-minimization">
+<h2>Endpoint minimization<a class="headerlink" href="#endpoint-minimization" title="Link to this heading">¶</a></h2>
+<p>The example uses pre-minimized endpoints from the nebviz reference pipeline,
+but also demonstrates GP-guided re-minimization:</p>
+<div class="highlight-rust notranslate"><div class="highlight"><pre><span></span><span data-line="1"><span class="kd">let</span><span class="w"> </span><span class="k">mut</span><span class="w"> </span><span class="n">min_cfg</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">MinimizationConfig</span><span class="p">::</span><span class="n">default</span><span class="p">();</span>
+</span><span data-line="2"><span class="n">min_cfg</span><span class="p">.</span><span class="n">conv_tol</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mf">0.05</span><span class="p">;</span><span class="w">  </span><span class="c1">// eV/A</span>
+</span><span data-line="3"><span class="n">min_cfg</span><span class="p">.</span><span class="n">trust_metric</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">TrustMetric</span><span class="p">::</span><span class="n">Emd</span><span class="p">;</span>
+</span><span data-line="4"><span class="n">min_cfg</span><span class="p">.</span><span class="n">atom_types</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">atomic_numbers</span><span class="p">.</span><span class="n">clone</span><span class="p">();</span>
+</span><span data-line="5"><span class="n">min_cfg</span><span class="p">.</span><span class="n">const_sigma2</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mf">1.0</span><span class="p">;</span>
+</span><span data-line="6">
+</span><span data-line="7"><span class="kd">let</span><span class="w"> </span><span class="n">r_min</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">gp_minimize</span><span class="p">(</span><span class="o">&amp;</span><span class="n">oracle</span><span class="p">,</span><span class="w"> </span><span class="o">&amp;</span><span class="n">x_start</span><span class="p">,</span><span class="w"> </span><span class="o">&amp;</span><span class="n">kernel</span><span class="p">,</span><span class="w"> </span><span class="o">&amp;</span><span class="n">min_cfg</span><span class="p">,</span><span class="w"> </span><span class="nb">None</span><span class="p">);</span>
+</span></pre></div>
+</div>
+<p>Each endpoint minimization costs ~5-10 oracle calls with GP acceleration.</p>
+</section>
+<section id="oie-vs-aie-on-molecular-systems">
+<h2>OIE vs AIE on molecular systems<a class="headerlink" href="#oie-vs-aie-on-molecular-systems" title="Link to this heading">¶</a></h2>
+<div class="table-wrapper docutils container">
+<table class="docutils align-default">
+<thead>
+<tr class="row-odd"><th class="head"><p>Variant</p></th>
+<th class="head"><p>Oracle calls (HCN)</p></th>
+<th class="head"><p>Strategy</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p>Standard NEB</p></td>
+<td><p>~402</p></td>
+<td><p>All images, every iteration</p></td>
+</tr>
+<tr class="row-odd"><td><p>GP-NEB AIE</p></td>
+<td><p>varies</p></td>
+<td><p>All images, every outer iteration</p></td>
+</tr>
+<tr class="row-even"><td><p>GP-NEB OIE</p></td>
+<td><p>~134</p></td>
+<td><p>One image per outer iteration (LCB)</p></td>
+</tr>
+</tbody>
+</table>
+</div>
+<p>OIE is the most oracle-efficient because it selects only the most
+informative image at each iteration. The LCB criterion (T7) balances
+force magnitude (exploitation) with GP uncertainty (exploration).</p>
+</section>
+<section id="configuration-for-molecular-neb">
+<h2>Configuration for molecular NEB<a class="headerlink" href="#configuration-for-molecular-neb" title="Link to this heading">¶</a></h2>
+<div class="highlight-rust notranslate"><div class="highlight"><pre><span></span><span data-line="1"><span class="kd">let</span><span class="w"> </span><span class="k">mut</span><span class="w"> </span><span class="n">cfg</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">NEBConfig</span><span class="p">::</span><span class="n">default</span><span class="p">();</span>
+</span><span data-line="2"><span class="n">cfg</span><span class="p">.</span><span class="n">images</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">10</span><span class="p">;</span>
+</span><span data-line="3"><span class="n">cfg</span><span class="p">.</span><span class="n">conv_tol</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mf">0.1</span><span class="p">;</span><span class="w">                </span><span class="c1">// CI force tolerance</span>
+</span><span data-line="4"><span class="n">cfg</span><span class="p">.</span><span class="n">climbing_image</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="kc">true</span><span class="p">;</span>
+</span><span data-line="5"><span class="n">cfg</span><span class="p">.</span><span class="n">ci_activation_tol</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mf">0.5</span><span class="p">;</span><span class="w">       </span><span class="c1">// activate CI when max|F| &lt; 0.5</span>
+</span><span data-line="6"><span class="n">cfg</span><span class="p">.</span><span class="n">energy_weighted</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="kc">true</span><span class="p">;</span><span class="w">        </span><span class="c1">// variable spring constants</span>
+</span><span data-line="7"><span class="n">cfg</span><span class="p">.</span><span class="n">initializer</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">&quot;sidpp&quot;</span><span class="p">.</span><span class="n">to_string</span><span class="p">();</span>
+</span><span data-line="8"><span class="n">cfg</span><span class="p">.</span><span class="n">trust_metric</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">TrustMetric</span><span class="p">::</span><span class="n">Emd</span><span class="p">;</span>
+</span><span data-line="9"><span class="n">cfg</span><span class="p">.</span><span class="n">atom_types</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">atomic_numbers</span><span class="p">.</span><span class="n">clone</span><span class="p">();</span>
+</span><span data-line="10"><span class="n">cfg</span><span class="p">.</span><span class="n">const_sigma2</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mf">1.0</span><span class="p">;</span>
+</span></pre></div>
+</div>
+<p>OIE-specific settings:</p>
+<div class="highlight-rust notranslate"><div class="highlight"><pre><span></span><span data-line="1"><span class="n">cfg</span><span class="p">.</span><span class="n">max_neb_oracle_calls</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">150</span><span class="p">;</span><span class="w">    </span><span class="c1">// total budget</span>
+</span><span data-line="2"><span class="n">cfg</span><span class="p">.</span><span class="n">rff_features</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">500</span><span class="p">;</span><span class="w">            </span><span class="c1">// RFF for inner loop</span>
+</span><span data-line="3"><span class="n">cfg</span><span class="p">.</span><span class="n">lcb_kappa</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mf">2.0</span><span class="p">;</span><span class="w">               </span><span class="c1">// exploration weight</span>
+</span><span data-line="4"><span class="n">cfg</span><span class="p">.</span><span class="n">unc_convergence</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mf">0.05</span><span class="p">;</span><span class="w">        </span><span class="c1">// uncertainty convergence gate</span>
+</span><span data-line="5"><span class="n">cfg</span><span class="p">.</span><span class="n">hod_max_history</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">80</span><span class="p">;</span><span class="w">          </span><span class="c1">// HOD training data cap</span>
+</span></pre></div>
+</div>
+</section>
+<section id="energy-profile-output">
+<h2>Energy profile output<a class="headerlink" href="#energy-profile-output" title="Link to this heading">¶</a></h2>
+<p>The example outputs a JSONL file with:</p>
+<ul class="simple">
+<li><p>Convergence history (max NEB force vs oracle calls per method)</p></li>
+<li><p>Final path energies (energy at each image along the MEP)</p></li>
+<li><p>Per-iteration oracle call counts</p></li>
+</ul>
+<p>This can be plotted with <code class="docutils literal notranslate"><span class="pre">scripts/plot_comparisons.py</span></code> to visualize the
+MEP energy profile and convergence curves.</p>
+</section>
+<section id="practical-considerations">
+<h2>Practical considerations<a class="headerlink" href="#practical-considerations" title="Link to this heading">¶</a></h2>
+<section id="path-initialization">
+<h3>Path initialization<a class="headerlink" href="#path-initialization" title="Link to this heading">¶</a></h3>
+<p>SIDPP is recommended for molecular systems. Linear interpolation in
+Cartesian coordinates can produce unphysical geometries (atoms passing
+through each other), which creates high-energy images that dominate the
+band and slow convergence.</p>
+</section>
+<section id="number-of-images">
+<h3>Number of images<a class="headerlink" href="#number-of-images" title="Link to this heading">¶</a></h3>
+<p>More images resolve the MEP better but cost more oracle calls. For
+production use:</p>
+<ul class="simple">
+<li><p>7-10 images for small molecules (&lt; 20 atoms)</p></li>
+<li><p>10-15 images for larger systems or complex pathways</p></li>
+<li><p>Use SIDPP to ensure even spacing</p></li>
+</ul>
+</section>
+<section id="climbing-image-convergence">
+<h3>Climbing image convergence<a class="headerlink" href="#climbing-image-convergence" title="Link to this heading">¶</a></h3>
+<p>CI-NEB converges the climbing image force to <code class="docutils literal notranslate"><span class="pre">conv_tol</span></code> while the other
+images follow. This gives an accurate saddle energy and geometry. If only
+the barrier height is needed (not the full MEP), CI convergence is
+sufficient.</p>
+</section>
+<section id="post-neb-refinement">
+<h3>Post-NEB refinement<a class="headerlink" href="#post-neb-refinement" title="Link to this heading">¶</a></h3>
+<p>For a precise transition state geometry, follow NEB with GP-Dimer or OTGPD
+(see <a class="reference external" href="production_saddle.rst">Production Saddle Search</a>). The NEB climbing image provides the
+starting geometry and the path tangent provides the dimer orientation.</p>
+</section>
+</section>
+</section>
+
+        </article><button class="back-to-top" type="button">
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
+    <path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8v12z"></path>
+  </svg>
+  <span>Back to top</span>
+</button><div class="navigation flex print:hidden"><div class="navigation-prev">
+    <a href="production_saddle.html">
+      <i class="i-lucide chevron-left"></i>
+      <div class="page-info">
+        <span>Previous</span><div class="title">Production Saddle Search</div></div>
+    </a>
+  </div><div class="navigation-next">
+    <a href="../reference/architecture.html">
+      <div class="page-info">
+        <span>Next</span>
+        <div class="title">Architecture</div>
+      </div>
+      <i class="i-lucide chevron-right"></i>
+    </a>
+  </div></div></div>
+    </div>
+  </main>
+</div>
+<footer class="sy-foot">
+  <div class="sy-foot-inner sy-container mx-auto">
+    <div class="sy-foot-reserved md:flex justify-between items-center">
+      <div class="sy-foot-copyright"><p>2026, Rohit Goswami</p>
+  
+  <p>
+    Made with
+    
+    <a href="https://www.sphinx-doc.org/">Sphinx</a> and
+    
+    <a href="https://shibuya.lepture.com">Shibuya theme</a>.
+  </p>
+</div> <div class="sy-foot-socials">
+<a href="https://github.com/lode-org/ChemGP" aria-label="GitHub">
+  <iconify-icon icon="simple-icons:github"></iconify-icon>
+</a></div>
+    </div>
+    <div class="sy-foot-reserved" style="text-align: center; font-size: 0.85em; padding-top: 0.5em;">
+      Analytics by <a href="https://plausible.io" rel="noopener">Plausible</a>
+      provided by <a href="https://turtletech.is" rel="noopener">TurtleTech ehf</a>
+      | <a href="https://rgoswami.me" rel="noopener">Rohit Goswami</a>
+    </div>
+  </div>
+</footer>
+      <script src="../_static/documentation_options.js?v=5929fcd5"></script>
+      <script src="../_static/doctools.js?v=fd6eb6e6"></script>
+      <script src="../_static/sphinx_highlight.js?v=6ffebe34"></script>
+      <script src="../_static/shibuya.js?v=cac61aee"></script></body>
+</html>

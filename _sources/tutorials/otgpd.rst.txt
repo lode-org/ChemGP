@@ -1,0 +1,123 @@
+
+
+OTGPD
+-----
+
+What OTGPD does
+~~~~~~~~~~~~~~~
+
+The Optimal Transport GP Dimer (OTGPD) is a saddle point search method that
+combines the GP-Dimer approach with an adaptive oracle-calling strategy. The key
+question it answers: *when should the optimizer trust the GP and when should it call the oracle?*
+
+In the standard GP-Dimer, the oracle is called at every outer iteration
+regardless of how confident the GP is. OTGPD adds a decision threshold: if the
+GP-predicted force is small enough relative to the observed forces so far, trust
+the GP and skip the oracle call.
+
+Adaptive threshold
+~~~~~~~~~~~~~~~~~~
+
+The oracle-calling threshold adapts as the search progresses:
+
+
+
+.. math::
+
+    T_{\mathrm{GP}} = \max\!\left(\frac{\min_{k} \lVert \mathbf{F}^{\mathrm{true}}_{k} \rVert}{d},\; \frac{T_{\mathrm{dimer}}}{10}\right)
+
+where :math:`\min_{k} \lVert \mathbf{F}^{\mathrm{true}}_{k} \rVert` is the smallest
+true force observed so far, :math:`d` is the divisor controlling how aggressive the GP
+trust is (default 5.0), :math:`T_{\mathrm{dimer}}` is the dimer convergence tolerance,
+and the floor :math:`T_{\mathrm{dimer}} / 10` ensures the GP is never trusted with
+tolerance tighter than 10% of the convergence criterion.
+
+*Why this formula works*: early in the search, forces are large (far from the
+saddle), so ``min(F_true) / divisor`` is large, and the oracle is called
+frequently. As the search converges, forces decrease, ``T_gp`` tightens, and the
+GP must predict very small forces before being trusted. This naturally transitions
+from oracle-intensive exploration to GP-dominated refinement.
+
+*Why the floor T\ :sub:`dimer`\/10*: without a floor, as forces approach zero, ``T_gp``
+would also approach zero, and the GP would never be trusted (defeating the
+purpose). The floor ensures the GP is always given a chance to skip oracle calls
+when predicted forces are within 10% of the convergence tolerance.
+
+HOD training data management
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+OTGPD uses History-Ordered Data (HOD): training points are kept in temporal
+order, and when the dataset exceeds ``fps_history``, the oldest points are pruned
+via FPS.
+
+*Why temporal ordering*: in saddle point search, the optimizer follows a single
+trajectory from the starting point toward the saddle. Older points are
+geometrically distant from the current position and contribute less to local GP
+accuracy. Pruning old points keeps the training set focused on the current region.
+
+This differs from spatial FPS (used in minimization and standard GP-Dimer), which
+selects points spread across the entire training set regardless of when they were
+collected.
+
+Initial rotation
+~~~~~~~~~~~~~~~~
+
+OTGPD inherits the dimer's rotation+translation structure. When a good initial
+orientation is available (from NEB climbing image tangent or Hessian eigenmode),
+rotation can be skipped entirely (``max_rot_iter = 0``).
+
+This is common in practice: one first runs NEB to find the MEP, then refines the
+highest-energy image with OTGPD to get a precise transition state. The NEB path
+tangent at the climbing image provides the dimer orientation.
+
+Relationship to GP-Dimer
+~~~~~~~~~~~~~~~~~~~~~~~~
+
+OTGPD reduces to the standard GP-Dimer when:
+
+- ``fps_history`` is large enough that HOD pruning never activates
+
+- The adaptive threshold saturates at ``T_dimer / 10``
+
+On the LEPS surface, both methods converge in ~13 oracle calls starting from
+0.05 A displaced from the known saddle along the negative eigenmode. The
+adaptive threshold provides robustness: if the starting point is far from the
+saddle (where the GP is initially poor), OTGPD calls the oracle more frequently,
+while GP-Dimer would waste calls on poor GP predictions.
+
+When to use OTGPD vs GP-Dimer
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+- **Starting near the saddle** (e.g., NEB refinement): both methods perform
+  similarly. Use GP-Dimer for simplicity.
+
+- **Starting far from the saddle** (exploratory search): OTGPD's adaptive
+  threshold avoids wasting oracle calls on poor early GP predictions.
+
+- **Long trajectories** (many iterations): OTGPD's HOD pruning keeps the training
+  set focused, avoiding the Cholesky cost growth that affects GP-Dimer.
+
+Configuration Reference
+~~~~~~~~~~~~~~~~~~~~~~~
+
+.. table::
+
+    +----------------------+---------------+----------------------------------+
+    | Parameter            |       Default | Description                      |
+    +======================+===============+==================================+
+    | ``conv_tol``         |           0.1 | Force norm convergence threshold |
+    +----------------------+---------------+----------------------------------+
+    | ``dimer_sep``        |         0.005 | Half-length of the dimer         |
+    +----------------------+---------------+----------------------------------+
+    | ``max_iter``         |           200 | Maximum outer iterations         |
+    +----------------------+---------------+----------------------------------+
+    | ``max_oracle_calls`` | 0 (unlimited) | Oracle call budget               |
+    +----------------------+---------------+----------------------------------+
+    | ``rff_features``     |  0 (exact GP) | RFF feature count for PredModel  |
+    +----------------------+---------------+----------------------------------+
+    | ``fps_history``      |   0 (use all) | FPS subset size (HOD management) |
+    +----------------------+---------------+----------------------------------+
+    | ``t_gp_divisor``     |           5.0 | Divisor for adaptive threshold   |
+    +----------------------+---------------+----------------------------------+
+    | ``trust_radius``     |           0.1 | Trust region radius              |
+    +----------------------+---------------+----------------------------------+

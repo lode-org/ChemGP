@@ -1,0 +1,151 @@
+
+
+Molecular Kernels
+-----------------
+
+This tutorial compares the ``CartesianSE`` and ``MolInvDistSE`` kernels on a
+molecular potential and explains why rotational/translational invariance
+matters for GP efficiency.
+
+The invariance argument
+~~~~~~~~~~~~~~~~~~~~~~~
+
+A potential energy surface depends only on internal coordinates: bond lengths,
+bond angles, and torsions. Rotating or translating a molecule in space does
+not change the energy. If the kernel operates on raw Cartesian coordinates,
+the GP must *learn* this invariance from data, wasting oracle calls on
+rotated/translated copies that the physics guarantees are equivalent.
+
+The ``MolInvDistSE`` kernel avoids this waste by mapping coordinates to inverse
+interatomic distances *before* computing the kernel. These features are
+invariant by construction: rotating a molecule changes the Cartesian
+coordinates but not the interatomic distances.
+
+CartesianSE vs MolInvDistSE
+~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+.. table::
+
+    +---------------------+------------------+-------------------+
+    | Property            | CartesianSE      | MolInvDistSE      |
+    +=====================+==================+===================+
+    | Input               | Raw coordinates  | Inverse distances |
+    +---------------------+------------------+-------------------+
+    | Rot/trans invariant | No               | Yes               |
+    +---------------------+------------------+-------------------+
+    | Length scales       | 1 (isotropic)    | 1 per pair type   |
+    +---------------------+------------------+-------------------+
+    | Use case            | 2D test surfaces | Real molecules    |
+    +---------------------+------------------+-------------------+
+
+For 2D analytical surfaces (Muller-Brown, model potentials), the coordinates
+*are* the natural degrees of freedom and there is no concept of rotation. Use
+``CartesianSE`` there.
+
+For molecules, always use ``MolInvDistSE``. The cost of computing inverse
+distances and Jacobians is negligible compared to the kernel evaluation.
+
+Feature space and Jacobian
+~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+The mapping from Cartesian coordinates to inverse distance features:
+
+
+
+.. math::
+
+    f_{ij}(\mathbf{x}) = \frac{1}{r_{ij}}, \quad r_{ij} = \|\mathbf{x}_i - \mathbf{x}_j\|
+
+For :math:`N` atoms, this produces :math:`N(N-1)/2` features (one per pair). The Jacobian
+:math:`J_{ld} = \partial f_l / \partial x_d` transforms kernel derivatives from feature space to
+coordinate space:
+
+
+
+.. math::
+
+    \frac{\partial f_{ij}}{\partial \mathbf{x}_i} = -\frac{\mathbf{x}_i - \mathbf{x}_j}{r_{ij}^3}, \quad
+    \frac{\partial f_{ij}}{\partial \mathbf{x}_j} = +\frac{\mathbf{x}_i - \mathbf{x}_j}{r_{ij}^3}, \quad
+    \frac{\partial f_{ij}}{\partial \mathbf{x}_k} = 0 \;\; (k \notin \{i,j\})
+
+The kernel blocks use the chain rule through this Jacobian:
+
+
+
+.. math::
+
+    \mathbf{K}_{ef} = \mathbf{J}^\top \frac{\partial k}{\partial \mathbf{f}} \quad \text{(energy-force cross-covariance)}
+
+
+
+
+.. math::
+
+    \mathbf{K}_{ff} = \mathbf{J}^\top \mathbf{H}_{\mathrm{feat}} \mathbf{J} \quad \text{(force-force covariance)}
+
+where :math:`\partial k / \partial \mathbf{f}` and :math:`\mathbf{H}_{\mathrm{feat}}` are the gradient and Hessian of the kernel in
+feature space. See ``scripts/sympy/t3_invdist_jacobian.py`` for the full
+derivation.
+
+Pair-type length scales
+~~~~~~~~~~~~~~~~~~~~~~~
+
+The ``MolInvDistSE`` kernel assigns a separate inverse length scale :math:`\theta_p`
+to each pair type (H-H, H-C, C-C, etc.):
+
+
+
+.. math::
+
+    k(\mathbf{x}, \mathbf{y}) = \sigma^2 \exp\!\left(-\sum_p \theta_p^2 \left(f_p(\mathbf{x}) - f_p(\mathbf{y})\right)^2\right)
+
+This lets the kernel learn that stretching a C-C bond (stiff, high energy
+change per unit displacement) is different from displacing a van der Waals
+contact (soft, small energy change per large displacement).
+
+During SCG training, each :math:`\theta_p` adapts independently. Pair types with
+many features (e.g., C-C in a hydrocarbon) get tighter MAP priors to
+prevent overfitting; pair types with few features get looser priors.
+
+LEPS comparison example
+~~~~~~~~~~~~~~~~~~~~~~~
+
+.. code:: bash
+
+    cargo run --release --example leps_kernel_comparison
+
+This runs GP minimization on the LEPS H+H2 surface with both kernels.
+The LEPS surface describes a collinear 3-atom system (9 Cartesian coords):
+
+- ``MolInvDistSE`` converges in ~9 oracle calls (3 inverse distance features,
+  natural representation of the bond-breaking reaction)
+
+- ``CartesianSE`` requires more calls because it must learn that only relative
+  positions matter, and that the 9 Cartesian coordinates are massively
+  redundant for a collinear system with 2 internal degrees of freedom
+
+When CartesianSE still wins
+~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+``CartesianSE`` is appropriate when:
+
+- The potential is defined directly in Cartesian space (analytical surfaces)
+
+- There is no molecular structure (lattice models, field theories)
+
+- The system is constrained so that invariance is already broken (e.g., a
+  molecule in a fixed external field)
+
+For everything else, ``MolInvDistSE`` is the right choice.
+
+SymPy verification
+~~~~~~~~~~~~~~~~~~
+
+The inverse distance Jacobian derivation is verified in:
+
+.. code:: bash
+
+    python scripts/sympy/t3_invdist_jacobian.py
+
+This derives :math:`\mathbf{J}` analytically for a 3-atom collinear system, then verifies
+that the chain rule (:math:`\mathbf{J}^\top \partial k / \partial \mathbf{f}`) matches direct differentiation :math:`\partial k / \partial \mathbf{y}`.

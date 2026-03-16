@@ -1,0 +1,162 @@
+
+
+Hyperparameter Training
+-----------------------
+
+This tutorial explains how ChemGP trains GP hyperparameters (signal variance
+and length scales) using MAP-NLL optimization with the SCG algorithm.
+
+Why train hyperparameters?
+~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+A GP with fixed hyperparameters makes poor predictions. If the length scales
+are too small, every pair of training points is uncorrelated and the GP
+interpolates aggressively (overfitting). If they are too large, all points
+are equally correlated and the GP returns the training mean everywhere
+(underfitting).
+
+MAP-NLL training finds hyperparameters that balance fitting the data
+(small NLL) against overfitting (MAP prior penalty). This balance is
+essential in the GP optimization regime: with only 5-10 training points,
+the GP must extrapolate, and unconstrained hyperparameters produce
+overconfident predictions that mislead the optimizer.
+
+MAP-NLL objective
+~~~~~~~~~~~~~~~~~
+
+The negative log-marginal-likelihood:
+
+
+
+.. math::
+
+    \mathrm{NLL} = \frac{1}{2} \mathbf{y}^\top K^{-1} \mathbf{y} + \frac{1}{2} \log |K| + \frac{1}{2} N_{\mathrm{total}} \log(2\pi)
+
+where :math:`N_{\mathrm{total}} = N(1+D)` is the total number of observations (energies +
+gradient components) and :math:`K` is the covariance matrix.
+
+The three terms have distinct roles:
+
+- **Data fit** (:math:`\mathbf{y}^\top K^{-1} \mathbf{y}`): penalizes hyperparameters that predict the data
+  poorly
+
+- **Complexity** (:math:`\log |K|`): penalizes overly flexible models (small length
+  scales inflate :math:`K`'s determinant)
+
+- **Constant**: normalization, independent of hyperparameters
+
+The MAP prior adds a Gaussian penalty on each log-hyperparameter:
+
+
+
+.. math::
+
+    \mathrm{prior} = \frac{1}{2} \sum_j \frac{(w_j - w_{\mathrm{prior},j})^2}{\sigma_{\mathrm{prior},j}^2}
+
+where :math:`w_j = \log(\theta_j)` operates in log-space. The prior variance is
+adaptive: pair types with many features (many atom pairs of that type) get
+tighter priors.
+
+Log-space optimization
+~~~~~~~~~~~~~~~~~~~~~~
+
+All hyperparameters are optimized in log-space: :math:`w_j = \log(\theta_j)`. This
+ensures positivity (:math:`\exp(w) > 0` for all :math:`w`) and makes the optimization
+landscape smoother.
+
+The NLL gradient in log-space:
+
+
+
+.. math::
+
+    \frac{\partial \mathrm{NLL}}{\partial w_j} = \frac{1}{2} \mathrm{tr}\!\left(W \frac{\partial K}{\partial w_j}\right)
+
+where :math:`W = K^{-1} - \boldsymbol{\alpha} \boldsymbol{\alpha}^\top`, :math:`\boldsymbol{\alpha} = K^{-1} \mathbf{y}`, and :math:`\partial K / \partial w_j` is the
+derivative of the covariance matrix with respect to :math:`w_j = \log(\theta_j)`.
+
+The ``kernel_blocks_and_hypergrads`` method returns :math:`\partial K / \partial w_j` directly (already
+absorbing the chain rule from log-space), so the NLL gradient is a single
+trace computation. See ``scripts/sympy/t4_nll_gradient.py`` for the derivation.
+
+SCG optimizer
+~~~~~~~~~~~~~
+
+ChemGP uses Scaled Conjugate Gradient (Moller 1993) rather than L-BFGS
+for NLL optimization. SCG combines:
+
+- Conjugate directions (faster convergence than steepest descent)
+
+- Hessian-vector products via finite differences (no explicit Hessian)
+
+- Adaptive trust region (the "scaled" part: step size control)
+
+SCG avoids line search, which matters because each NLL evaluation requires
+a Cholesky factorization (:math:`\mathcal{O}(N^3(1+D)^3)`). Line search methods like L-BFGS
+need 2-10 evaluations per iteration; SCG needs exactly 2 (one for the
+gradient, one for the Hessian-vector product).
+
+Upper barrier on :math:`\sigma^2`
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+A log-barrier prevents :math:`\sigma^2` from growing unboundedly:
+
+
+
+.. math::
+
+    \mathrm{barrier} = -s \cdot \ln(\log_{\max} \sigma^2 - w_0)
+
+where :math:`\log_{\max} \sigma^2 = \ln 2` and :math:`s = \min(10^{-4} + 10^{-3} N,\; 0.5)`.
+
+This matches the C++ gpr\ :sub:`optim`\ implementation. The strength grows with
+dataset size: as more data constrains the model, the barrier tightens,
+preventing :math:`\sigma^2` from compensating for poor length scales.
+
+NLL landscape visualization
+~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+.. code:: bash
+
+    cargo run --release --example leps_nll_landscape
+
+This evaluates the MAP-NLL on a 40x40 grid of :math:`(\log \sigma^2, \log \theta)`
+values using 5 LEPS training points. The output can be contour-plotted
+to visualize the optimization landscape that SCG navigates.
+
+The landscape typically shows:
+
+- A single well-defined minimum (the optimal hyperparameters)
+
+- A barrier wall at high :math:`\sigma^2` (from the log-barrier)
+
+- Cholesky failure regions where :math:`K` is not positive definite (near-zero
+  :math:`\sigma^2` or extreme length scales)
+
+Data-dependent initialization
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Good starting hyperparameters accelerate SCG convergence. The ``init_kernel``
+function estimates initial values from the training data:
+
+- Signal variance: :math:`\sigma^2 \sim (0.67 \cdot \mathrm{range}(\mathbf{y}) / 3)^2`, where :math:`\mathrm{range}(\mathbf{y})` is
+  the energy range in the training set
+
+- Length scales: :math:`\theta_p \sim 0.67 \sqrt{2} \cdot d_{\max,p} / 3`, where
+  :math:`d_{\max,p}` is the maximum pairwise distance in feature space for pair
+  type :math:`p`
+
+The 0.67 factor is NORMINV(0.75), following the MATLAB GPstuff convention.
+
+SymPy verification
+~~~~~~~~~~~~~~~~~~
+
+The NLL gradient derivation (including the trace formula, MAP prior, and
+log-barrier) is verified in:
+
+.. code:: bash
+
+    python scripts/sympy/t4_nll_gradient.py
+
+This compares the analytical gradient against finite differences for a
+2-point energy-only GP, confirming the trace formula to machine precision.

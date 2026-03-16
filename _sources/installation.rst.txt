@@ -1,0 +1,59 @@
+
+
+Installation
+------------
+
+Requirements
+~~~~~~~~~~~~
+
+- Rust 1.75+ (for building from source)
+
+- `pixi <https://prefix.dev/pixi>`_ (recommended, handles dependencies)
+
+Building from source
+~~~~~~~~~~~~~~~~~~~~
+
+.. code:: bash
+
+    git clone https://github.com/lode-org/ChemGP.git
+    cd ChemGP
+    cargo build --release
+
+Or using pixi:
+
+.. code:: bash
+
+    pixi run -e dev build
+
+Running tests
+~~~~~~~~~~~~~
+
+.. code:: bash
+
+    cargo test -p chemgp-core
+
+Or:
+
+.. code:: bash
+
+    pixi run -e dev test
+
+Optional features
+~~~~~~~~~~~~~~~~~
+
+The ``chemgp-core`` crate has two optional feature flags:
+
+``io``
+    Enables file I/O through ``chemfiles`` (for ``.extxyz``) and
+    ``readcon-core`` (for ``.con`` files).
+
+``rgpot``
+    Enables the RPC oracle interface through ``rgpot-core`` for
+    connecting to external potential energy calculators.
+
+Enable features in your ``Cargo.toml``:
+
+.. code:: toml
+
+    [dependencies]
+    chemgp-core = { version = "0.1", features = ["io", "rgpot"] }

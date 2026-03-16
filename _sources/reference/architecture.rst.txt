@@ -1,0 +1,229 @@
+
+
+Architecture
+------------
+
+Workspace Layout
+~~~~~~~~~~~~~~~~
+
+::
+
+    ChemGP/
+      Cargo.toml              # workspace root
+      crates/
+        chemgp-core/          # all GP + optimizer logic
+          src/
+            lib.rs            # module exports, StopReason enum
+            invdist.rs        # inverse distance features + Jacobian
+            kernel.rs         # Kernel enum, MolInvDistSE, CartesianSE
+            types.rs          # TrainingData, GPModel, init_kernel
+            covariance.rs     # build_full_covariance, robust_cholesky
+            predict.rs        # GP posterior, PredModel, build_pred_model
+            nll.rs            # MAP NLL + analytical gradient
+            scg.rs            # Moller (1993) SCG optimizer
+            train.rs          # train_model dispatcher
+            distances.rs      # max_1d_log, euclidean distance
+            emd.rs            # brute-force EMD
+            sampling.rs       # FPS, select_optim_subset, prune
+            lbfgs.rs          # L-BFGS two-loop recursion
+            optim_step.rs     # FIRE/LBFGS unified step
+            trust.rs          # adaptive trust thresholds, EMD-based trust
+            rff.rs            # Random Fourier Features
+            minimize.rs       # gp_minimize
+            dimer.rs          # gp_dimer, standard_dimer
+            neb_path.rs       # NEBConfig, NEBPath, NEB force computation
+            idpp.rs           # IDPP/sIDPP path initialization
+            neb.rs            # neb_optimize, gp_neb_aie
+            neb_oie.rs        # gp_neb_oie (LCB-guided image selection)
+            otgpd.rs          # otgpd (HOD, adaptive threshold)
+            potentials.rs     # LJ, Muller-Brown, LEPS
+            io.rs             # readcon-core + chemfiles (feature-gated)
+            oracle.rs         # rgpot-core wrapper (feature-gated)
+          examples/
+            mb_minimize.rs    # GP minimize on Muller-Brown (CartesianSE)
+            mb_gp_quality.rs  # GP quality grids on Muller-Brown
+            leps_minimize.rs  # GP minimize on LEPS (MolInvDistSE)
+            leps_rff_quality.rs # RFF vs exact GP on LEPS
+            leps_neb.rs       # NEB vs AIE vs OIE
+            leps_dimer.rs     # GP-Dimer vs OTGPD
+      docs/
+        export.el             # ox-rst batch export
+        orgmode/              # org source files (single source of truth)
+        source/               # generated RST (gitignored)
+      scripts/                # figure generation and plotting
+      data/                   # test structures (HCN, system100)
+
+The four shared components
+~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Every GP-accelerated optimizer in ChemGP shares four mechanisms. Each exists
+because the naive approach (exact GP on all data, no trust, no exploration)
+fails for practical problem sizes.
+
+FPS subset selection
+^^^^^^^^^^^^^^^^^^^^
+
+**Problem**: the GP covariance matrix for :math:`N` training points with $D$-dimensional
+gradients is :math:`N(1+D) \times N(1+D)`. Cholesky factorization costs :math:`\mathcal{O}(N^3(1+D)^3)`.
+With 50 training points and :math:`D=9` (LEPS), the matrix is :math:`500 \times 500`. With :math:`D=150` (50
+atoms), it is :math:`7550 \times 7550`. Training with SCG calls Cholesky at every iteration
+(~50 iterations), making the cost prohibitive.
+
+**Solution**: Farthest Point Sampling selects :math:`K \ll N` points that are spread out
+and cover the local neighborhood. Training happens on the $K$-point subset, keeping
+Cholesky cost at :math:`\mathcal{O}(K^3(1+D)^3)`.
+
+**Tradeoff**: fewer training points means less information for hyperparameter
+optimization. The ``fps_latest_points`` parameter always includes the most recent
+points (which are near the current position) to avoid losing critical local data.
+
+Trust region clipping
+^^^^^^^^^^^^^^^^^^^^^
+
+**Problem**: a GP extrapolating far from its training data produces arbitrary
+predictions. The posterior mean reverts to the prior (zero mean), and the
+optimizer can chase phantom minima or saddle points that do not exist on the true
+PES.
+
+**Solution**: measure the distance between a proposed point and the nearest
+training data. If this distance exceeds ``trust_radius``, clip the step. For
+molecular systems, the distance is measured in the invariant feature space (Earth
+Mover's Distance on inverse distances). For Cartesian surfaces, plain Euclidean
+distance suffices.
+
+**Why EMD for molecules**: Euclidean distance in Cartesian coordinates is sensitive
+to rotation and translation. Two geometries that differ only by a rigid-body
+motion have large Euclidean distance but zero EMD (their interatomic distances
+are identical). EMD provides a meaningful measure of structural similarity.
+
+RFF approximation
+^^^^^^^^^^^^^^^^^
+
+**Problem**: even with FPS keeping the training set small, inner optimization loops
+call ``predict`` hundreds of times. Each exact GP prediction costs :math:`\mathcal{O}(N(1+D))`,
+and each ``predict_with_variance`` needs the Cholesky solve.
+
+**Solution**: Random Fourier Features approximate the kernel with a finite-rank
+feature map. The resulting linear model has :math:`\mathcal{O}(D_{\text{rff}})` prediction cost, independent
+of :math:`N`. Hyperparameters are trained exactly (SCG on the FPS subset), then the RFF
+model is built on the full training data.
+
+**Why not Nystrom**: the alternative sparse GP approximation (Nystrom) uses a
+Woodbury matrix inversion that amplifies noise. For gradient observations with
+small noise variance (1e-4), this causes instability. RFF avoids the Woodbury
+identity entirely.
+
+**Tradeoff**: RFF introduces approximation error. With :math:`D_{\text{rff}} = 500` features, the
+approximation is excellent for LEPS (3 atoms). Larger systems may need more
+features, but the :math:`\mathcal{O}(D_{\text{rff}}^3)` cost is always independent of :math:`N` and :math:`D`.
+
+.. figure:: /_static/figures/leps_rff_quality.pdf
+   :width: 100%
+
+   RFF approximation quality on the LEPS surface. Energy and gradient MAE
+   decrease with increasing D_rff, converging toward the exact GP baseline
+   (dotted coral line). At D_rff = 150, the RFF error is within 2x of the
+   exact GP for both energy and gradient.
+
+LCB exploration
+^^^^^^^^^^^^^^^
+
+**Problem**: the optimizer can get trapped in regions where the GP is confident
+but wrong. This happens when training data covers a local area well but the true
+PES has features (a lower minimum, a pass through a barrier) just outside the
+data region.
+
+**Solution**: Lower Confidence Bound penalizes low-variance regions:
+:math:`E_{\text{lcb}} = E_{\text{gp}} + \kappa \, \sigma`. Points with high variance become more
+attractive, encouraging the optimizer to sample uncertain regions before
+committing to a direction.
+
+**Adaptation per method**:
+
+- **Minimization**: standard LCB on the energy. Encourages exploring uncertain
+  regions around the predicted minimum.
+
+- **NEB OIE**: LCB on the perpendicular force variance. Selects the image where
+  the NEB force is most uncertain, which is where the path might not be converged.
+
+- **Dimer/OTGPD**: no LCB for point selection (always evaluates the midpoint).
+  Instead, the GP uncertainty feeds into the adaptive trust threshold.
+
+- **NEB AIE**: no LCB (all images are evaluated at every outer iteration).
+
+Kernel dispatch
+~~~~~~~~~~~~~~~
+
+The ``Kernel`` enum wraps ``MolInvDistSE`` (molecules) and ``CartesianSE`` (arbitrary
+surfaces). All code accepts ``&Kernel`` and dispatches through unified methods.
+This avoids trait objects and monomorphization bloat while supporting both kernel
+types with zero runtime overhead. See `Kernel Design <kernel_design.rst>`_ for details.
+
+PredModel dispatch
+~~~~~~~~~~~~~~~~~~
+
+The ``PredModel`` enum in ``predict.rs`` dispatches between exact GP and RFF:
+
+.. code:: rust
+
+    pub enum PredModel {
+        Gp(GPModel),
+        Rff(RffModel),
+    }
+
+The asymmetry is deliberate: hyperparameters are always trained on the *exact* GP
+(SCG needs exact NLL gradients), but the prediction model can be approximate.
+This means RFF inherits well-tuned hyperparameters without paying the exact GP
+prediction cost.
+
+All optimizers (minimize, dimer, otgpd, neb, neb\ :sub:`oie`\) use ``build_pred_model()``
+to construct the appropriate variant.
+
+Outer loop pattern
+~~~~~~~~~~~~~~~~~~
+
+All GP-accelerated optimizers follow the same outer loop:
+
+1. **FPS subset selection**: select the K most informative training points.
+   *Why*: keeps Cholesky cost manageable.
+
+2. **Train GP**: SCG-optimize hyperparameters on the subset.
+   *Why*: hyperparameters must adapt as the optimizer explores new regions.
+
+3. **Build PredModel**: construct exact GP or RFF on full training data.
+   *Why*: prediction should use all available data, even points not in the
+   training subset.
+
+4. **Inner optimization**: optimize on the surrogate (L-BFGS for minimize/dimer,
+   FIRE/L-BFGS for NEB).
+   *Why*: the GP surrogate is cheap to evaluate, so aggressive optimization
+   is free.
+
+5. **Trust clip**: clip the proposed step to the trust region.
+   *Why*: prevents stepping into extrapolation territory.
+
+6. **Oracle call**: evaluate the true potential at the new point.
+   *Why*: the GP prediction must be validated; the new data improves the GP.
+
+7. **Convergence check**: compare force to tolerance.
+
+The method-specific differences (translation force for dimer, perpendicular force
+for NEB, adaptive threshold for OTGPD) happen within steps 4-6.
+
+StopReason
+~~~~~~~~~~
+
+All optimizer result types carry a ``StopReason`` enum:
+
+.. code:: rust
+
+    pub enum StopReason {
+        Converged,
+        MaxIterations,
+        OracleCap,
+        ForceStagnation,
+    }
+
+``ForceStagnation`` triggers when the force norm changes by less than 1e-10 for 3
+consecutive steps. This catches situations where the GP is stuck (e.g., due to
+dedup\ :sub:`tol`\ rejecting all new training points).

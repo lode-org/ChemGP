@@ -1,0 +1,571 @@
+<!DOCTYPE html>
+<html lang="en" data-accent-color="teal" data-content_root="../">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"><title>Minimization - ChemGP documentation</title><link rel="index" title="Index" href="../genindex.html" /><link rel="search" title="Search" href="../search.html" /><link rel="next" title="Molecular Kernels" href="molecular_kernels.html" /><link rel="prev" title="GP Basics" href="gp_basics.html" />
+      <link rel="canonical" href="chemgp.rgoswami.me/tutorials/minimization.html" /><script>
+    function setColorMode(t){let e=document.documentElement;e.setAttribute("data-color-mode",t);let a=window.matchMedia&&window.matchMedia("(prefers-color-scheme: dark)").matches,s=t;"auto"===t&&(s=a?"dark":"light"),"light"===s?(e.classList.remove("dark"),e.classList.add("light")):(e.classList.remove("light"),e.classList.add("dark"))}
+    setColorMode(localStorage._theme||"auto");
+  </script><link rel="stylesheet" type="text/css" href="../_static/pygments.css?v=e1a1ceaf" />
+    <link rel="stylesheet" type="text/css" href="../_static/shibuya.css?v=a318c5d4" />
+    <link media="print" rel="stylesheet" type="text/css" href="../_static/print.css?v=20ff2c19" />
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+:root {
+  --sy-f-text: "Inter", var(--sy-f-sys), var(--sy-f-cjk), sans-serif;
+  --sy-f-heading: "Inter", var(--sy-f-sys), var(--sy-f-cjk), sans-serif;
+}
+</style>
+    <meta property="og:type" content="website"/>
+  <meta property="og:url" content="chemgp.rgoswami.me/tutorials/minimization.html"/>
+  <meta property="og:title" content="Minimization"/>
+    <meta name="twitter:card" content="summary"/>
+  <!-- Plausible injection -->
+<script
+  defer
+  data-domain="chemgp.rgoswami.me"
+  src="https://analytics.turtletech.us/js/script.hash.outbound-links.js"
+></script>
+<script>
+  window.plausible =
+    window.plausible ||
+    function () {
+      (window.plausible.q = window.plausible.q || []).push(arguments);
+    };
+</script></head>
+<body><div class="sy-head">
+  <div class="sy-head-blur"></div>
+  <div class="sy-head-inner sy-container mx-auto">
+    <a class="sy-head-brand" href="../index.html">
+      
+      
+      <strong>ChemGP</strong>
+    </a>
+    <div class="sy-head-nav" id="head-nav">
+      <nav class="sy-head-links"><ul>
+      <li class="link"><button class="js-menu" type="button" id="nav-trigger-1" aria-controls="nav-children-1">
+            <span>Ecosystem</span>
+            <i class="i-lucide chevron-down"></i>
+          </button>
+        <ul id="nav-children-1" aria-labelledby="nav-trigger-1"><li><a href="https://rgpycrumbs.rgoswami.me">
+                <span>rgpycrumbs</span>
+                <small>Analytical and visualization suite for chemical physics</small>
+              </a></li><li><a href="https://eondocs.org">
+                <span>eOn</span>
+                <small>Long-timescale molecular dynamics engine</small>
+              </a></li><li><a href="https://github.com/OmniPotentRPC/rgpot">
+                <span>rgpot</span>
+                <small>RPC potential evaluation for GP-accelerated optimization</small>
+              </a></li></ul>
+      </li><li class="link">
+          <a href="https://crates.io/crates/chemgp-core">
+            <span>crates.io</span><i class="i-lucide external-link"></i></a>
+        </li></ul></nav>
+      <div class="sy-head-extra flex items-center print:hidden"><form class="searchbox flex items-center" action="../search.html" method="get">
+  <input type="text" name="q" placeholder="Search" />
+  <kbd>/</kbd>
+</form><div class="sy-head-socials">
+  <a href="https://github.com/lode-org/ChemGP" aria-label="GitHub">
+    <iconify-icon icon="simple-icons:github"></iconify-icon>
+  </a></div></div>
+    </div>
+    <div class="sy-head-actions flex items-center shrink-0 print:hidden"><button class="js-theme theme-switch flex items-center"
+data-aria-auto="Switch to light color mode"
+data-aria-light="Switch to dark color mode"
+data-aria-dark="Switch to auto color mode">
+<i class="i-lucide theme-icon"></i>
+</button><button class="md:hidden flex items-center js-menu" aria-label="Menu" type="button" aria-controls="head-nav" aria-expanded="false">
+        <div class="hamburger">
+          <span class="hamburger_1"></span>
+          <span class="hamburger_2"></span>
+          <span class="hamburger_3"></span>
+        </div>
+      </button>
+    </div>
+  </div>
+</div>
+<div class="sy-page sy-container flex mx-auto">
+  <aside id="lside" class="sy-lside md:w-72 md:shrink-0 print:hidden">
+    <div class="sy-lside-inner md:sticky">
+      <div class="sy-scrollbar p-6">
+        <div class="globaltoc" data-expand-depth="1"><p class="caption" role="heading" aria-level="3"><span class="caption-text">Getting Started</span></p>
+<ul>
+<li class="toctree-l1 _expand"><a class="reference internal" href="../quickstart.html">Quickstart</a></li>
+<li class="toctree-l1 _expand"><a class="reference internal" href="../installation.html">Installation</a></li>
+</ul>
+<p class="caption" role="heading" aria-level="3"><span class="caption-text">Tutorials</span></p>
+<ul class="current">
+<li class="toctree-l1 _expand"><a class="reference internal" href="gp_basics.html">GP Basics</a></li>
+<li class="toctree-l1 current"><a class="current reference internal" href="#">Minimization</a></li>
+<li class="toctree-l1 _expand"><a class="reference internal" href="molecular_kernels.html">Molecular Kernels</a></li>
+<li class="toctree-l1 _expand"><a class="reference internal" href="hyperparameter_training.html">Hyperparameter Training</a></li>
+<li class="toctree-l1 _expand"><a class="reference internal" href="scalability.html">Scalability: FPS + RFF</a></li>
+<li class="toctree-l1 _expand"><a class="reference internal" href="dimer_method.html">Dimer Method</a></li>
+<li class="toctree-l1 _expand"><a class="reference internal" href="neb_method.html">Nudged Elastic Band</a></li>
+<li class="toctree-l1 _expand"><a class="reference internal" href="otgpd.html">OTGPD</a></li>
+<li class="toctree-l1 _expand"><a class="reference internal" href="constant_kernel.html">Constant Kernel</a></li>
+<li class="toctree-l1 _expand"><a class="reference internal" href="production_minimize.html">Production Minimization</a></li>
+<li class="toctree-l1 _expand"><a class="reference internal" href="production_saddle.html">Production Saddle Search</a></li>
+<li class="toctree-l1 _expand"><a class="reference internal" href="production_neb.html">Production NEB</a></li>
+</ul>
+<p class="caption" role="heading" aria-level="3"><span class="caption-text">Reference</span></p>
+<ul>
+<li class="toctree-l1 _expand"><a class="reference internal" href="../reference/architecture.html">Architecture</a></li>
+<li class="toctree-l1 _expand"><a class="reference internal" href="../reference/kernel_design.html">Kernel Design</a></li>
+<li class="toctree-l1 _expand"><a class="reference internal" href="../reference/trust_regions.html">Trust Regions</a></li>
+<li class="toctree-l1 _expand"><a class="reference internal" href="../api/index.html">API Reference</a></li>
+</ul>
+        </div>
+      </div>
+    </div>
+  </aside>
+  <div class="lside-overlay js-menu" role="button" aria-label="Close left sidebar" aria-controls="lside" aria-expanded="false"></div>
+  <aside id="rside" class="sy-rside pb-3 w-64 shrink-0 order-last">
+    <button class="rside-close js-menu xl:hidden" aria-label="Close Table of Contents" type="button" aria-controls="rside" aria-expanded="false">
+      <i class="i-lucide close"></i>
+    </button>
+    <div class="sy-scrollbar sy-rside-inner px-6 xl:top-16 xl:sticky xl:pl-0 pt-6 pb-4"><div class="localtoc"><h3>On this page</h3><ul>
+<li><a class="reference internal" href="#gp-guided-minimization">GP-Guided Minimization</a></li>
+<li><a class="reference internal" href="#algorithm">Algorithm</a><ul>
+<li><a class="reference internal" href="#fps-subset-selection">1. FPS subset selection</a></li>
+<li><a class="reference internal" href="#train-gp-hyperparameters">2. Train GP hyperparameters</a></li>
+<li><a class="reference internal" href="#build-predmodel">3. Build PredModel</a></li>
+<li><a class="reference internal" href="#inner-l-bfgs-optimization">4. Inner L-BFGS optimization</a></li>
+<li><a class="reference internal" href="#lcb-exploration">5. LCB exploration</a></li>
+<li><a class="reference internal" href="#oracle-call-and-convergence-check">6. Oracle call and convergence check</a></li>
+</ul>
+</li>
+<li><a class="reference internal" href="#muller-brown-example">Muller-Brown Example</a><ul>
+<li><a class="reference internal" href="#configuration-for-non-molecular-surfaces">Configuration for non-molecular surfaces</a></li>
+</ul>
+</li>
+<li><a class="reference internal" href="#leps-example">LEPS Example</a></li>
+<li><a class="reference internal" href="#configuration-reference">Configuration Reference</a></li>
+<li><a class="reference internal" href="#troubleshooting">Troubleshooting</a><ul>
+<li><a class="reference internal" href="#gp-not-converging-force-stagnation">GP not converging (force stagnation)</a></li>
+<li><a class="reference internal" href="#too-many-oracle-calls">Too many oracle calls</a></li>
+</ul>
+</li>
+</ul>
+</div><a class="js-repo-stats repo-stats flex items-center" href="https://github.com/lode-org/ChemGP"
+  data-type="github" data-user="lode-org" data-repo="ChemGP">
+  <span class="w-8 flex items-center justify-around shrink-0 text-3xl">
+    <iconify-icon icon="simple-icons:github"></iconify-icon>
+  </span>
+  <span class="flex-grow px-2 break-all">
+    
+    
+      <span>lode-org/ChemGP</span>
+    
+    <span class="flex text-sm repo-stats-count">
+      <span class="flex items-center pr-3">
+        <iconify-icon icon="lucide:star"></iconify-icon>
+        <strong class="js-repo-stars ml-1">0</strong>
+      </span>
+      <span class="flex items-center">
+        <iconify-icon icon="lucide:git-fork"></iconify-icon>
+        <strong class="js-repo-forks ml-1">0</strong>
+      </span>
+    </span>
+  </span>
+</a><div class="edit-this-page">
+  <a href="https://github.com/lode-org/ChemGP/blob/main/docs/source/tutorials/minimization.rst">Edit this page</a>
+</div></div>
+  </aside>
+  <div class="rside-overlay js-menu" role="button" aria-label="Close Table of Contents" aria-controls="rside" aria-expanded="false"></div>
+  <main class="sy-main w-full max-sm:max-w-full print:pt-6">
+<div class="sy-breadcrumbs" role="navigation">
+  <div class="sy-breadcrumbs-inner flex items-center">
+    <div class="md:hidden mr-3">
+      <button class="js-menu" aria-label="Menu" type="button" aria-controls="lside" aria-expanded="false">
+        <i class="i-lucide menu"></i>
+      </button>
+    </div>
+    <ol class="flex-1" itemscope itemtype="https://schema.org/BreadcrumbList"><li itemprop="itemListElement" itemscope itemtype="https://schema.org/ListItem">
+        <a itemprop="item" href="../index.html"><span itemprop="name">ChemGP</span></a>
+        <span>/</span>
+        <meta itemprop="position" content="1" />
+      </li><li itemprop="itemListElement" itemscope itemtype="https://schema.org/ListItem">
+        <strong itemprop="name">Minimization</strong>
+        <meta itemprop="position" content="2" />
+      </li></ol>
+    <div class="xl:hidden ml-1">
+      <button class="js-menu" aria-label="Show table of contents" type="button" aria-controls="rside"
+        aria-expanded="false">
+        <i class="i-lucide outdent"></i>
+      </button>
+    </div>
+  </div>
+</div><div class="flex flex-col break-words justify-between">
+      <div class="relative min-w-0 max-w-6xl px-6 pb-6 pt-8 xl:px-12">
+  <div class="copy-page-wrapper relative pb-4 lg:absolute lg:top-8 lg:right-6 xl:right-12">
+  <div id="copy-page-trigger">
+    <button
+      type="button"
+      class="js-copy px-3 py-1 inline-flex items-center gap-1"
+      data-url="chemgp.rgoswami.me/_sources/tutorials/minimization.rst.txt"
+    >
+      <i class="i-lucide" data-icon="copy"></i>
+      <span>Copy page</span>
+    </button>
+    <button class="js-menu px-2 py-1" type="button" aria-label="More actions"
+      aria-haspopup="menu" aria-expanded="false" aria-controls="copy-page-content">
+      <i class="i-lucide chevron-down"></i>
+    </button>
+  </div>
+  <div id="copy-page-content" role="menu" aria-orientation="vertical" aria-hidden="true">
+    <div role="presentation">
+      <div class="flex flex-col" role="group">
+        <button class="js-copy" type="button" role="menuitem"
+          data-url="chemgp.rgoswami.me/_sources/tutorials/minimization.rst.txt">
+          <span class="iconify-icon">
+            <i class="i-lucide" data-icon="copy"></i>
+          </span>
+          <span>Copy page</span>
+        </button>
+        <a role="menuitem" href="chemgp.rgoswami.me/_sources/tutorials/minimization.rst.txt" target="_blank" rel="nofollow"><iconify-icon icon="bi:code-slash"></iconify-icon>
+            <span>View Source</span></a><a role="menuitem" href="https://chatgpt.com/?hints=search&q=Read%20chemgp.rgoswami.me/_sources/tutorials/minimization.rst.txt%20so%20I%20can%20ask%20questions%20about%20it." target="_blank" rel="nofollow">
+          <iconify-icon icon="bi:openai"></iconify-icon>
+          <span>Open in ChatGPT</span>
+        </a><a role="menuitem" href="https://claude.ai/new?q=Read%20chemgp.rgoswami.me/_sources/tutorials/minimization.rst.txt%20so%20I%20can%20ask%20questions%20about%20it." target="_blank" rel="nofollow">
+          <iconify-icon icon="bi:claude"></iconify-icon>
+          <span>Open in Claude</span>
+        </a></div>
+    </div>
+  </div>
+</div><article class="yue dark-code" role="main">
+          <section id="minimization">
+<h1>Minimization<a class="headerlink" href="#minimization" title="Link to this heading">¶</a></h1>
+<section id="gp-guided-minimization">
+<h2>GP-Guided Minimization<a class="headerlink" href="#gp-guided-minimization" title="Link to this heading">¶</a></h2>
+<p>The GP minimizer (<code class="docutils literal notranslate"><span class="pre">gp_minimize</span></code>) replaces most oracle calls with GP predictions,
+querying the true potential only when the GP uncertainty is high or when the
+predicted step leaves the trust region.</p>
+<p>This is a form of Bayesian optimization (BO): the GP provides a probabilistic
+surrogate of the objective, and the LCB acquisition function balances
+exploitation (follow the GP mean) with exploration (query uncertain regions).
+Unlike standard BO for black-box optimization, ChemGP exploits gradient
+information (1+D observations per oracle call) and uses an inner optimization
+loop on the surrogate rather than optimizing the acquisition function directly.</p>
+<p>The basic idea: instead of calling the oracle at every gradient descent step,
+train a GP on the oracle results so far, optimize on the GP surrogate (which is
+free), then call the oracle only at the proposed minimum. Each oracle call is
+expensive (minutes for DFT); each GP prediction is cheap (microseconds). The
+savings compound: an optimization that needs 200 gradient descent steps needs
+only ~10 outer iterations, each with one oracle call.</p>
+</section>
+<section id="algorithm">
+<h2>Algorithm<a class="headerlink" href="#algorithm" title="Link to this heading">¶</a></h2>
+<p>Each outer iteration proceeds as follows:</p>
+<section id="fps-subset-selection">
+<h3>1. FPS subset selection<a class="headerlink" href="#fps-subset-selection" title="Link to this heading">¶</a></h3>
+<p>Select the K most informative training points near the current position. <em>Why</em>:
+the full training set may contain points far from the current region that
+contribute little to local prediction accuracy but dominate Cholesky cost.
+Farthest Point Sampling (FPS) keeps points that are spread out and cover the
+local neighborhood.</p>
+</section>
+<section id="train-gp-hyperparameters">
+<h3>2. Train GP hyperparameters<a class="headerlink" href="#train-gp-hyperparameters" title="Link to this heading">¶</a></h3>
+<p>Run SCG (Scaled Conjugate Gradient) on the MAP-NLL objective using the FPS
+subset. <em>Why</em>: hyperparameters (signal variance, length scales) must adapt as
+the optimizer explores different regions of the PES. Training on the subset
+instead of full data keeps the cost manageable (O(K<sup>3</sup>\*(1+D)<sup>3</sup>) instead of
+O(N<sup>3</sup>\*(1+D)<sup>3</sup>)).</p>
+</section>
+<section id="build-predmodel">
+<h3>3. Build PredModel<a class="headerlink" href="#build-predmodel" title="Link to this heading">¶</a></h3>
+<p>Construct a prediction model on the <em>full</em> training data, using hyperparameters
+from step 2. If <code class="docutils literal notranslate"><span class="pre">rff_features</span> <span class="pre">&gt;</span> <span class="pre">0</span></code>, this builds an RFF model; otherwise an
+exact GP. <em>Why train on subset but predict on full data</em>: the FPS subset is
+chosen for efficient training (avoiding large Cholesky factorizations). But for
+prediction, we want the GP to use all available information, especially points
+near the proposed next step that may not be in the training subset.</p>
+</section>
+<section id="inner-l-bfgs-optimization">
+<h3>4. Inner L-BFGS optimization<a class="headerlink" href="#inner-l-bfgs-optimization" title="Link to this heading">¶</a></h3>
+<p>Minimize the GP surrogate surface using L-BFGS within the trust region. The
+objective includes a soft penalty for leaving the trust region:</p>
+<div class="math-wrapper docutils container">
+<div class="math notranslate nohighlight">
+\[f(\mathbf{x}) = E_{\mathrm{GP}}(\mathbf{x}) + \lambda \, \bigl[\max\bigl(0,\; d(\mathbf{x}) - r_{\mathrm{trust}}\bigr)\bigr]^{2}\]</div>
+</div>
+<p><em>Why L-BFGS</em>: it uses curvature information from gradient history, converging
+much faster than steepest descent on the smooth GP surface. <em>Why soft penalty instead of hard clipping</em>: L-BFGS needs smooth gradients; a hard trust boundary
+would create discontinuities that break the L-BFGS curvature model.</p>
+<p>The L-BFGS direction is already curvature-scaled, so the step size is 1.0
+(clamped by trust<sub>radius</sub>). Before L-BFGS has accumulated curvature history, the
+step is <code class="docutils literal notranslate"><span class="pre">trust_radius</span> <span class="pre">*</span> <span class="pre">0.5</span> <span class="pre">/</span> <span class="pre">||d||</span></code> (conservative steepest descent).</p>
+</section>
+<section id="lcb-exploration">
+<h3>5. LCB exploration<a class="headerlink" href="#lcb-exploration" title="Link to this heading">¶</a></h3>
+<p>If the GP variance at the proposed minimum is high (sigma &gt; 1e-4), add a
+variance penalty to the energy: E<sub>lcb</sub>= E<sub>gp</sub>+ kappa * sigma. <em>Why</em>: the GP
+might predict a low energy in a region where it has no data. LCB penalizes such
+overconfident extrapolation, steering the optimizer toward points where the GP
+has support.</p>
+<p>The energy regression gate provides an additional safety check: if the predicted
+energy is implausibly low (more than 3 standard deviations below the observed
+range), the step is rejected. <em>Why</em>: far from training data, the GP posterior
+mean can extrapolate to arbitrary values. The gate catches these before they
+corrupt the optimization trajectory.</p>
+</section>
+<section id="oracle-call-and-convergence-check">
+<h3>6. Oracle call and convergence check<a class="headerlink" href="#oracle-call-and-convergence-check" title="Link to this heading">¶</a></h3>
+<p>Evaluate the true potential at the proposed point. If the gradient norm is below
+<code class="docutils literal notranslate"><span class="pre">conv_tol</span></code>, declare convergence. Otherwise, add the new point to the training
+data and return to step 1.</p>
+</section>
+</section>
+<section id="muller-brown-example">
+<h2>Muller-Brown Example<a class="headerlink" href="#muller-brown-example" title="Link to this heading">¶</a></h2>
+<figure class="align-default" id="id1">
+<a class="reference internal image-reference" href="_static/figures/mb_pes.png"><img alt="_static/figures/mb_pes.png" src="_static/figures/mb_pes.png" style="width: 80%;" />
+</a>
+<figcaption>
+<p><span class="caption-text">Muller-Brown potential energy surface. Yellow stars mark the three minima
+(A, B, C); coral diamonds mark the two saddle points (S1, S2). The GP
+minimizer is initialized near one minimum and converges in ~8 oracle calls.</span><a class="headerlink" href="#id1" title="Link to this image">¶</a></p>
+</figcaption>
+</figure>
+<p>The Muller-Brown surface is a standard 2D test potential with three minima and
+two saddle points. Using the <code class="docutils literal notranslate"><span class="pre">CartesianSE</span></code> kernel:</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span><span data-line="1">cargo<span class="w"> </span>run<span class="w"> </span>--release<span class="w"> </span>--example<span class="w"> </span>mb_minimize
+</span></pre></div>
+</div>
+<p>GP minimization converges to the nearest local minimum in 7-8 oracle calls.
+Direct gradient descent with the same convergence tolerance needs 34 calls, a
+~5x improvement.</p>
+<figure class="align-default" id="id2">
+<a class="reference internal image-reference" href="_static/figures/mb_minimize_convergence.png"><img alt="_static/figures/mb_minimize_convergence.png" src="_static/figures/mb_minimize_convergence.png" style="width: 70%;" />
+</a>
+<figcaption>
+<p><span class="caption-text">Energy vs oracle calls for GP-guided minimization (teal, circles) vs direct
+gradient descent (coral). The GP surrogate converges in fewer oracle calls
+because each call provides 1+D observations that update the surrogate.</span><a class="headerlink" href="#id2" title="Link to this image">¶</a></p>
+</figcaption>
+</figure>
+<section id="configuration-for-non-molecular-surfaces">
+<h3>Configuration for non-molecular surfaces<a class="headerlink" href="#configuration-for-non-molecular-surfaces" title="Link to this heading">¶</a></h3>
+<p>Non-molecular surfaces need explicit <code class="docutils literal notranslate"><span class="pre">dedup_tol</span></code>. The default (<code class="docutils literal notranslate"><span class="pre">conv_tol</span> <span class="pre">*</span> <span class="pre">0.1</span></code>)
+is designed for molecular systems where coordinate ranges and convergence
+tolerances are similar in scale. For Muller-Brown, the coordinate space spans ~3
+units, but a <code class="docutils literal notranslate"><span class="pre">conv_tol</span></code> of 10 (appropriate for the large MB gradients) gives
+<code class="docutils literal notranslate"><span class="pre">dedup_tol</span> <span class="pre">=</span> <span class="pre">1.0</span></code>, which rejects almost all new training points. Setting
+<code class="docutils literal notranslate"><span class="pre">dedup_tol</span> <span class="pre">=</span> <span class="pre">0.001</span></code> explicitly fixes this.</p>
+<p>Use <code class="docutils literal notranslate"><span class="pre">TrustMetric::Euclidean</span></code> for Cartesian surfaces (there are no interatomic
+distances for EMD to operate on).</p>
+<div class="highlight-rust notranslate"><div class="highlight"><pre><span></span><span data-line="1"><span class="k">use</span><span class="w"> </span><span class="n">chemgp_core</span><span class="p">::</span><span class="n">kernel</span><span class="p">::{</span><span class="n">Kernel</span><span class="p">,</span><span class="w"> </span><span class="n">CartesianSE</span><span class="p">};</span>
+</span><span data-line="2"><span class="k">use</span><span class="w"> </span><span class="n">chemgp_core</span><span class="p">::</span><span class="n">minimize</span><span class="p">::{</span><span class="n">gp_minimize</span><span class="p">,</span><span class="w"> </span><span class="n">MinimizationConfig</span><span class="p">};</span>
+</span><span data-line="3"><span class="k">use</span><span class="w"> </span><span class="n">chemgp_core</span><span class="p">::</span><span class="n">trust</span><span class="p">::</span><span class="n">TrustMetric</span><span class="p">;</span>
+</span><span data-line="4">
+</span><span data-line="5"><span class="kd">let</span><span class="w"> </span><span class="n">kernel</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">Kernel</span><span class="p">::</span><span class="n">Cartesian</span><span class="p">(</span><span class="n">CartesianSE</span><span class="p">::</span><span class="n">new</span><span class="p">(</span><span class="mf">100.0</span><span class="p">,</span><span class="w"> </span><span class="mf">2.0</span><span class="p">));</span>
+</span><span data-line="6"><span class="kd">let</span><span class="w"> </span><span class="k">mut</span><span class="w"> </span><span class="n">cfg</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">MinimizationConfig</span><span class="p">::</span><span class="n">default</span><span class="p">();</span>
+</span><span data-line="7"><span class="n">cfg</span><span class="p">.</span><span class="n">conv_tol</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mf">1.0</span><span class="p">;</span>
+</span><span data-line="8"><span class="n">cfg</span><span class="p">.</span><span class="n">dedup_tol</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mf">0.001</span><span class="p">;</span><span class="w">    </span><span class="c1">// MB coordinates span ~3 units</span>
+</span><span data-line="9"><span class="n">cfg</span><span class="p">.</span><span class="n">n_initial_perturb</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">3</span><span class="p">;</span>
+</span><span data-line="10"><span class="n">cfg</span><span class="p">.</span><span class="n">perturb_scale</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mf">0.15</span><span class="p">;</span>
+</span><span data-line="11"><span class="n">cfg</span><span class="p">.</span><span class="n">trust_radius</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mf">0.3</span><span class="p">;</span>
+</span><span data-line="12"><span class="n">cfg</span><span class="p">.</span><span class="n">penalty_coeff</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mf">1000.0</span><span class="p">;</span>
+</span><span data-line="13"><span class="n">cfg</span><span class="p">.</span><span class="n">trust_metric</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">TrustMetric</span><span class="p">::</span><span class="n">Euclidean</span><span class="p">;</span>
+</span></pre></div>
+</div>
+</section>
+</section>
+<section id="leps-example">
+<h2>LEPS Example<a class="headerlink" href="#leps-example" title="Link to this heading">¶</a></h2>
+<figure class="align-default" id="id3">
+<a class="reference internal image-reference" href="_static/figures/leps_contour.png"><img alt="_static/figures/leps_contour.png" src="_static/figures/leps_contour.png" style="width: 80%;" />
+</a>
+<figcaption>
+<p><span class="caption-text">LEPS potential energy surface for collinear H + H2 as a function of the
+two bond distances. The reactant valley (H + H2, lower right) and product
+valley (H2 + H, upper left) are connected through a transition state near
+r_AB = r_BC = 1.1 angstroms.</span><a class="headerlink" href="#id3" title="Link to this image">¶</a></p>
+</figcaption>
+</figure>
+<p>The LEPS surface models a collinear H + H2 reaction. Using the <code class="docutils literal notranslate"><span class="pre">MolInvDistSE</span></code>
+kernel:</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span><span data-line="1">cargo<span class="w"> </span>run<span class="w"> </span>--release<span class="w"> </span>--example<span class="w"> </span>leps_minimize
+</span></pre></div>
+</div>
+<p>GP minimization converges in 9 oracle calls to the reactant minimum (E =
+-4.515). Direct gradient descent needs 200 calls and still has not converged to
+the same precision.</p>
+<figure class="align-default" id="id4">
+<a class="reference internal image-reference" href="../_images/leps_minimize_convergence.png"><img alt="../_images/leps_minimize_convergence.png" src="../_images/leps_minimize_convergence.png" style="width: 70%;" />
+</a>
+<figcaption>
+<p><span class="caption-text">Energy vs oracle calls on the LEPS surface. GP minimization (teal) reaches
+the minimum in under 10 calls; direct gradient descent (coral) is still
+converging at 200 calls. The MolInvDistSE kernel captures the molecular
+invariances, giving the GP better generalization from fewer data points.</span><a class="headerlink" href="#id4" title="Link to this image">¶</a></p>
+</figcaption>
+</figure>
+<p>The improvement is larger here than for Muller-Brown because:</p>
+<ul class="simple">
+<li><p>The MolInvDistSE kernel captures the molecular invariances, giving the GP
+better generalization from fewer points</p></li>
+<li><p>The LEPS surface has a narrow reaction valley where gradient descent takes many
+small steps, but the GP learns the valley shape and jumps to the minimum</p></li>
+</ul>
+<div class="highlight-rust notranslate"><div class="highlight"><pre><span></span><span data-line="1"><span class="k">use</span><span class="w"> </span><span class="n">chemgp_core</span><span class="p">::</span><span class="n">kernel</span><span class="p">::{</span><span class="n">Kernel</span><span class="p">,</span><span class="w"> </span><span class="n">MolInvDistSE</span><span class="p">};</span>
+</span><span data-line="2"><span class="k">use</span><span class="w"> </span><span class="n">chemgp_core</span><span class="p">::</span><span class="n">minimize</span><span class="p">::{</span><span class="n">gp_minimize</span><span class="p">,</span><span class="w"> </span><span class="n">MinimizationConfig</span><span class="p">};</span>
+</span><span data-line="3">
+</span><span data-line="4"><span class="kd">let</span><span class="w"> </span><span class="n">kernel</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">Kernel</span><span class="p">::</span><span class="n">MolInvDist</span><span class="p">(</span>
+</span><span data-line="5"><span class="w">    </span><span class="n">MolInvDistSE</span><span class="p">::</span><span class="n">isotropic</span><span class="p">(</span><span class="mf">1.0</span><span class="p">,</span><span class="w"> </span><span class="mf">1.0</span><span class="p">,</span><span class="w"> </span><span class="fm">vec!</span><span class="p">[])</span>
+</span><span data-line="6"><span class="p">);</span>
+</span><span data-line="7"><span class="kd">let</span><span class="w"> </span><span class="n">cfg</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">MinimizationConfig</span><span class="p">::</span><span class="n">default</span><span class="p">();</span>
+</span><span data-line="8"><span class="c1">// defaults work well for molecular systems</span>
+</span></pre></div>
+</div>
+</section>
+<section id="configuration-reference">
+<h2>Configuration Reference<a class="headerlink" href="#configuration-reference" title="Link to this heading">¶</a></h2>
+<div class="table-wrapper docutils container">
+<table class="docutils align-default">
+<thead>
+<tr class="row-odd"><th class="head"><p>Parameter</p></th>
+<th class="head"><p>Default</p></th>
+<th class="head"><p>Description</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">conv_tol</span></code></p></td>
+<td><p>5e-3</p></td>
+<td><p>Gradient norm convergence threshold</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">trust_radius</span></code></p></td>
+<td><p>0.1</p></td>
+<td><p>Max distance from training data for trust</p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">max_oracle_calls</span></code></p></td>
+<td><p>0 (unlimited)</p></td>
+<td><p>Oracle call budget</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">n_initial_perturb</span></code></p></td>
+<td><p>4</p></td>
+<td><p>Number of bootstrap perturbation points</p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">perturb_scale</span></code></p></td>
+<td><p>0.1</p></td>
+<td><p>Radius of bootstrap perturbations</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">penalty_coeff</span></code></p></td>
+<td><p>1e3</p></td>
+<td><p>Trust region penalty in inner L-BFGS</p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">rff_features</span></code></p></td>
+<td><p>0 (exact GP)</p></td>
+<td><p>RFF feature count (0 = exact GP)</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">fps_history</span></code></p></td>
+<td><p>0 (use all)</p></td>
+<td><p>FPS subset size (0 = no FPS)</p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">trust_metric</span></code></p></td>
+<td><p>Emd</p></td>
+<td><p>Distance metric: Emd or Euclidean</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">dedup_tol</span></code></p></td>
+<td><p>0 (auto)</p></td>
+<td><p>Min distance between training points</p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">max_move</span></code></p></td>
+<td><p>0.1</p></td>
+<td><p>Maximum step size per outer iteration</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">energy_regression_tol</span></code></p></td>
+<td><p>0 (auto)</p></td>
+<td><p>Gate for implausible energy predictions</p></td>
+</tr>
+</tbody>
+</table>
+</div>
+</section>
+<section id="troubleshooting">
+<h2>Troubleshooting<a class="headerlink" href="#troubleshooting" title="Link to this heading">¶</a></h2>
+<section id="gp-not-converging-force-stagnation">
+<h3>GP not converging (force stagnation)<a class="headerlink" href="#gp-not-converging-force-stagnation" title="Link to this heading">¶</a></h3>
+<p>If the optimizer reports <code class="docutils literal notranslate"><span class="pre">ForceStagnation</span></code>, the GP predictions are not improving
+between iterations. Common causes:</p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">dedup_tol</span></code> too large: new points are being rejected as duplicates. Check that
+<code class="docutils literal notranslate"><span class="pre">dedup_tol</span></code> is small relative to your coordinate space.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">trust_radius</span></code> too small: the inner optimizer cannot reach better points. Try
+increasing it.</p></li>
+<li><p>Poor hyperparameter initialization: the GP is too stiff or too smooth. Check
+that <code class="docutils literal notranslate"><span class="pre">init_kernel</span></code> is being called (it is, by default).</p></li>
+</ul>
+</section>
+<section id="too-many-oracle-calls">
+<h3>Too many oracle calls<a class="headerlink" href="#too-many-oracle-calls" title="Link to this heading">¶</a></h3>
+<p>If convergence takes more oracle calls than expected:</p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">n_initial_perturb</span></code> too large: wastes oracle calls on bootstrap. For molecular
+systems with good starting geometry, 2-3 perturbations suffice.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">trust_radius</span></code> too large: the inner optimizer proposes points too far from
+training data, where the GP is unreliable. The oracle confirms bad predictions,
+wasting a call.</p></li>
+<li><p>No RFF: for large training sets (&gt;30 points), switch to RFF to keep inner
+optimization fast.</p></li>
+</ul>
+</section>
+</section>
+</section>
+
+        </article><button class="back-to-top" type="button">
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
+    <path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8v12z"></path>
+  </svg>
+  <span>Back to top</span>
+</button><div class="navigation flex print:hidden"><div class="navigation-prev">
+    <a href="gp_basics.html">
+      <i class="i-lucide chevron-left"></i>
+      <div class="page-info">
+        <span>Previous</span><div class="title">GP Basics</div></div>
+    </a>
+  </div><div class="navigation-next">
+    <a href="molecular_kernels.html">
+      <div class="page-info">
+        <span>Next</span>
+        <div class="title">Molecular Kernels</div>
+      </div>
+      <i class="i-lucide chevron-right"></i>
+    </a>
+  </div></div></div>
+    </div>
+  </main>
+</div>
+<footer class="sy-foot">
+  <div class="sy-foot-inner sy-container mx-auto">
+    <div class="sy-foot-reserved md:flex justify-between items-center">
+      <div class="sy-foot-copyright"><p>2026, Rohit Goswami</p>
+  
+  <p>
+    Made with
+    
+    <a href="https://www.sphinx-doc.org/">Sphinx</a> and
+    
+    <a href="https://shibuya.lepture.com">Shibuya theme</a>.
+  </p>
+</div> <div class="sy-foot-socials">
+<a href="https://github.com/lode-org/ChemGP" aria-label="GitHub">
+  <iconify-icon icon="simple-icons:github"></iconify-icon>
+</a></div>
+    </div>
+    <div class="sy-foot-reserved" style="text-align: center; font-size: 0.85em; padding-top: 0.5em;">
+      Analytics by <a href="https://plausible.io" rel="noopener">Plausible</a>
+      provided by <a href="https://turtletech.is" rel="noopener">TurtleTech ehf</a>
+      | <a href="https://rgoswami.me" rel="noopener">Rohit Goswami</a>
+    </div>
+  </div>
+</footer>
+      <script src="../_static/documentation_options.js?v=5929fcd5"></script>
+      <script src="../_static/doctools.js?v=fd6eb6e6"></script>
+      <script src="../_static/sphinx_highlight.js?v=6ffebe34"></script>
+      <script src="../_static/shibuya.js?v=cac61aee"></script>
+      <script defer="defer" src="https://cdn.jsdelivr.net/npm/mathjax@4/tex-mml-chtml.js"></script></body>
+</html>

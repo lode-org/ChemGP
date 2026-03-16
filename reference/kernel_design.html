@@ -1,0 +1,468 @@
+<!DOCTYPE html>
+<html lang="en" data-accent-color="teal" data-content_root="../">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"><title>Kernel Design - ChemGP documentation</title><link rel="index" title="Index" href="../genindex.html" /><link rel="search" title="Search" href="../search.html" /><link rel="next" title="Trust Regions" href="trust_regions.html" /><link rel="prev" title="Architecture" href="architecture.html" />
+      <link rel="canonical" href="chemgp.rgoswami.me/reference/kernel_design.html" /><script>
+    function setColorMode(t){let e=document.documentElement;e.setAttribute("data-color-mode",t);let a=window.matchMedia&&window.matchMedia("(prefers-color-scheme: dark)").matches,s=t;"auto"===t&&(s=a?"dark":"light"),"light"===s?(e.classList.remove("dark"),e.classList.add("light")):(e.classList.remove("light"),e.classList.add("dark"))}
+    setColorMode(localStorage._theme||"auto");
+  </script><link rel="stylesheet" type="text/css" href="../_static/pygments.css?v=e1a1ceaf" />
+    <link rel="stylesheet" type="text/css" href="../_static/shibuya.css?v=a318c5d4" />
+    <link media="print" rel="stylesheet" type="text/css" href="../_static/print.css?v=20ff2c19" />
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+:root {
+  --sy-f-text: "Inter", var(--sy-f-sys), var(--sy-f-cjk), sans-serif;
+  --sy-f-heading: "Inter", var(--sy-f-sys), var(--sy-f-cjk), sans-serif;
+}
+</style>
+    <meta property="og:type" content="website"/>
+  <meta property="og:url" content="chemgp.rgoswami.me/reference/kernel_design.html"/>
+  <meta property="og:title" content="Kernel Design"/>
+    <meta name="twitter:card" content="summary"/>
+  <!-- Plausible injection -->
+<script
+  defer
+  data-domain="chemgp.rgoswami.me"
+  src="https://analytics.turtletech.us/js/script.hash.outbound-links.js"
+></script>
+<script>
+  window.plausible =
+    window.plausible ||
+    function () {
+      (window.plausible.q = window.plausible.q || []).push(arguments);
+    };
+</script></head>
+<body><div class="sy-head">
+  <div class="sy-head-blur"></div>
+  <div class="sy-head-inner sy-container mx-auto">
+    <a class="sy-head-brand" href="../index.html">
+      
+      
+      <strong>ChemGP</strong>
+    </a>
+    <div class="sy-head-nav" id="head-nav">
+      <nav class="sy-head-links"><ul>
+      <li class="link"><button class="js-menu" type="button" id="nav-trigger-1" aria-controls="nav-children-1">
+            <span>Ecosystem</span>
+            <i class="i-lucide chevron-down"></i>
+          </button>
+        <ul id="nav-children-1" aria-labelledby="nav-trigger-1"><li><a href="https://rgpycrumbs.rgoswami.me">
+                <span>rgpycrumbs</span>
+                <small>Analytical and visualization suite for chemical physics</small>
+              </a></li><li><a href="https://eondocs.org">
+                <span>eOn</span>
+                <small>Long-timescale molecular dynamics engine</small>
+              </a></li><li><a href="https://github.com/OmniPotentRPC/rgpot">
+                <span>rgpot</span>
+                <small>RPC potential evaluation for GP-accelerated optimization</small>
+              </a></li></ul>
+      </li><li class="link">
+          <a href="https://crates.io/crates/chemgp-core">
+            <span>crates.io</span><i class="i-lucide external-link"></i></a>
+        </li></ul></nav>
+      <div class="sy-head-extra flex items-center print:hidden"><form class="searchbox flex items-center" action="../search.html" method="get">
+  <input type="text" name="q" placeholder="Search" />
+  <kbd>/</kbd>
+</form><div class="sy-head-socials">
+  <a href="https://github.com/lode-org/ChemGP" aria-label="GitHub">
+    <iconify-icon icon="simple-icons:github"></iconify-icon>
+  </a></div></div>
+    </div>
+    <div class="sy-head-actions flex items-center shrink-0 print:hidden"><button class="js-theme theme-switch flex items-center"
+data-aria-auto="Switch to light color mode"
+data-aria-light="Switch to dark color mode"
+data-aria-dark="Switch to auto color mode">
+<i class="i-lucide theme-icon"></i>
+</button><button class="md:hidden flex items-center js-menu" aria-label="Menu" type="button" aria-controls="head-nav" aria-expanded="false">
+        <div class="hamburger">
+          <span class="hamburger_1"></span>
+          <span class="hamburger_2"></span>
+          <span class="hamburger_3"></span>
+        </div>
+      </button>
+    </div>
+  </div>
+</div>
+<div class="sy-page sy-container flex mx-auto">
+  <aside id="lside" class="sy-lside md:w-72 md:shrink-0 print:hidden">
+    <div class="sy-lside-inner md:sticky">
+      <div class="sy-scrollbar p-6">
+        <div class="globaltoc" data-expand-depth="1"><p class="caption" role="heading" aria-level="3"><span class="caption-text">Getting Started</span></p>
+<ul>
+<li class="toctree-l1 _expand"><a class="reference internal" href="../quickstart.html">Quickstart</a></li>
+<li class="toctree-l1 _expand"><a class="reference internal" href="../installation.html">Installation</a></li>
+</ul>
+<p class="caption" role="heading" aria-level="3"><span class="caption-text">Tutorials</span></p>
+<ul>
+<li class="toctree-l1 _expand"><a class="reference internal" href="../tutorials/gp_basics.html">GP Basics</a></li>
+<li class="toctree-l1 _expand"><a class="reference internal" href="../tutorials/minimization.html">Minimization</a></li>
+<li class="toctree-l1 _expand"><a class="reference internal" href="../tutorials/molecular_kernels.html">Molecular Kernels</a></li>
+<li class="toctree-l1 _expand"><a class="reference internal" href="../tutorials/hyperparameter_training.html">Hyperparameter Training</a></li>
+<li class="toctree-l1 _expand"><a class="reference internal" href="../tutorials/scalability.html">Scalability: FPS + RFF</a></li>
+<li class="toctree-l1 _expand"><a class="reference internal" href="../tutorials/dimer_method.html">Dimer Method</a></li>
+<li class="toctree-l1 _expand"><a class="reference internal" href="../tutorials/neb_method.html">Nudged Elastic Band</a></li>
+<li class="toctree-l1 _expand"><a class="reference internal" href="../tutorials/otgpd.html">OTGPD</a></li>
+<li class="toctree-l1 _expand"><a class="reference internal" href="../tutorials/constant_kernel.html">Constant Kernel</a></li>
+<li class="toctree-l1 _expand"><a class="reference internal" href="../tutorials/production_minimize.html">Production Minimization</a></li>
+<li class="toctree-l1 _expand"><a class="reference internal" href="../tutorials/production_saddle.html">Production Saddle Search</a></li>
+<li class="toctree-l1 _expand"><a class="reference internal" href="../tutorials/production_neb.html">Production NEB</a></li>
+</ul>
+<p class="caption" role="heading" aria-level="3"><span class="caption-text">Reference</span></p>
+<ul class="current">
+<li class="toctree-l1 _expand"><a class="reference internal" href="architecture.html">Architecture</a></li>
+<li class="toctree-l1 current"><a class="current reference internal" href="#">Kernel Design</a></li>
+<li class="toctree-l1 _expand"><a class="reference internal" href="trust_regions.html">Trust Regions</a></li>
+<li class="toctree-l1 _expand"><a class="reference internal" href="../api/index.html">API Reference</a></li>
+</ul>
+        </div>
+      </div>
+    </div>
+  </aside>
+  <div class="lside-overlay js-menu" role="button" aria-label="Close left sidebar" aria-controls="lside" aria-expanded="false"></div>
+  <aside id="rside" class="sy-rside pb-3 w-64 shrink-0 order-last">
+    <button class="rside-close js-menu xl:hidden" aria-label="Close Table of Contents" type="button" aria-controls="rside" aria-expanded="false">
+      <i class="i-lucide close"></i>
+    </button>
+    <div class="sy-scrollbar sy-rside-inner px-6 xl:top-16 xl:sticky xl:pl-0 pt-6 pb-4"><div class="localtoc"><h3>On this page</h3><ul>
+<li><a class="reference internal" href="#the-kernel-enum">The Kernel Enum</a></li>
+<li><a class="reference internal" href="#choosing-a-kernel">Choosing a kernel</a></li>
+<li><a class="reference internal" href="#molinvdistse">MolInvDistSE</a><ul>
+<li><a class="reference internal" href="#why-inverse-distances">Why inverse distances?</a></li>
+<li><a class="reference internal" href="#pair-type-specific-length-scales">Pair-type-specific length scales</a></li>
+<li><a class="reference internal" href="#jacobian-computation">Jacobian computation</a></li>
+</ul>
+</li>
+<li><a class="reference internal" href="#cartesianse">CartesianSE</a></li>
+<li><a class="reference internal" href="#kernel-blocks">Kernel blocks</a></li>
+<li><a class="reference internal" href="#hyperparameter-gradients">Hyperparameter gradients</a></li>
+<li><a class="reference internal" href="#data-dependent-initialization">Data-dependent initialization</a></li>
+<li><a class="reference internal" href="#rff-feature-modes">RFF feature modes</a></li>
+</ul>
+</div><a class="js-repo-stats repo-stats flex items-center" href="https://github.com/lode-org/ChemGP"
+  data-type="github" data-user="lode-org" data-repo="ChemGP">
+  <span class="w-8 flex items-center justify-around shrink-0 text-3xl">
+    <iconify-icon icon="simple-icons:github"></iconify-icon>
+  </span>
+  <span class="flex-grow px-2 break-all">
+    
+    
+      <span>lode-org/ChemGP</span>
+    
+    <span class="flex text-sm repo-stats-count">
+      <span class="flex items-center pr-3">
+        <iconify-icon icon="lucide:star"></iconify-icon>
+        <strong class="js-repo-stars ml-1">0</strong>
+      </span>
+      <span class="flex items-center">
+        <iconify-icon icon="lucide:git-fork"></iconify-icon>
+        <strong class="js-repo-forks ml-1">0</strong>
+      </span>
+    </span>
+  </span>
+</a><div class="edit-this-page">
+  <a href="https://github.com/lode-org/ChemGP/blob/main/docs/source/reference/kernel_design.rst">Edit this page</a>
+</div></div>
+  </aside>
+  <div class="rside-overlay js-menu" role="button" aria-label="Close Table of Contents" aria-controls="rside" aria-expanded="false"></div>
+  <main class="sy-main w-full max-sm:max-w-full print:pt-6">
+<div class="sy-breadcrumbs" role="navigation">
+  <div class="sy-breadcrumbs-inner flex items-center">
+    <div class="md:hidden mr-3">
+      <button class="js-menu" aria-label="Menu" type="button" aria-controls="lside" aria-expanded="false">
+        <i class="i-lucide menu"></i>
+      </button>
+    </div>
+    <ol class="flex-1" itemscope itemtype="https://schema.org/BreadcrumbList"><li itemprop="itemListElement" itemscope itemtype="https://schema.org/ListItem">
+        <a itemprop="item" href="../index.html"><span itemprop="name">ChemGP</span></a>
+        <span>/</span>
+        <meta itemprop="position" content="1" />
+      </li><li itemprop="itemListElement" itemscope itemtype="https://schema.org/ListItem">
+        <strong itemprop="name">Kernel Design</strong>
+        <meta itemprop="position" content="2" />
+      </li></ol>
+    <div class="xl:hidden ml-1">
+      <button class="js-menu" aria-label="Show table of contents" type="button" aria-controls="rside"
+        aria-expanded="false">
+        <i class="i-lucide outdent"></i>
+      </button>
+    </div>
+  </div>
+</div><div class="flex flex-col break-words justify-between">
+      <div class="relative min-w-0 max-w-6xl px-6 pb-6 pt-8 xl:px-12">
+  <div class="copy-page-wrapper relative pb-4 lg:absolute lg:top-8 lg:right-6 xl:right-12">
+  <div id="copy-page-trigger">
+    <button
+      type="button"
+      class="js-copy px-3 py-1 inline-flex items-center gap-1"
+      data-url="chemgp.rgoswami.me/_sources/reference/kernel_design.rst.txt"
+    >
+      <i class="i-lucide" data-icon="copy"></i>
+      <span>Copy page</span>
+    </button>
+    <button class="js-menu px-2 py-1" type="button" aria-label="More actions"
+      aria-haspopup="menu" aria-expanded="false" aria-controls="copy-page-content">
+      <i class="i-lucide chevron-down"></i>
+    </button>
+  </div>
+  <div id="copy-page-content" role="menu" aria-orientation="vertical" aria-hidden="true">
+    <div role="presentation">
+      <div class="flex flex-col" role="group">
+        <button class="js-copy" type="button" role="menuitem"
+          data-url="chemgp.rgoswami.me/_sources/reference/kernel_design.rst.txt">
+          <span class="iconify-icon">
+            <i class="i-lucide" data-icon="copy"></i>
+          </span>
+          <span>Copy page</span>
+        </button>
+        <a role="menuitem" href="chemgp.rgoswami.me/_sources/reference/kernel_design.rst.txt" target="_blank" rel="nofollow"><iconify-icon icon="bi:code-slash"></iconify-icon>
+            <span>View Source</span></a><a role="menuitem" href="https://chatgpt.com/?hints=search&q=Read%20chemgp.rgoswami.me/_sources/reference/kernel_design.rst.txt%20so%20I%20can%20ask%20questions%20about%20it." target="_blank" rel="nofollow">
+          <iconify-icon icon="bi:openai"></iconify-icon>
+          <span>Open in ChatGPT</span>
+        </a><a role="menuitem" href="https://claude.ai/new?q=Read%20chemgp.rgoswami.me/_sources/reference/kernel_design.rst.txt%20so%20I%20can%20ask%20questions%20about%20it." target="_blank" rel="nofollow">
+          <iconify-icon icon="bi:claude"></iconify-icon>
+          <span>Open in Claude</span>
+        </a></div>
+    </div>
+  </div>
+</div><article class="yue dark-code" role="main">
+          <section id="kernel-design">
+<h1>Kernel Design<a class="headerlink" href="#kernel-design" title="Link to this heading">¶</a></h1>
+<section id="the-kernel-enum">
+<h2>The Kernel Enum<a class="headerlink" href="#the-kernel-enum" title="Link to this heading">¶</a></h2>
+<p>ChemGP uses a <code class="docutils literal notranslate"><span class="pre">Kernel</span></code> enum to dispatch between two kernel types:</p>
+<div class="highlight-rust notranslate"><div class="highlight"><pre><span></span><span data-line="1"><span class="k">pub</span><span class="w"> </span><span class="k">enum</span><span class="w"> </span><span class="nc">Kernel</span><span class="w"> </span><span class="p">{</span>
+</span><span data-line="2"><span class="w">    </span><span class="n">MolInvDist</span><span class="p">(</span><span class="n">MolInvDistSE</span><span class="p">),</span>
+</span><span data-line="3"><span class="w">    </span><span class="n">Cartesian</span><span class="p">(</span><span class="n">CartesianSE</span><span class="p">),</span>
+</span><span data-line="4"><span class="p">}</span>
+</span></pre></div>
+</div>
+<p>All optimizers, training, prediction, and RFF code accept <code class="docutils literal notranslate"><span class="pre">&amp;Kernel</span></code> and dispatch
+through unified methods (<code class="docutils literal notranslate"><span class="pre">kernel_blocks</span></code>, <code class="docutils literal notranslate"><span class="pre">kernel_blocks_and_hypergrads</span></code>,
+<code class="docutils literal notranslate"><span class="pre">with_params</span></code>, etc.). This avoids trait objects and generics while supporting
+both molecular and non-molecular surfaces with zero runtime overhead.</p>
+</section>
+<section id="choosing-a-kernel">
+<h2>Choosing a kernel<a class="headerlink" href="#choosing-a-kernel" title="Link to this heading">¶</a></h2>
+<div class="table-wrapper docutils container">
+<table class="docutils align-default">
+<thead>
+<tr class="row-odd"><th class="head"><p>System</p></th>
+<th class="head"><p>Kernel</p></th>
+<th class="head"><p>Why</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p>Molecules (any size)</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">MolInvDistSE</span></code></p></td>
+<td><p>Rotational/translational invariance</p></td>
+</tr>
+<tr class="row-odd"><td><p>2D test surfaces</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">CartesianSE</span></code></p></td>
+<td><p>Coordinates are the natural input</p></td>
+</tr>
+<tr class="row-even"><td><p>Rigid-body systems</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">MolInvDistSE</span></code></p></td>
+<td><p>Invariance still matters</p></td>
+</tr>
+<tr class="row-odd"><td><p>Model potentials (LJ, Morse)</p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">MolInvDistSE</span></code></p></td>
+<td><p>Invariant features match the physics</p></td>
+</tr>
+</tbody>
+</table>
+</div>
+<p>The decision is simple: if the system has atoms, use <code class="docutils literal notranslate"><span class="pre">MolInvDistSE</span></code>. If it is a
+mathematical surface parameterized by coordinates, use <code class="docutils literal notranslate"><span class="pre">CartesianSE</span></code>.</p>
+</section>
+<section id="molinvdistse">
+<h2>MolInvDistSE<a class="headerlink" href="#molinvdistse" title="Link to this heading">¶</a></h2>
+<section id="why-inverse-distances">
+<h3>Why inverse distances?<a class="headerlink" href="#why-inverse-distances" title="Link to this heading">¶</a></h3>
+<p>Raw Cartesian coordinates break under rotation and translation: rotating a
+molecule changes all coordinates but not the energy. A kernel on Cartesian
+coordinates must learn this invariance from data, wasting training points on
+symmetry the physics guarantees.</p>
+<p>Inverse interatomic distances are invariant by construction:</p>
+<div class="math-wrapper docutils container">
+<div class="math notranslate nohighlight">
+\[f_{ij}(\mathbf{x}) = \frac{1}{\|\mathbf{x}_i - \mathbf{x}_j\|}\]</div>
+</div>
+<p><em>Why inverse</em> (not plain distances): inverse distances emphasize short-range
+interactions (where <span class="math notranslate nohighlight">\(1/r\)</span> changes rapidly) and compress long-range interactions
+(where <span class="math notranslate nohighlight">\(1/r\)</span> is small and changes slowly). This matches the physics: bond
+stretching produces large energy changes, while distant atom pairs contribute
+weakly.</p>
+</section>
+<section id="pair-type-specific-length-scales">
+<h3>Pair-type-specific length scales<a class="headerlink" href="#pair-type-specific-length-scales" title="Link to this heading">¶</a></h3>
+<p>The kernel:</p>
+<div class="math-wrapper docutils container">
+<div class="math notranslate nohighlight">
+\[k(\mathbf{x}, \mathbf{y}) = \sigma^2 \exp\!\left(-\sum_p \theta_p^2 \|\mathbf{f}_p(\mathbf{x}) - \mathbf{f}_p(\mathbf{y})\|^2\right)\]</div>
+</div>
+<p>has a separate length scale <span class="math notranslate nohighlight">\(\theta_p\)</span> for each pair type (H-H, H-C, C-C, etc.).
+<em>Why</em>: different bond types have different stiffness. A C-C bond stretch of 0.01
+A changes the energy significantly; a van der Waals contact between two atoms 5
+A apart barely matters. Per-pair length scales let the kernel capture these
+differences.</p>
+<p>The <code class="docutils literal notranslate"><span class="pre">build_pair_scheme</span></code> function constructs pair types from atomic numbers and
+prunes types with no representatives (e.g., a single H atom has no H-H pair).</p>
+</section>
+<section id="jacobian-computation">
+<h3>Jacobian computation<a class="headerlink" href="#jacobian-computation" title="Link to this heading">¶</a></h3>
+<p>The kernel blocks (<span class="math notranslate nohighlight">\(k_{ef}\)</span>, <span class="math notranslate nohighlight">\(k_{fe}\)</span>, <span class="math notranslate nohighlight">\(k_{ff}\)</span>) require the Jacobian <span class="math notranslate nohighlight">\(\partial \mathbf{f}/\partial \mathbf{x}\)</span> of the feature
+transformation. For inverse distances, this is:</p>
+<div class="math-wrapper docutils container">
+<div class="math notranslate nohighlight">
+\[\frac{\partial (1/r_{ij})}{\partial x_k} = -\frac{(x_i - x_j)_k}{r_{ij}^3} \quad \text{(for atom } i \text{ or } j\text{)}\]</div>
+</div>
+<p>This Jacobian is computed analytically in <code class="docutils literal notranslate"><span class="pre">invdist.rs</span></code>. The chain rule through
+the Jacobian produces the energy-gradient cross-covariance (<span class="math notranslate nohighlight">\(k_{ef}\)</span>) and
+gradient-gradient covariance (<span class="math notranslate nohighlight">\(k_{ff}\)</span>) blocks.</p>
+</section>
+</section>
+<section id="cartesianse">
+<h2>CartesianSE<a class="headerlink" href="#cartesianse" title="Link to this heading">¶</a></h2>
+<p>The <code class="docutils literal notranslate"><span class="pre">CartesianSE</span></code> kernel operates directly on coordinates:</p>
+<div class="math-wrapper docutils container">
+<div class="math notranslate nohighlight">
+\[k(\mathbf{x}, \mathbf{y}) = \sigma^2 \exp\!\left(-\theta^2 \|\mathbf{x} - \mathbf{y}\|^2\right)\]</div>
+</div>
+<p>Two hyperparameters: signal variance <span class="math notranslate nohighlight">\(\sigma^2\)</span> and inverse length scale <span class="math notranslate nohighlight">\(\theta\)</span>.</p>
+<p>Since features = coordinates and Jacobian = identity, the kernel blocks simplify:</p>
+<ul class="simple">
+<li><p><span class="math notranslate nohighlight">\(k_{ee} = \sigma^2 \exp(-\theta^2 d^2)\)</span></p></li>
+<li><p><span class="math notranslate nohighlight">\(k_{ef}[d] = 2\theta^2 r_d \, k_{ee}\)</span></p></li>
+<li><p><span class="math notranslate nohighlight">\(k_{fe}[d] = -k_{ef}[d]\)</span></p></li>
+<li><p><span class="math notranslate nohighlight">\(k_{ff}[d_1, d_2] = 2\theta^2 k_{ee} (\delta_{d_1 d_2} - 2\theta^2 r_{d_1} r_{d_2})\)</span></p></li>
+</ul>
+<p>where <span class="math notranslate nohighlight">\(r_d = x_d - y_d\)</span> and <span class="math notranslate nohighlight">\(d = \|\mathbf{x} - \mathbf{y}\|\)</span>.</p>
+</section>
+<section id="kernel-blocks">
+<h2>Kernel blocks<a class="headerlink" href="#kernel-blocks" title="Link to this heading">¶</a></h2>
+<p>For two training points, the kernel computes four blocks:</p>
+<dl class="simple">
+<dt><code class="docutils literal notranslate"><span class="pre">k_ee</span></code></dt><dd><p>Energy-energy covariance (scalar). Controls how correlated the
+energies are at two points. Near points have high covariance; distant points
+have low covariance.</p>
+</dd>
+<dt><code class="docutils literal notranslate"><span class="pre">k_ef</span></code> / <code class="docutils literal notranslate"><span class="pre">k_fe</span></code></dt><dd><p>Energy-gradient cross-covariance (D-vectors). Knowing the
+energy at one point constrains the gradient at a nearby point (and vice versa).
+This coupling is why joint energy+gradient observations are so powerful.</p>
+</dd>
+<dt><code class="docutils literal notranslate"><span class="pre">k_ff</span></code></dt><dd><p>Gradient-gradient covariance (D x D matrix). Correlates gradient
+components at two points. For close points, gradients are highly correlated
+(the surface is smooth). For distant points, they are independent.</p>
+</dd>
+</dl>
+<p>The full covariance matrix for <span class="math notranslate nohighlight">\(N\)</span> training points is <span class="math notranslate nohighlight">\(N(1+D) \times N(1+D)\)</span>. For LEPS
+(3 atoms, <span class="math notranslate nohighlight">\(D=9\)</span>), 30 training points give a <span class="math notranslate nohighlight">\(300 \times 300\)</span> matrix. For a protein (1000
+atoms, <span class="math notranslate nohighlight">\(D=3000\)</span>), even 10 points give a <span class="math notranslate nohighlight">\(30010 \times 30010\)</span> matrix. This scaling is why
+FPS and RFF are essential.</p>
+</section>
+<section id="hyperparameter-gradients">
+<h2>Hyperparameter gradients<a class="headerlink" href="#hyperparameter-gradients" title="Link to this heading">¶</a></h2>
+<p>SCG training requires analytical gradients of the NLL with respect to log-space
+hyperparameters. Both kernels provide <code class="docutils literal notranslate"><span class="pre">kernel_blocks_and_hypergrads</span></code> returning
+the blocks and their derivatives simultaneously.</p>
+<p>The most subtle correctness issue: for MolInvDistSE, the FF block hyperparameter
+gradient uses the PURE <span class="math notranslate nohighlight">\(\theta^2\)</span> derivative. The chain rule through kval is already
+accounted for in the outer product term. Including it again double-counts the
+contribution. This was validated against SymPy symbolic differentiation.</p>
+</section>
+<section id="data-dependent-initialization">
+<h2>Data-dependent initialization<a class="headerlink" href="#data-dependent-initialization" title="Link to this heading">¶</a></h2>
+<p><code class="docutils literal notranslate"><span class="pre">init_kernel()</span></code> dispatches to kernel-specific initialization:</p>
+<dl class="simple">
+<dt><code class="docutils literal notranslate"><span class="pre">MolInvDistSE</span></code></dt><dd><p>Computes features on the training data, estimates <span class="math notranslate nohighlight">\(\sigma\)</span> from
+the energy range, and <span class="math notranslate nohighlight">\(\theta_p\)</span> from pairwise feature distances. The GPstuff
+approach uses NORMINV<sub>075</sub>(75th percentile of a standard normal) to set the
+length scale at the median feature distance.</p>
+</dd>
+<dt><code class="docutils literal notranslate"><span class="pre">CartesianSE</span></code></dt><dd><p>Estimates <span class="math notranslate nohighlight">\(\sigma\)</span> from the energy range and <span class="math notranslate nohighlight">\(\theta\)</span> from the
+maximum pairwise coordinate distance.</p>
+</dd>
+</dl>
+<p><em>Why data-dependent</em>: poor initial hyperparameters can leave the GP in a local
+minimum of the NLL landscape. If <span class="math notranslate nohighlight">\(\theta\)</span> is too small, every point is uncorrelated
+and the GP predicts zero everywhere. If <span class="math notranslate nohighlight">\(\theta\)</span> is too large, all points are
+perfectly correlated and the GP fits a constant. Data-dependent initialization
+places <span class="math notranslate nohighlight">\(\theta\)</span> in a sensible range where the GP captures the training data’s
+spatial structure.</p>
+</section>
+<section id="rff-feature-modes">
+<h2>RFF feature modes<a class="headerlink" href="#rff-feature-modes" title="Link to this heading">¶</a></h2>
+<p>RFF approximation dispatches on kernel type via <code class="docutils literal notranslate"><span class="pre">FeatureMode</span></code>:</p>
+<dl class="simple">
+<dt><code class="docutils literal notranslate"><span class="pre">InverseDistances</span></code></dt><dd><p>Computes inverse distance features + finite difference
+Jacobian (for MolInvDistSE). <em>Why finite difference</em>: the RFF feature map
+involves sin/cos of random projections of the features, and its Jacobian with
+respect to Cartesian coordinates is expensive to derive analytically. Finite
+differences (step size 1e-5) are cheaper and sufficiently accurate.</p>
+</dd>
+<dt><code class="docutils literal notranslate"><span class="pre">Cartesian</span></code></dt><dd><p>Uses raw coordinates with identity Jacobian (for CartesianSE).
+No finite differences needed.</p>
+</dd>
+</dl>
+<p>RFF replaces the <span class="math notranslate nohighlight">\(\mathcal{O}(N^3)\)</span> exact GP with an <span class="math notranslate nohighlight">\(\mathcal{O}(D_{\text{rff}}^3)\)</span> linear model. The frequency
+matrix is sampled from a normal distribution scaled by the kernel length scales,
+seeded for reproducibility (<code class="docutils literal notranslate"><span class="pre">StdRng::seed_from_u64(seed)</span></code>).</p>
+</section>
+</section>
+
+        </article><button class="back-to-top" type="button">
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
+    <path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8v12z"></path>
+  </svg>
+  <span>Back to top</span>
+</button><div class="navigation flex print:hidden"><div class="navigation-prev">
+    <a href="architecture.html">
+      <i class="i-lucide chevron-left"></i>
+      <div class="page-info">
+        <span>Previous</span><div class="title">Architecture</div></div>
+    </a>
+  </div><div class="navigation-next">
+    <a href="trust_regions.html">
+      <div class="page-info">
+        <span>Next</span>
+        <div class="title">Trust Regions</div>
+      </div>
+      <i class="i-lucide chevron-right"></i>
+    </a>
+  </div></div></div>
+    </div>
+  </main>
+</div>
+<footer class="sy-foot">
+  <div class="sy-foot-inner sy-container mx-auto">
+    <div class="sy-foot-reserved md:flex justify-between items-center">
+      <div class="sy-foot-copyright"><p>2026, Rohit Goswami</p>
+  
+  <p>
+    Made with
+    
+    <a href="https://www.sphinx-doc.org/">Sphinx</a> and
+    
+    <a href="https://shibuya.lepture.com">Shibuya theme</a>.
+  </p>
+</div> <div class="sy-foot-socials">
+<a href="https://github.com/lode-org/ChemGP" aria-label="GitHub">
+  <iconify-icon icon="simple-icons:github"></iconify-icon>
+</a></div>
+    </div>
+    <div class="sy-foot-reserved" style="text-align: center; font-size: 0.85em; padding-top: 0.5em;">
+      Analytics by <a href="https://plausible.io" rel="noopener">Plausible</a>
+      provided by <a href="https://turtletech.is" rel="noopener">TurtleTech ehf</a>
+      | <a href="https://rgoswami.me" rel="noopener">Rohit Goswami</a>
+    </div>
+  </div>
+</footer>
+      <script src="../_static/documentation_options.js?v=5929fcd5"></script>
+      <script src="../_static/doctools.js?v=fd6eb6e6"></script>
+      <script src="../_static/sphinx_highlight.js?v=6ffebe34"></script>
+      <script src="../_static/shibuya.js?v=cac61aee"></script>
+      <script defer="defer" src="https://cdn.jsdelivr.net/npm/mathjax@4/tex-mml-chtml.js"></script></body>
+</html>

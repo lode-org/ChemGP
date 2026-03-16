@@ -1,0 +1,161 @@
+
+
+Dimer Method
+------------
+
+Why saddle points?
+~~~~~~~~~~~~~~~~~~
+
+A first-order saddle point on the PES is a transition state: the geometry where
+the system passes from one local minimum to another. The energy at the saddle
+determines the reaction barrier, which controls the rate. Finding transition
+states is therefore central to understanding reaction mechanisms and computing
+rate constants.
+
+Unlike minima (where all eigenvalues of the Hessian are positive), a saddle has
+exactly one negative eigenvalue. The corresponding eigenvector points along the
+reaction coordinate. The dimer method exploits this by following the lowest
+curvature mode uphill while relaxing in all other directions.
+
+How the dimer works
+~~~~~~~~~~~~~~~~~~~
+
+A "dimer" is a pair of points separated by a small distance (``dimer_sep``) along
+an orientation vector. The dimer does two things at each step:
+
+Rotation (finding the lowest mode)
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+The curvature along the dimer axis is estimated from the gradient difference
+between the two images:
+
+
+
+.. math::
+
+    C \approx \frac{(\mathbf{G}_{1} - \mathbf{G}_{0}) \cdot \hat{\mathbf{n}}}{\Delta R}
+
+where :math:`\mathbf{G}_{0}` and :math:`\mathbf{G}_{1}` are the gradients at the two dimer images,
+:math:`\hat{\mathbf{n}}` is the dimer orientation, and :math:`\Delta R` is the dimer separation.
+Rotation adjusts the orientation to minimize this curvature, aligning the dimer
+with the softest mode. This is equivalent to finding the lowest eigenvector of
+the Hessian, but without computing the full Hessian.
+
+Translation (walking to the saddle)
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+The translational force drives the midpoint toward the saddle. The force
+construction depends on the curvature sign:
+
+- **Negative curvature** (already straddling the saddle): the force along the
+  dimer orientation is reversed. The midpoint walks uphill along the reaction
+  coordinate while minimizing perpendicular to it.
+
+- **Positive curvature** (not yet at the saddle): the midpoint steps along the
+  orientation toward the region of negative curvature.
+
+For small molecular systems, both forces and orientations are projected onto the
+non-translational subspace (removing 6 COM + rotation degrees of freedom in 3D).
+
+The dimer method builds on the GP machinery introduced in earlier tutorials:
+the kernel (`T3 <molecular_kernels.rst>`_), hyperparameter training (`T4 <hyperparameter_training.rst>`_), and FPS/RFF
+scalability (`T5 <scalability.rst>`_). The GP-Dimer and OTGPD variants use the same
+``PredModel`` dispatch and trust region clipping as GP minimization.
+
+Three variants
+~~~~~~~~~~~~~~
+
+Standard Dimer
+^^^^^^^^^^^^^^
+
+Evaluates the oracle at every rotation and translation step. Reliable but
+expensive: ~45 oracle calls on LEPS.
+
+GP-Dimer
+^^^^^^^^
+
+The outer loop follows the same rotation + translation, but oracle calls happen
+only at outer iterations:
+
+1. Train GP on all oracle data (FPS subset for hyperparameters, ``PredModel`` for
+   predictions on full data).
+
+2. Run rotation and translation on the GP surrogate.
+
+3. Oracle call at the proposed midpoint position.
+
+4. Add new data, retrain, repeat.
+
+This replaces dozens of per-step oracle calls with GP predictions. On LEPS: ~9
+oracle calls.
+
+OTGPD
+^^^^^
+
+Adds an adaptive threshold: the oracle is called only when the GP-predicted
+force exceeds a threshold that tightens as the optimizer approaches convergence.
+See `OTGPD <otgpd.rst>`_ for details. On LEPS: ~13 oracle calls.
+
+GP rotation considerations
+~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+With small ``dimer_sep`` (e.g., 0.005), the kernel correlation between the
+midpoint and the dimer image approaches 1.0 (~0.99985 for MolInvDistSE). The GP
+predicts nearly identical gradients at both points, making the finite-difference
+curvature estimate unreliable (the sign can flip from numerical noise).
+
+*When to skip rotation*: if the initial orientation comes from a known source
+(NEB climbing image tangent, Hessian eigenmode analysis), rotation is
+unnecessary. Set ``max_rot_iter = 0``. This saves oracle calls and avoids the
+correlation issue entirely.
+
+*When rotation is needed*: if the initial orientation is a random guess, rotation
+is essential. Use larger ``dimer_sep`` (0.01-0.1) where the GP can resolve the
+gradient difference, or use the oracle directly for rotation steps.
+
+LEPS example
+~~~~~~~~~~~~
+
+.. code:: bash
+
+    cargo run --release --example leps_dimer
+
+Starting from 0.05 A displaced from the known LEPS saddle along the negative
+eigenmode (from Hessian), GP-Dimer converges in ~9 oracle calls and OTGPD in
+~13. The standard dimer needs ~45 calls.
+
+.. figure:: /_static/figures/leps_dimer_convergence.png
+   :width: 70%
+
+   Translation force vs oracle calls for standard dimer, GP-Dimer, and OTGPD
+   on the LEPS surface. GP-Dimer converges fastest because the GP learns
+   the curvature near the saddle quickly. OTGPD is slightly slower due to
+   the adaptive threshold mechanism but more robust for difficult surfaces.
+
+The starting configuration avoids the rotation issue by providing the correct
+dimer orientation from the outset (``max_rot_iter = 0``).
+
+Configuration Reference
+~~~~~~~~~~~~~~~~~~~~~~~
+
+.. table::
+
+    +----------------------+---------------+------------------------------------------+
+    | Parameter            |       Default | Description                              |
+    +======================+===============+==========================================+
+    | ``conv_tol``         |           0.1 | Force norm convergence threshold         |
+    +----------------------+---------------+------------------------------------------+
+    | ``dimer_sep``        |         0.005 | Half-length of the dimer                 |
+    +----------------------+---------------+------------------------------------------+
+    | ``max_iter``         |           200 | Maximum outer iterations                 |
+    +----------------------+---------------+------------------------------------------+
+    | ``max_rot_iter``     |             0 | Rotation steps per outer iter (0 = skip) |
+    +----------------------+---------------+------------------------------------------+
+    | ``max_oracle_calls`` | 0 (unlimited) | Oracle call budget                       |
+    +----------------------+---------------+------------------------------------------+
+    | ``rff_features``     |  0 (exact GP) | RFF feature count for PredModel          |
+    +----------------------+---------------+------------------------------------------+
+    | ``fps_history``      |   0 (use all) | FPS subset size                          |
+    +----------------------+---------------+------------------------------------------+
+    | ``trust_radius``     |           0.1 | Trust region radius                      |
+    +----------------------+---------------+------------------------------------------+

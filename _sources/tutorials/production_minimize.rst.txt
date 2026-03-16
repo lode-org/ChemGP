@@ -1,0 +1,122 @@
+
+
+Production Minimization
+-----------------------
+
+This tutorial demonstrates GP-guided minimization on a real potential
+energy surface via an RPC oracle (PET-MAD universal ML potential).
+
+From analytical to real PES
+~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+The preceding tutorials used analytical surfaces (Muller-Brown, LEPS) where
+the oracle is a function call. For real chemistry, the oracle is a
+computational engine: DFT, coupled cluster, or an ML potential.
+
+ChemGP connects to external codes through two oracle interfaces:
+
+``RgpotOracle``
+    links directly to a potential via the rgpot C API (in-process,
+    lowest latency)
+
+``RpcOracle``
+    connects to an eOn serve instance via Cap'n Proto RPC (network,
+    any backend that eOn supports)
+
+Both implement the same interface: input Cartesian coordinates, output
+(energy, gradient).
+
+PET-MAD via RPC
+~~~~~~~~~~~~~~~
+
+PET-MAD is a universal ML potential trained on the Alexandria dataset. It
+provides DFT-quality energies and forces at a fraction of the cost, making
+it useful as a production oracle for GP optimization.
+
+The RPC environment requires eOn (>=2.11.1) and ASE. Install and verify:
+
+.. code:: bash
+
+    pixi install -e rpc          # install eOn, ASE, Rust toolchain
+    pixi run -e rpc serve-petmad # start PET-MAD server on localhost:12345
+
+The server runs in the foreground. Open a second terminal for the examples.
+Verify connectivity with the smoke test:
+
+.. code:: bash
+
+    cargo run --release --features rgpot --example rpc_smoke_test
+
+The PET-MAD model weights are downloaded on first use (~500 MB) and cached
+by metatensor. Subsequent launches are near-instant.
+
+To change the host or port, set ``RGPOT_HOST`` and ``RGPOT_PORT`` environment
+variables before running examples.
+
+Running GP minimization
+~~~~~~~~~~~~~~~~~~~~~~~
+
+.. code:: bash
+
+    cargo run --release --features rgpot --example petmad_minimize
+
+This loads a system100 geometry (pre-minimized endpoints from the nebviz
+reference pipeline), then runs GP-guided minimization with ``MolInvDistSE``
+kernel and ``const_sigma2 = 1.0``.
+
+Key configuration for molecular systems:
+
+.. code:: rust
+
+    let mut cfg = MinimizationConfig::default();
+    cfg.conv_tol = 0.01;           // eV/A force convergence
+    cfg.trust_metric = TrustMetric::Emd;  // EMD for molecules
+    cfg.atom_types = atomic_numbers.clone();
+    cfg.fps_history = 20;
+    cfg.const_sigma2 = 1.0;        // constant kernel for molecules
+
+.. figure:: /_static/figures/petmad_minimize_convergence.png
+   :width: 80%
+   :align: center
+
+   Convergence on system100 (C\ :sub:`2`\ H\ :sub:`4`\ NO, 9 atoms).
+   GP minimization converges in 14 oracle calls vs 32 for classical L-BFGS
+   at a 0.01 eV/A per-atom force threshold.
+
+Differences from 2D examples
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+.. table::
+
+    +-----------------------+--------------+----------------------+
+    | Aspect                | 2D surfaces  | Real molecules       |
+    +=======================+==============+======================+
+    | Kernel                | CartesianSE  | MolInvDistSE         |
+    +-----------------------+--------------+----------------------+
+    | Trust                 | Euclidean    | EMD                  |
+    +-----------------------+--------------+----------------------+
+    | const\ :sub:`sigma2`\ | 0.0          | 1.0                  |
+    +-----------------------+--------------+----------------------+
+    | Convergence           | gradient L2  | per-atom max force   |
+    +-----------------------+--------------+----------------------+
+    | Oracle cost           | microseconds | milliseconds-seconds |
+    +-----------------------+--------------+----------------------+
+
+The trust metric matters: EMD (Earth Mover's Distance) measures structural
+similarity using interatomic distance distributions, while Euclidean
+distance can be misleading for molecules (a rigid rotation changes
+Euclidean distance but not the structure).
+
+When to use GP minimization
+~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+GP-guided minimization is most valuable when:
+
+- The oracle is expensive (DFT: minutes per call, ML potentials: seconds)
+
+- The system is near a minimum (small corrections needed)
+
+- Gradients are available (mandatory for the GP energy+gradient model)
+
+For cheap oracles (empirical force fields < 1ms per call), direct L-BFGS
+is faster because GP training overhead exceeds the oracle savings.

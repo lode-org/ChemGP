@@ -1,0 +1,16 @@
+
+
+API Reference
+-------------
+
+Rust API
+~~~~~~~~
+
+Generate and view the Rust documentation:
+
+.. code:: bash
+
+    cargo doc --open -p chemgp-core
+
+The Rust API is the canonical reference. All public types, functions, and
+modules are documented with doc comments in the source.

@@ -1,0 +1,406 @@
+<!DOCTYPE html>
+<html lang="en" data-accent-color="teal" data-content_root="../">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"><title>OTGPD - ChemGP documentation</title><link rel="index" title="Index" href="../genindex.html" /><link rel="search" title="Search" href="../search.html" /><link rel="next" title="Constant Kernel" href="constant_kernel.html" /><link rel="prev" title="Nudged Elastic Band" href="neb_method.html" />
+      <link rel="canonical" href="chemgp.rgoswami.me/tutorials/otgpd.html" /><script>
+    function setColorMode(t){let e=document.documentElement;e.setAttribute("data-color-mode",t);let a=window.matchMedia&&window.matchMedia("(prefers-color-scheme: dark)").matches,s=t;"auto"===t&&(s=a?"dark":"light"),"light"===s?(e.classList.remove("dark"),e.classList.add("light")):(e.classList.remove("light"),e.classList.add("dark"))}
+    setColorMode(localStorage._theme||"auto");
+  </script><link rel="stylesheet" type="text/css" href="../_static/pygments.css?v=e1a1ceaf" />
+    <link rel="stylesheet" type="text/css" href="../_static/shibuya.css?v=a318c5d4" />
+    <link media="print" rel="stylesheet" type="text/css" href="../_static/print.css?v=20ff2c19" />
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+:root {
+  --sy-f-text: "Inter", var(--sy-f-sys), var(--sy-f-cjk), sans-serif;
+  --sy-f-heading: "Inter", var(--sy-f-sys), var(--sy-f-cjk), sans-serif;
+}
+</style>
+    <meta property="og:type" content="website"/>
+  <meta property="og:url" content="chemgp.rgoswami.me/tutorials/otgpd.html"/>
+  <meta property="og:title" content="OTGPD"/>
+    <meta name="twitter:card" content="summary"/>
+  <!-- Plausible injection -->
+<script
+  defer
+  data-domain="chemgp.rgoswami.me"
+  src="https://analytics.turtletech.us/js/script.hash.outbound-links.js"
+></script>
+<script>
+  window.plausible =
+    window.plausible ||
+    function () {
+      (window.plausible.q = window.plausible.q || []).push(arguments);
+    };
+</script></head>
+<body><div class="sy-head">
+  <div class="sy-head-blur"></div>
+  <div class="sy-head-inner sy-container mx-auto">
+    <a class="sy-head-brand" href="../index.html">
+      
+      
+      <strong>ChemGP</strong>
+    </a>
+    <div class="sy-head-nav" id="head-nav">
+      <nav class="sy-head-links"><ul>
+      <li class="link"><button class="js-menu" type="button" id="nav-trigger-1" aria-controls="nav-children-1">
+            <span>Ecosystem</span>
+            <i class="i-lucide chevron-down"></i>
+          </button>
+        <ul id="nav-children-1" aria-labelledby="nav-trigger-1"><li><a href="https://rgpycrumbs.rgoswami.me">
+                <span>rgpycrumbs</span>
+                <small>Analytical and visualization suite for chemical physics</small>
+              </a></li><li><a href="https://eondocs.org">
+                <span>eOn</span>
+                <small>Long-timescale molecular dynamics engine</small>
+              </a></li><li><a href="https://github.com/OmniPotentRPC/rgpot">
+                <span>rgpot</span>
+                <small>RPC potential evaluation for GP-accelerated optimization</small>
+              </a></li></ul>
+      </li><li class="link">
+          <a href="https://crates.io/crates/chemgp-core">
+            <span>crates.io</span><i class="i-lucide external-link"></i></a>
+        </li></ul></nav>
+      <div class="sy-head-extra flex items-center print:hidden"><form class="searchbox flex items-center" action="../search.html" method="get">
+  <input type="text" name="q" placeholder="Search" />
+  <kbd>/</kbd>
+</form><div class="sy-head-socials">
+  <a href="https://github.com/lode-org/ChemGP" aria-label="GitHub">
+    <iconify-icon icon="simple-icons:github"></iconify-icon>
+  </a></div></div>
+    </div>
+    <div class="sy-head-actions flex items-center shrink-0 print:hidden"><button class="js-theme theme-switch flex items-center"
+data-aria-auto="Switch to light color mode"
+data-aria-light="Switch to dark color mode"
+data-aria-dark="Switch to auto color mode">
+<i class="i-lucide theme-icon"></i>
+</button><button class="md:hidden flex items-center js-menu" aria-label="Menu" type="button" aria-controls="head-nav" aria-expanded="false">
+        <div class="hamburger">
+          <span class="hamburger_1"></span>
+          <span class="hamburger_2"></span>
+          <span class="hamburger_3"></span>
+        </div>
+      </button>
+    </div>
+  </div>
+</div>
+<div class="sy-page sy-container flex mx-auto">
+  <aside id="lside" class="sy-lside md:w-72 md:shrink-0 print:hidden">
+    <div class="sy-lside-inner md:sticky">
+      <div class="sy-scrollbar p-6">
+        <div class="globaltoc" data-expand-depth="1"><p class="caption" role="heading" aria-level="3"><span class="caption-text">Getting Started</span></p>
+<ul>
+<li class="toctree-l1 _expand"><a class="reference internal" href="../quickstart.html">Quickstart</a></li>
+<li class="toctree-l1 _expand"><a class="reference internal" href="../installation.html">Installation</a></li>
+</ul>
+<p class="caption" role="heading" aria-level="3"><span class="caption-text">Tutorials</span></p>
+<ul class="current">
+<li class="toctree-l1 _expand"><a class="reference internal" href="gp_basics.html">GP Basics</a></li>
+<li class="toctree-l1 _expand"><a class="reference internal" href="minimization.html">Minimization</a></li>
+<li class="toctree-l1 _expand"><a class="reference internal" href="molecular_kernels.html">Molecular Kernels</a></li>
+<li class="toctree-l1 _expand"><a class="reference internal" href="hyperparameter_training.html">Hyperparameter Training</a></li>
+<li class="toctree-l1 _expand"><a class="reference internal" href="scalability.html">Scalability: FPS + RFF</a></li>
+<li class="toctree-l1 _expand"><a class="reference internal" href="dimer_method.html">Dimer Method</a></li>
+<li class="toctree-l1 _expand"><a class="reference internal" href="neb_method.html">Nudged Elastic Band</a></li>
+<li class="toctree-l1 current"><a class="current reference internal" href="#">OTGPD</a></li>
+<li class="toctree-l1 _expand"><a class="reference internal" href="constant_kernel.html">Constant Kernel</a></li>
+<li class="toctree-l1 _expand"><a class="reference internal" href="production_minimize.html">Production Minimization</a></li>
+<li class="toctree-l1 _expand"><a class="reference internal" href="production_saddle.html">Production Saddle Search</a></li>
+<li class="toctree-l1 _expand"><a class="reference internal" href="production_neb.html">Production NEB</a></li>
+</ul>
+<p class="caption" role="heading" aria-level="3"><span class="caption-text">Reference</span></p>
+<ul>
+<li class="toctree-l1 _expand"><a class="reference internal" href="../reference/architecture.html">Architecture</a></li>
+<li class="toctree-l1 _expand"><a class="reference internal" href="../reference/kernel_design.html">Kernel Design</a></li>
+<li class="toctree-l1 _expand"><a class="reference internal" href="../reference/trust_regions.html">Trust Regions</a></li>
+<li class="toctree-l1 _expand"><a class="reference internal" href="../api/index.html">API Reference</a></li>
+</ul>
+        </div>
+      </div>
+    </div>
+  </aside>
+  <div class="lside-overlay js-menu" role="button" aria-label="Close left sidebar" aria-controls="lside" aria-expanded="false"></div>
+  <aside id="rside" class="sy-rside pb-3 w-64 shrink-0 order-last">
+    <button class="rside-close js-menu xl:hidden" aria-label="Close Table of Contents" type="button" aria-controls="rside" aria-expanded="false">
+      <i class="i-lucide close"></i>
+    </button>
+    <div class="sy-scrollbar sy-rside-inner px-6 xl:top-16 xl:sticky xl:pl-0 pt-6 pb-4"><div class="localtoc"><h3>On this page</h3><ul>
+<li><a class="reference internal" href="#what-otgpd-does">What OTGPD does</a></li>
+<li><a class="reference internal" href="#adaptive-threshold">Adaptive threshold</a></li>
+<li><a class="reference internal" href="#hod-training-data-management">HOD training data management</a></li>
+<li><a class="reference internal" href="#initial-rotation">Initial rotation</a></li>
+<li><a class="reference internal" href="#relationship-to-gp-dimer">Relationship to GP-Dimer</a></li>
+<li><a class="reference internal" href="#when-to-use-otgpd-vs-gp-dimer">When to use OTGPD vs GP-Dimer</a></li>
+<li><a class="reference internal" href="#configuration-reference">Configuration Reference</a></li>
+</ul>
+</div><a class="js-repo-stats repo-stats flex items-center" href="https://github.com/lode-org/ChemGP"
+  data-type="github" data-user="lode-org" data-repo="ChemGP">
+  <span class="w-8 flex items-center justify-around shrink-0 text-3xl">
+    <iconify-icon icon="simple-icons:github"></iconify-icon>
+  </span>
+  <span class="flex-grow px-2 break-all">
+    
+    
+      <span>lode-org/ChemGP</span>
+    
+    <span class="flex text-sm repo-stats-count">
+      <span class="flex items-center pr-3">
+        <iconify-icon icon="lucide:star"></iconify-icon>
+        <strong class="js-repo-stars ml-1">0</strong>
+      </span>
+      <span class="flex items-center">
+        <iconify-icon icon="lucide:git-fork"></iconify-icon>
+        <strong class="js-repo-forks ml-1">0</strong>
+      </span>
+    </span>
+  </span>
+</a><div class="edit-this-page">
+  <a href="https://github.com/lode-org/ChemGP/blob/main/docs/source/tutorials/otgpd.rst">Edit this page</a>
+</div></div>
+  </aside>
+  <div class="rside-overlay js-menu" role="button" aria-label="Close Table of Contents" aria-controls="rside" aria-expanded="false"></div>
+  <main class="sy-main w-full max-sm:max-w-full print:pt-6">
+<div class="sy-breadcrumbs" role="navigation">
+  <div class="sy-breadcrumbs-inner flex items-center">
+    <div class="md:hidden mr-3">
+      <button class="js-menu" aria-label="Menu" type="button" aria-controls="lside" aria-expanded="false">
+        <i class="i-lucide menu"></i>
+      </button>
+    </div>
+    <ol class="flex-1" itemscope itemtype="https://schema.org/BreadcrumbList"><li itemprop="itemListElement" itemscope itemtype="https://schema.org/ListItem">
+        <a itemprop="item" href="../index.html"><span itemprop="name">ChemGP</span></a>
+        <span>/</span>
+        <meta itemprop="position" content="1" />
+      </li><li itemprop="itemListElement" itemscope itemtype="https://schema.org/ListItem">
+        <strong itemprop="name">OTGPD</strong>
+        <meta itemprop="position" content="2" />
+      </li></ol>
+    <div class="xl:hidden ml-1">
+      <button class="js-menu" aria-label="Show table of contents" type="button" aria-controls="rside"
+        aria-expanded="false">
+        <i class="i-lucide outdent"></i>
+      </button>
+    </div>
+  </div>
+</div><div class="flex flex-col break-words justify-between">
+      <div class="relative min-w-0 max-w-6xl px-6 pb-6 pt-8 xl:px-12">
+  <div class="copy-page-wrapper relative pb-4 lg:absolute lg:top-8 lg:right-6 xl:right-12">
+  <div id="copy-page-trigger">
+    <button
+      type="button"
+      class="js-copy px-3 py-1 inline-flex items-center gap-1"
+      data-url="chemgp.rgoswami.me/_sources/tutorials/otgpd.rst.txt"
+    >
+      <i class="i-lucide" data-icon="copy"></i>
+      <span>Copy page</span>
+    </button>
+    <button class="js-menu px-2 py-1" type="button" aria-label="More actions"
+      aria-haspopup="menu" aria-expanded="false" aria-controls="copy-page-content">
+      <i class="i-lucide chevron-down"></i>
+    </button>
+  </div>
+  <div id="copy-page-content" role="menu" aria-orientation="vertical" aria-hidden="true">
+    <div role="presentation">
+      <div class="flex flex-col" role="group">
+        <button class="js-copy" type="button" role="menuitem"
+          data-url="chemgp.rgoswami.me/_sources/tutorials/otgpd.rst.txt">
+          <span class="iconify-icon">
+            <i class="i-lucide" data-icon="copy"></i>
+          </span>
+          <span>Copy page</span>
+        </button>
+        <a role="menuitem" href="chemgp.rgoswami.me/_sources/tutorials/otgpd.rst.txt" target="_blank" rel="nofollow"><iconify-icon icon="bi:code-slash"></iconify-icon>
+            <span>View Source</span></a><a role="menuitem" href="https://chatgpt.com/?hints=search&q=Read%20chemgp.rgoswami.me/_sources/tutorials/otgpd.rst.txt%20so%20I%20can%20ask%20questions%20about%20it." target="_blank" rel="nofollow">
+          <iconify-icon icon="bi:openai"></iconify-icon>
+          <span>Open in ChatGPT</span>
+        </a><a role="menuitem" href="https://claude.ai/new?q=Read%20chemgp.rgoswami.me/_sources/tutorials/otgpd.rst.txt%20so%20I%20can%20ask%20questions%20about%20it." target="_blank" rel="nofollow">
+          <iconify-icon icon="bi:claude"></iconify-icon>
+          <span>Open in Claude</span>
+        </a></div>
+    </div>
+  </div>
+</div><article class="yue dark-code" role="main">
+          <section id="otgpd">
+<h1>OTGPD<a class="headerlink" href="#otgpd" title="Link to this heading">¶</a></h1>
+<section id="what-otgpd-does">
+<h2>What OTGPD does<a class="headerlink" href="#what-otgpd-does" title="Link to this heading">¶</a></h2>
+<p>The Optimal Transport GP Dimer (OTGPD) is a saddle point search method that
+combines the GP-Dimer approach with an adaptive oracle-calling strategy. The key
+question it answers: <em>when should the optimizer trust the GP and when should it call the oracle?</em></p>
+<p>In the standard GP-Dimer, the oracle is called at every outer iteration
+regardless of how confident the GP is. OTGPD adds a decision threshold: if the
+GP-predicted force is small enough relative to the observed forces so far, trust
+the GP and skip the oracle call.</p>
+</section>
+<section id="adaptive-threshold">
+<h2>Adaptive threshold<a class="headerlink" href="#adaptive-threshold" title="Link to this heading">¶</a></h2>
+<p>The oracle-calling threshold adapts as the search progresses:</p>
+<div class="math-wrapper docutils container">
+<div class="math notranslate nohighlight">
+\[T_{\mathrm{GP}} = \max\!\left(\frac{\min_{k} \lVert \mathbf{F}^{\mathrm{true}}_{k} \rVert}{d},\; \frac{T_{\mathrm{dimer}}}{10}\right)\]</div>
+</div>
+<p>where <span class="math notranslate nohighlight">\(\min_{k} \lVert \mathbf{F}^{\mathrm{true}}_{k} \rVert\)</span> is the smallest
+true force observed so far, <span class="math notranslate nohighlight">\(d\)</span> is the divisor controlling how aggressive the GP
+trust is (default 5.0), <span class="math notranslate nohighlight">\(T_{\mathrm{dimer}}\)</span> is the dimer convergence tolerance,
+and the floor <span class="math notranslate nohighlight">\(T_{\mathrm{dimer}} / 10\)</span> ensures the GP is never trusted with
+tolerance tighter than 10% of the convergence criterion.</p>
+<p><em>Why this formula works</em>: early in the search, forces are large (far from the
+saddle), so <code class="docutils literal notranslate"><span class="pre">min(F_true)</span> <span class="pre">/</span> <span class="pre">divisor</span></code> is large, and the oracle is called
+frequently. As the search converges, forces decrease, <code class="docutils literal notranslate"><span class="pre">T_gp</span></code> tightens, and the
+GP must predict very small forces before being trusted. This naturally transitions
+from oracle-intensive exploration to GP-dominated refinement.</p>
+<p><em>Why the floor T:sub:`dimer`/10</em>: without a floor, as forces approach zero, <code class="docutils literal notranslate"><span class="pre">T_gp</span></code>
+would also approach zero, and the GP would never be trusted (defeating the
+purpose). The floor ensures the GP is always given a chance to skip oracle calls
+when predicted forces are within 10% of the convergence tolerance.</p>
+</section>
+<section id="hod-training-data-management">
+<h2>HOD training data management<a class="headerlink" href="#hod-training-data-management" title="Link to this heading">¶</a></h2>
+<p>OTGPD uses History-Ordered Data (HOD): training points are kept in temporal
+order, and when the dataset exceeds <code class="docutils literal notranslate"><span class="pre">fps_history</span></code>, the oldest points are pruned
+via FPS.</p>
+<p><em>Why temporal ordering</em>: in saddle point search, the optimizer follows a single
+trajectory from the starting point toward the saddle. Older points are
+geometrically distant from the current position and contribute less to local GP
+accuracy. Pruning old points keeps the training set focused on the current region.</p>
+<p>This differs from spatial FPS (used in minimization and standard GP-Dimer), which
+selects points spread across the entire training set regardless of when they were
+collected.</p>
+</section>
+<section id="initial-rotation">
+<h2>Initial rotation<a class="headerlink" href="#initial-rotation" title="Link to this heading">¶</a></h2>
+<p>OTGPD inherits the dimer’s rotation+translation structure. When a good initial
+orientation is available (from NEB climbing image tangent or Hessian eigenmode),
+rotation can be skipped entirely (<code class="docutils literal notranslate"><span class="pre">max_rot_iter</span> <span class="pre">=</span> <span class="pre">0</span></code>).</p>
+<p>This is common in practice: one first runs NEB to find the MEP, then refines the
+highest-energy image with OTGPD to get a precise transition state. The NEB path
+tangent at the climbing image provides the dimer orientation.</p>
+</section>
+<section id="relationship-to-gp-dimer">
+<h2>Relationship to GP-Dimer<a class="headerlink" href="#relationship-to-gp-dimer" title="Link to this heading">¶</a></h2>
+<p>OTGPD reduces to the standard GP-Dimer when:</p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">fps_history</span></code> is large enough that HOD pruning never activates</p></li>
+<li><p>The adaptive threshold saturates at <code class="docutils literal notranslate"><span class="pre">T_dimer</span> <span class="pre">/</span> <span class="pre">10</span></code></p></li>
+</ul>
+<p>On the LEPS surface, both methods converge in ~13 oracle calls starting from
+0.05 A displaced from the known saddle along the negative eigenmode. The
+adaptive threshold provides robustness: if the starting point is far from the
+saddle (where the GP is initially poor), OTGPD calls the oracle more frequently,
+while GP-Dimer would waste calls on poor GP predictions.</p>
+</section>
+<section id="when-to-use-otgpd-vs-gp-dimer">
+<h2>When to use OTGPD vs GP-Dimer<a class="headerlink" href="#when-to-use-otgpd-vs-gp-dimer" title="Link to this heading">¶</a></h2>
+<ul class="simple">
+<li><p><strong>Starting near the saddle</strong> (e.g., NEB refinement): both methods perform
+similarly. Use GP-Dimer for simplicity.</p></li>
+<li><p><strong>Starting far from the saddle</strong> (exploratory search): OTGPD’s adaptive
+threshold avoids wasting oracle calls on poor early GP predictions.</p></li>
+<li><p><strong>Long trajectories</strong> (many iterations): OTGPD’s HOD pruning keeps the training
+set focused, avoiding the Cholesky cost growth that affects GP-Dimer.</p></li>
+</ul>
+</section>
+<section id="configuration-reference">
+<h2>Configuration Reference<a class="headerlink" href="#configuration-reference" title="Link to this heading">¶</a></h2>
+<div class="table-wrapper docutils container">
+<table class="docutils align-default">
+<thead>
+<tr class="row-odd"><th class="head"><p>Parameter</p></th>
+<th class="head"><p>Default</p></th>
+<th class="head"><p>Description</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">conv_tol</span></code></p></td>
+<td><p>0.1</p></td>
+<td><p>Force norm convergence threshold</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">dimer_sep</span></code></p></td>
+<td><p>0.005</p></td>
+<td><p>Half-length of the dimer</p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">max_iter</span></code></p></td>
+<td><p>200</p></td>
+<td><p>Maximum outer iterations</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">max_oracle_calls</span></code></p></td>
+<td><p>0 (unlimited)</p></td>
+<td><p>Oracle call budget</p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">rff_features</span></code></p></td>
+<td><p>0 (exact GP)</p></td>
+<td><p>RFF feature count for PredModel</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">fps_history</span></code></p></td>
+<td><p>0 (use all)</p></td>
+<td><p>FPS subset size (HOD management)</p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">t_gp_divisor</span></code></p></td>
+<td><p>5.0</p></td>
+<td><p>Divisor for adaptive threshold</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">trust_radius</span></code></p></td>
+<td><p>0.1</p></td>
+<td><p>Trust region radius</p></td>
+</tr>
+</tbody>
+</table>
+</div>
+</section>
+</section>
+
+        </article><button class="back-to-top" type="button">
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
+    <path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8v12z"></path>
+  </svg>
+  <span>Back to top</span>
+</button><div class="navigation flex print:hidden"><div class="navigation-prev">
+    <a href="neb_method.html">
+      <i class="i-lucide chevron-left"></i>
+      <div class="page-info">
+        <span>Previous</span><div class="title">Nudged Elastic Band</div></div>
+    </a>
+  </div><div class="navigation-next">
+    <a href="constant_kernel.html">
+      <div class="page-info">
+        <span>Next</span>
+        <div class="title">Constant Kernel</div>
+      </div>
+      <i class="i-lucide chevron-right"></i>
+    </a>
+  </div></div></div>
+    </div>
+  </main>
+</div>
+<footer class="sy-foot">
+  <div class="sy-foot-inner sy-container mx-auto">
+    <div class="sy-foot-reserved md:flex justify-between items-center">
+      <div class="sy-foot-copyright"><p>2026, Rohit Goswami</p>
+  
+  <p>
+    Made with
+    
+    <a href="https://www.sphinx-doc.org/">Sphinx</a> and
+    
+    <a href="https://shibuya.lepture.com">Shibuya theme</a>.
+  </p>
+</div> <div class="sy-foot-socials">
+<a href="https://github.com/lode-org/ChemGP" aria-label="GitHub">
+  <iconify-icon icon="simple-icons:github"></iconify-icon>
+</a></div>
+    </div>
+    <div class="sy-foot-reserved" style="text-align: center; font-size: 0.85em; padding-top: 0.5em;">
+      Analytics by <a href="https://plausible.io" rel="noopener">Plausible</a>
+      provided by <a href="https://turtletech.is" rel="noopener">TurtleTech ehf</a>
+      | <a href="https://rgoswami.me" rel="noopener">Rohit Goswami</a>
+    </div>
+  </div>
+</footer>
+      <script src="../_static/documentation_options.js?v=5929fcd5"></script>
+      <script src="../_static/doctools.js?v=fd6eb6e6"></script>
+      <script src="../_static/sphinx_highlight.js?v=6ffebe34"></script>
+      <script src="../_static/shibuya.js?v=cac61aee"></script>
+      <script defer="defer" src="https://cdn.jsdelivr.net/npm/mathjax@4/tex-mml-chtml.js"></script></body>
+</html>

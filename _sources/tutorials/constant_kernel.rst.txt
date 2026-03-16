@@ -1,0 +1,143 @@
+
+
+Constant Kernel
+---------------
+
+This tutorial explains the constant kernel :math:`\sigma_c^2` introduced for
+molecular systems, following Koistinen et al. (JCTC).
+
+Motivation
+~~~~~~~~~~
+
+For molecular systems with many degrees of freedom, the energy-energy
+correlations between distant geometries can approach zero under a pure SE
+kernel. Adding a constant kernel term ensures a baseline correlation:
+all geometries share a common energy offset.
+
+The combined kernel:
+
+
+
+.. math::
+
+    k_{\text{total}}(\mathbf{x}, \mathbf{y}) = \sigma_c^2 + \sigma_m^2 \exp\!\Bigl(-\sum_p \theta_p^2 \, r_p^2\Bigr)
+
+The constant term :math:`\sigma_c^2` acts as a prior on the energy mean function.
+Without it, the GP posterior mean reverts to zero far from training data.
+With it, the posterior mean reverts to a value informed by the overall
+energy scale.
+
+Derivative structure
+~~~~~~~~~~~~~~~~~~~~
+
+The constant kernel has zero derivatives with respect to coordinates:
+
+
+
+.. math::
+
+    \frac{\partial k_c}{\partial \mathbf{x}} = 0 \quad \text{(energy-force: zero)}
+
+
+
+.. math::
+
+    \frac{\partial k_c}{\partial \mathbf{y}} = 0 \quad \text{(force-energy: zero)}
+
+
+
+.. math::
+
+    \frac{\partial^2 k_c}{\partial \mathbf{x} \, \partial \mathbf{y}} = 0 \quad \text{(force-force: zero)}
+
+This means :math:`\sigma_c^2` affects only the energy-energy (EE) block of the
+covariance matrix. Force predictions depend entirely on the SE kernel
+:math:`\sigma_m^2`.
+
+This is physically intuitive: a constant energy offset does not
+generate forces.
+
+See ``scripts/sympy/t8_constant_kernel.py`` for the full derivation.
+
+Implementation
+~~~~~~~~~~~~~~
+
+:math:`\sigma_c^2` enters the covariance matrix at two points:
+
+1. **Diagonal**: ``K[i,i] +`` sigma\ :sub:`c`\ \ :sup:`2`\= (along with noise and jitter)
+
+2. **Off-diagonal**: ``K[i,j] +`` sigma\ :sub:`c`\ \ :sup:`2`\= (all EE entries)
+
+In the NLL computation, :math:`\sigma_c^2` is added to the kernel matrix but *not*
+to the hyperparameter gradient (:math:`\sigma_c^2` is fixed, not optimized by SCG).
+
+RFF treatment
+~~~~~~~~~~~~~
+
+Random Fourier Features approximate the SE kernel but not the constant
+term. To include :math:`\sigma_c^2` in RFF predictions, an extra basis function
+is appended:
+
+
+
+.. math::
+
+    \phi_c = \sqrt{\sigma_c^2}
+
+with zero Jacobian (no coordinate dependence). The extended RFF feature
+vector is:
+
+
+
+.. math::
+
+    \mathbf{z}_{\text{ext}}(\mathbf{x}) = \bigl[z_1(\mathbf{x}),\, \ldots,\, z_{D_{\text{rff}}}(\mathbf{x}),\, \phi_c\bigr]
+
+The inner product :math:`\mathbf{z}_{\text{ext}}(\mathbf{x})^\top \mathbf{z}_{\text{ext}}(\mathbf{y}) = \mathbf{z}_{\text{rff}}(\mathbf{x})^\top \mathbf{z}_{\text{rff}}(\mathbf{y}) + \sigma_c^2`,
+reproducing the constant kernel contribution. For gradient predictions,
+the last Jacobian row is zero, so forces use only the RFF features.
+
+The effective dimension becomes :math:`d_{\text{eff}} = D_{\text{rff}} + 1`.
+
+Configuration
+~~~~~~~~~~~~~
+
+.. code:: rust
+
+    let mut cfg = MinimizationConfig::default();
+    cfg.const_sigma2 = 1.0;  // molecular systems
+    // cfg.const_sigma2 = 0.0;  // 2D surfaces (default)
+
+All method config structs (``MinimizationConfig``, ``DimerConfig``, ``OTGPDConfig``,
+``NEBConfig``) accept ``const_sigma2``. Set to 1.0 for molecular systems; leave
+at 0.0 for 2D analytical surfaces (backward compatible).
+
+Effect on convergence
+~~~~~~~~~~~~~~~~~~~~~
+
+On the HCN system (9 atoms, 27 DOF) with GP-NEB OIE:
+
+.. table::
+
+    +-----------------------+--------------+-----------+
+    | const\ :sub:`sigma2`\ | Oracle calls | Converged |
+    +=======================+==============+===========+
+    |                   0.0 | diverges     | no        |
+    +-----------------------+--------------+-----------+
+    |                   1.0 | 134          | yes       |
+    +-----------------------+--------------+-----------+
+
+The constant kernel stabilizes GP predictions for molecular systems
+where the energy scale is large relative to local variations. Without it,
+the GP posterior mean can collapse to zero between training points,
+producing spurious forces that mislead the optimizer.
+
+SymPy verification
+~~~~~~~~~~~~~~~~~~
+
+The constant kernel derivative properties (all zeros except EE) and the
+RFF constant-feature construction are verified in:
+
+.. code:: bash
+
+    python scripts/sympy/t8_constant_kernel.py
