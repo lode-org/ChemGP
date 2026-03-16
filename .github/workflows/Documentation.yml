@@ -36,7 +36,23 @@ jobs:
         run: |
           pixi run -e rpc eonclient -p metatomic \
             --config config/eon_serve_petmad.ini &
-          sleep 3
+          SERVER_PID=$!
+          
+          # Wait for RPC server to be fully ready (model loaded, not just port open)
+          eprintln "Waiting for RPC server on localhost:12345..."
+          for i in {1..30}; do
+            if timeout 2 bash -c 'echo >/dev/tcp/localhost/12345' 2>/dev/null; then
+              eprintln "RPC server ready after ${i}s"
+              break
+            fi
+            sleep 1
+          done
+          
+          # Verify server is still running
+          if ! kill -0 $SERVER_PID 2>/dev/null; then
+            echo "RPC server failed to start"
+            exit 1
+          fi
 
       - name: Generate all figures
         run: pixi run -e dev snakemake -j4 -s scripts/figures/Snakefile --resources rpc_slot=1

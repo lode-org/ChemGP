@@ -41,8 +41,22 @@ fn main() {
     eprintln!("  atoms: {} ({:?})", n_atoms, atomic_numbers);
     eprintln!("  connecting to {}:{}", host, port);
 
-    let rpc_oracle = RpcOracle::new(&host, port, atomic_numbers.clone(), box_matrix)
-        .expect("Failed to connect to eOn serve");
+    // Retry loop for RPC connection (server may still be loading model)
+    let mut attempts = 0;
+    let max_attempts = 10;
+    let rpc_oracle = loop {
+        match RpcOracle::new(&host, port, atomic_numbers.clone(), box_matrix) {
+            Ok(oracle) => break oracle,
+            Err(e) => {
+                attempts += 1;
+                if attempts >= max_attempts {
+                    panic!("Failed to connect to RPC server after {} attempts: {}", max_attempts, e);
+                }
+                eprintln!("RPC server not ready (attempt {}/{}), retrying in 2s...", attempts, max_attempts);
+                std::thread::sleep(std::time::Duration::from_secs(2));
+            }
+        }
+    };
     let oracle_cell = RefCell::new(rpc_oracle);
     let oracle = |x: &[f64]| -> (f64, Vec<f64>) {
         oracle_cell
