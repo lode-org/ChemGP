@@ -1,0 +1,215 @@
+# Overview
+
+This directory contains the complete reproduction pipeline for all figures in the tutorial review "Bayesian Optimization with Gaussian Processes to Accelerate Stationary Point Searches" (ACS Physical Chemistry Au).
+
+All figures are generated from the `chemgp-core` Rust crate examples. The pipeline has four stages:
+
+1.  **Rust examples** produce JSONL output (convergence traces, GP quality data)
+2.  **jsonl<sub>toh5</sub>.py** converts JSONL to structured HDF5
+3.  **rgpycrumbs** reads HDF5 and renders publication-quality PDF plots
+4.  **pdftoppm** converts PDFs to PNG for documentation
+
+# Quick start
+
+## Standalone figures (no server needed)
+
+These figures use built-in analytic potentials (Muller-Brown, LEPS, Lennard-Jones):
+
+``` bash
+pixi run -e dev figures
+```
+
+This runs all standalone Rust examples, converts to HDF5, and generates 12 PDFs + PNGs.
+
+## RPC figures (molecular systems with PET-MAD)
+
+These figures require an eOn serve instance providing a PET-MAD universal potential.
+
+### Setup eOn serve
+
+``` bash
+# Terminal 1: start the potential server
+cd /path/to/eon_orchestrator  # or any eOn install with metatomic support
+eonclient --serve "metatomic:12345" --config config/eon_serve_petmad.ini
+```
+
+The INI config at `config/eon_serve_petmad.ini` specifies the model path. The PET-MAD-XS v1.5.0 model can be obtained via `mtt export` from HuggingFace:
+
+``` bash
+pip install metatrain
+mtt export lab-cosmo/pet-mad models/pet-mad-xs-v1.5.0.ckpt
+```
+
+### Generate RPC figures
+
+``` bash
+# Terminal 2: run RPC examples against the server
+pixi run -e dev figures-rpc
+```
+
+This produces 6 additional PDFs (petmad<sub>minimize</sub>, rpc<sub>dimerconvergence</sub>, system100<sub>convergence</sub>, system100<sub>nebprofile</sub>, system100<sub>neblandscape</sub>, petmad<sub>rffquality</sub>).
+
+## All figures
+
+``` bash
+pixi run -e dev figures-all  # requires eOn serve running
+```
+
+# Pipeline details
+
+## Snakemake workflow
+
+The `Snakefile` orchestrates the full pipeline. Key targets:
+
+| Target                                                             | Description                                   |
+|--------------------------------------------------------------------|-----------------------------------------------|
+| `standalone_pngs`                                                  | All standalone figures (12 PDFs + PNGs)       |
+| `rpc_pdfs`                                                         | RPC/molecular figures (6 PDFs)                |
+| `default`                                                          | Everything + PNG conversion                   |
+| `archive`                                                          | Create `chemgp_tutorial_data.tar.xz` tarball  |
+| `get_petmad_model=| Download and export PET-MAD-XS v1.5.0        | 
+ | =serve_petmad`                                                    | Start eOn serve (blocking, separate terminal) |
+
+## Full archive generation
+
+``` bash
+# Terminal 1: download model and start serve
+pixi run -e dev snakemake get_petmad_model -s scripts/figures/Snakefile
+pixi run -e dev snakemake serve_petmad -s scripts/figures/Snakefile
+
+# Terminal 2: generate everything and create archive
+pixi run -e dev snakemake archive -s scripts/figures/Snakefile -j12 --resources rpc_slot=1
+```
+
+The archive target produces `scripts/figures/tutorial/chemgp_tutorial_data.tar.xz`.
+
+## Rehydrating from the archive
+
+The archive is a full snapshot. Extract it at the repo root to restore the exact state at submission time:
+
+``` bash
+cd /path/to/ChemGP
+tar -xJf scripts/figures/tutorial/chemgp_tutorial_data.tar.xz
+```
+
+This restores:
+
+- `scripts/figures/tutorial/output/` (JSONL, HDF5, PDF, .con, .dat)
+- `docs/source/_static/figures/` (PNG figures for documentation)
+- `models/` (PET-MAD-XS v1.5.0 .pt file)
+- Root-level JSONL files (expected by `jsonl_to_h5.py`)
+- Root-level .con/.dat files (system100 NEB path data)
+
+After rehydration, no recomputation is needed. The figures can be regenerated from the JSONL data without re-running the Rust examples or the RPC server.
+
+## Configuration
+
+- `tutorial/figures.toml`: plot configuration (axes, labels, colors, thresholds)
+- `tutorial/landscape.toml`: 2D landscape plot configuration
+- `config/eon_serve_petmad.ini`: eOn serve INI for PET-MAD potential (relative model path)
+
+## Output structure
+
+``` example
+tutorial/output/
+  *.jsonl          # Raw Rust example output
+  *.h5             # Converted HDF5 (structured)
+  *.pdf            # Publication-quality plots
+  *.con, *.dat     # NEB path data (system100)
+```
+
+## Deterministic reproduction
+
+All examples use fixed random seeds (`StdRng::seed_from_u64`) for deterministic output. The JSONL files contain the exact data used to generate manuscript figures.
+
+# Figure inventory
+
+| Figure | PDF filename                             | Source example              | Surface    |
+|--------|------------------------------------------|-----------------------------|------------|
+| 3      | mb<sub>gpprogression</sub>.pdf           | mb<sub>gpquality</sub>      | MB 2D      |
+| 4      | mb<sub>variance</sub>.pdf                | mb<sub>gpquality</sub>      | MB 2D      |
+| 7      | mb<sub>hyperparams</sub>.pdf             | mb<sub>hyperparams</sub>    | MB 2D      |
+| 9      | rpc<sub>dimerconvergence</sub>.pdf       | rpc<sub>dimer</sub>         | C3H5 (RPC) |
+| 11     | mb<sub>trustregion</sub>.pdf             | mb<sub>trust</sub>          | MB 2D      |
+| 12     | mb<sub>neb</sub>.pdf                     | mb<sub>neb</sub>            | MB 2D      |
+| 13     | leps<sub>neb</sub>.pdf                   | leps<sub>neb</sub>          | LEPS 9D    |
+| 14     | leps<sub>aieoie</sub>.pdf                | leps<sub>neb</sub>          | LEPS 9D    |
+| 15     | leps<sub>minimizeconvergence</sub>.pdf   | leps<sub>minimize</sub>     | LEPS 9D    |
+| 18     | leps<sub>fps</sub>.pdf                   | leps<sub>fps</sub>          | LEPS 9D    |
+| 19     | leps<sub>rffquality</sub>.pdf            | leps<sub>rffquality</sub>   | LEPS 9D    |
+| 20     | petmad<sub>minimizeconvergence</sub>.pdf | petmad<sub>minimize</sub>   | PET-MAD    |
+| 21     | system100<sub>convergence</sub>.pdf      | system100<sub>neb</sub>     | PET-MAD    |
+| 22     | system100<sub>nebprofile</sub>.pdf       | system100<sub>neb</sub>     | PET-MAD    |
+| 23     | system100<sub>neblandscape</sub>.pdf     | system100<sub>neb</sub>     | PET-MAD    |
+| S3     | leps<sub>nlllandscape</sub>.pdf          | leps<sub>nlllandscape</sub> | LEPS 9D    |
+
+TikZ figures (1, 2, 5, 6, 8, 10, 16, 17, S1, S2, TOC) are in `src/figures/tikz/` of the manuscript repository and compiled via `pixi run tikz-figs`.
+
+# Data formats (FAIR)
+
+| Format     | Extension | Description                                                                                        | Reader              |
+|------------|-----------|----------------------------------------------------------------------------------------------------|---------------------|
+| JSON Lines | `.jsonl`  | One JSON object per line. Records contain method, step, energy (eV), force (eV/A), oracle calls    | Any JSON parser     |
+| HDF5       | `.h5`     | Structured groups (`/table`, `/grids/{name}`, `/paths/{name}`, `/points/{name}`) with NumPy arrays | h5py, HDFView       |
+| eOn CON    | `.con`    | Atomic configurations (cell, species, positions). Human readable                                   | ASE, readcon, eOn   |
+| TSV        | `.dat`    | Tab-separated NEB path data (reaction coordinate, energy, forces)                                  | Any text reader     |
+| PDF        | `.pdf`    | Vector figures from rgpycrumbs                                                                     | Any PDF viewer      |
+| PNG        | `.png`    | Raster figures (300 DPI) for documentation                                                         | Any image viewer    |
+| PyTorch    | `.pt`     | PET-MAD-XS v1.5.0 exported model                                                                   | PyTorch, metatensor |
+
+# Computational provenance
+
+| Surface                 | System                   | Atoms | DOF | Potential                  |
+|-------------------------|--------------------------|-------|-----|----------------------------|
+| Muller-Brown            | 2D analytical            | N/A   | 2   | Built-in (`potentials.rs`) |
+| LEPS                    | H + H2 collinear         | 3     | 9   | Built-in (`potentials.rs`) |
+| PET-MAD minimize        | Molecular                | 9     | 27  | PET-MAD-XS v1.5.0          |
+| PET-MAD dimer (C3H5)    | Allyl radical            | 8     | 24  | PET-MAD-XS v1.5.0          |
+| PET-MAD NEB (System100) | C2H4 + N2O cycloaddition | 9     | 27  | PET-MAD-XS v1.5.0          |
+
+## Model
+
+- PET-MAD-XS v1.5.0 from [lab-cosmo/pet-mad](https://huggingface.co/lab-cosmo/pet-mad)
+- Exported via `mtt export` (metatrain)
+- SHA256: `5ea4404e44f281087fa5f294040546b10bf3b9c8110b166fdf4755fc39aa4a59`
+- Served via eOn `--serve metatomic:12345` for RPC examples
+
+## Software versions
+
+- chemgp-core 0.1.0 (Rust, deterministic seeds via `StdRng::seed_from_u64`)
+- eOn \>= 2.12.0 (serve mode with metatomic potential)
+- rgpycrumbs (Python, editable install)
+- chemparseplot (Python, editable install)
+
+# License
+
+- Data and figures: CC-BY-4.0
+- Code (chemgp-core): MIT
+- PET-MAD model: see [lab-cosmo/pet-mad](https://huggingface.co/lab-cosmo/pet-mad) license
+
+# Citation
+
+``` bibtex
+@article{goswami2026bayesian,
+  author  = {Goswami, Rohit},
+  title   = {Bayesian Optimization with Gaussian Processes to Accelerate
+             Stationary Point Searches},
+  journal = {ACS Physical Chemistry Au},
+  year    = {2026},
+}
+```
+
+## Materials Cloud Archive
+
+> TODO: replace with actual DOI after submission
+
+``` bibtex
+@misc{goswami2026chemgp_data,
+  author    = {Goswami, Rohit},
+  title     = {Data for: Bayesian Optimization with Gaussian Processes to
+               Accelerate Stationary Point Searches},
+  year      = {2026},
+  publisher = {Materials Cloud Archive},
+  doi       = {10.24435/materialscloud:XXXX},
+}
+```
