@@ -167,6 +167,15 @@ rule archive:
         readme_md = os.path.join(ROOT, "scripts/figures/README.md")
         if os.path.exists(readme_md):
             paths.add("scripts/figures/README.md")
+        # Top-level Materials Cloud Archive README
+        mca_readme = os.path.join(ROOT, "docs/readme_materialscloudarchive.md")
+        if os.path.exists(mca_readme):
+            paths.add("docs/readme_materialscloudarchive.md")
+        # Symbolic proofs and verification scripts
+        if os.path.isdir(os.path.join(ROOT, "scripts/proofs")):
+            paths.add("scripts/proofs/")
+        if os.path.isdir(os.path.join(ROOT, "scripts/sympy")):
+            paths.add("scripts/sympy/")
 
         path_args = " ".join(sorted(paths))
         shell(f"tar -cJf {{output}} -C {{ROOT}} {path_args}")
