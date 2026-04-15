@@ -2,7 +2,7 @@
 """Plot GP quality figures from mb_gp_quality.jsonl.
 
 Generates:
-    mb_gp_progression.pdf  2x2 panel: GP mean at N=5,15,21,30
+    mb_gp_progression.pdf  2x2 panel: GP mean at N=3,8,15,30
     mb_variance.pdf        GP variance overlay with crosshatching
     mb_gp_error.pdf        GP prediction error (mean - true)
 
@@ -75,7 +75,7 @@ def grid_to_arrays(grid_records, meta):
 
 
 def plot_gp_progression(meta, minima, saddles, train_points, grids):
-    """2x2 panel: GP mean at N=5, 15, 21, 30 with training points."""
+    """2x2 panel: GP mean at N=3, 8, 15, 30 with training points."""
     n_trains = [3, 8, 15, 30]
     fig, axes = plt.subplots(2, 2, figsize=(8, 6.5), sharex=True, sharey=True)
 

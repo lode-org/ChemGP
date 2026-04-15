@@ -36,7 +36,7 @@ def plot_petmad_minimize(path="petmad_minimize_comparison.jsonl"):
                 groups[rec["method"]].append(rec)
 
     palette = {"gp_minimize": TEAL, "direct_lbfgs": CORAL, "direct_minimize": CORAL}
-    labels = {"gp_minimize": "GP Minimize", "direct_lbfgs": "Direct L-BFGS", "direct_minimize": "Direct GD"}
+    labels = {"gp_minimize": "GP Minimize", "direct_lbfgs": "Direct L-BFGS", "direct_minimize": "L-BFGS"}
     order = {"direct_lbfgs": 0, "direct_minimize": 0, "gp_minimize": 1}
 
     fig, ax = plt.subplots(1, 1, figsize=(4.5, 3.2))

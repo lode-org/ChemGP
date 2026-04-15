@@ -163,7 +163,7 @@ def plot_mb_minimize():
                 groups[rec["method"]].append(rec)
 
     palette = {"gp_minimize": TEAL, "direct_minimize": CORAL}
-    labels = {"gp_minimize": "GP Minimize", "direct_minimize": "Direct GD"}
+    labels = {"gp_minimize": "GP Minimize", "direct_minimize": "L-BFGS"}
     order = {"direct_minimize": 0, "gp_minimize": 1}
 
     fig, ax = plt.subplots(1, 1, figsize=(4.5, 3.2))

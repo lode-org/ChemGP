@@ -35,7 +35,7 @@ PALETTE = {
 
 LABELS = {
     "gp_minimize": "GP Minimize",
-    "direct_minimize": "Direct GD",
+    "direct_minimize": "L-BFGS",
     "neb": "Standard NEB",
     "gp_neb_aie": "GP-NEB AIE",
     "gp_neb_oie": "GP-NEB OIE",
