@@ -30,10 +30,14 @@ manuscript pipeline:
 
 ```
 config/                              # eOn serve INI for PET-MAD
+docs/readme_materialscloudarchive.md # this file
 docs/source/_static/figures/         # 300 DPI PNGs for the tutorial docs
 models/                              # PET-MAD-XS v1.5.0 .ckpt and .pt
 scripts/figures/README.md            # pipeline documentation
 scripts/figures/tutorial/output/     # JSONL, HDF5, PDF, CON, DAT
+scripts/proofs/                      # standalone symbolic proofs (PEP 723)
+scripts/sympy/                       # SymPy verification scripts (kernel,
+                                     #   NLL, RFF, dimer, constant kernel)
 *.jsonl                              # root-level traces (Rust example outputs)
 *.con, *.dat                         # root-level NEB path data (System100)
 ```
@@ -49,6 +53,7 @@ scripts/figures/tutorial/output/     # JSONL, HDF5, PDF, CON, DAT
 | `.con`    | eOn atomic config   | ASE, readcon, eOn   |
 | `.dat`    | TSV NEB path        | any text reader     |
 | `.pt`     | PyTorch model       | PyTorch, metatensor |
+| `.py`     | Python source       | any text reader; runnable with `uv run` (PEP 723) |
 
 JSONL records carry `method`, `step`, `energy` (eV), `force` (eV/A), and
 `oracle_calls` fields. HDF5 groups are organised as `/table`, `/grids/{name}`,
@@ -108,12 +113,53 @@ rerunning the Rust examples or starting an eOn/PET-MAD RPC server. See
 TikZ figures from the manuscript (1, 2, 5, 6, 8, 10, 16, 17, S1, S2, TOC)
 live in the manuscript source repository and are not part of this archive.
 
+## Symbolic proofs and verification scripts
+
+The archive ships two directories of standalone symbolic and numerical
+verification scripts that accompany the derivations in the manuscript.
+
+### `scripts/proofs/`
+
+Single-file proofs intended to be self-contained and runnable without
+project setup. Each script carries a [PEP 723](https://peps.python.org/pep-0723/)
+inline metadata header, so
+
+```bash
+uv run scripts/proofs/<file>.py
+```
+
+materialises a temporary environment with the right dependencies and
+executes the script.
+
+| Script                       | What it proves                                                                  |
+|------------------------------|---------------------------------------------------------------------------------|
+| `invdist_planar_jacobian.py` | The inverse-distance feature map is well-behaved at planar geometries: in-plane Jacobian has full row-rank, the out-of-plane block vanishes by reflection symmetry (the GP-predicted out-of-plane force is identically zero, which is the physical answer), and rank is recovered for any infinitesimal off-plane perturbation.  Settles the corresponding reviewer concern by symbolic computation. |
+
+### `scripts/sympy/`
+
+Manuscript-aligned SymPy scripts that derive or validate intermediate
+results in the GP framework. These are the worked notebooks behind the
+derivations in the main text and the SI appendix. Run any of them with
+`python scripts/sympy/<file>.py` after installing `sympy`.
+
+| Script                          | Topic                                                                |
+|---------------------------------|----------------------------------------------------------------------|
+| `t1_cartesian_se_blocks.py`     | Energy/force covariance blocks for the Cartesian SE kernel.          |
+| `t3_invdist_jacobian.py`        | Closed-form inverse-distance feature Jacobian and chain-rule check.  |
+| `t4_nll_gradient.py`            | Negative log marginal likelihood gradient w.r.t. hyperparameters.    |
+| `t5_rff_expectation.py`         | Random-Fourier-feature expectation that recovers the SE kernel.      |
+| `t7_lcb_scoring.py`             | LCB convergence rule for the inner loop.                             |
+| `t8_constant_kernel.py`         | Constant-kernel block structure (vanishing in derivative blocks).    |
+| `t9_dimer_gp_conditioning.py`   | GP-dimer conditioning and the rotation-translation linear algebra.   |
+
 ## Software versions
 
 - `chemgp-core` 0.1.0 (Rust)
 - eOn >= 2.12.0 (serve mode with metatomic)
 - `rgpycrumbs`, `chemparseplot` (Python, editable install)
 - `metatrain` for `mtt export`
+- `sympy` >= 1.11 (proofs and verification scripts)
+- `uv` >= 0.5 (recommended; resolves PEP-723 headers in `scripts/proofs/`)
 
 ## License
 
