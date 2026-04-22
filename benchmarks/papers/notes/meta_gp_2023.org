@@ -1,18 +1,59 @@
-#+TITLE: Meta-GP 2023 Notes
+#+TITLE: Meta-GP Conformer Exploration 2023 Notes
 
-* Status
+* Role In The Literature
 
-Local PDF not yet ingested. Do not treat this note as a full-paper reading.
+This paper is about exhaustive torsional conformer exploration via
+physical-prior-mean-driven /meta-Gaussian processes/.
+It is not about deep GPs or neural-network GP hybrids.
+The central idea is cross-task reuse: surrogate PESs learned while optimizing
+earlier conformers become candidate prior mean functions for later conformers.
 
-* Expected focus
+* Method Shape
 
-- recycled local PES priors
-- conformer exploration
-- hierarchical or meta-GP prior strategy
+- The paper defines a geometry meta-optimization workflow over a sequence of
+  conformer optimizations.
+- In the meta-GP setting, the optimizer keeps an augmented dataset and inherits
+  surrogate PESs from previous conformer optimizations as candidate priors for
+  the next task.
+- The prior-selection step is adaptive: the optimizer switches to the “best”
+  prior using a force/gradient-matching criterion.
+- The method therefore combines two ingredients:
+  1. physical nonconstant priors from lower-level ab initio models;
+  2. recycled local surrogate PESs from previous optimizations.
 
-* Required extraction once PDF is present
+* Domain And Benchmarks
 
-- representation of prior local PES objects
-- transfer strategy between conformers
-- candidate benchmark systems
-- metrics relevant to ChemGP integration
+- The target domain is torsional conformer search, especially amino-acid-style
+  molecules with multiple internal rotations.
+- The paper studies efficiency, number of unique conformers found, and the
+  quality of downstream thermodynamic quantities.
+- The benchmark logic is not “find one minimum faster,” but “explore a large
+  torsional space more completely and more cheaply across many related
+  optimization tasks.”
+
+* What Makes It A Meta-GP
+
+- The paper explicitly contrasts ordinary GP optimization against meta-GP
+  optimization.
+- The meta aspect is the transfer of /learned local PES objects/ between tasks,
+  not a deeper network architecture.
+- Previous surrogate PESs are treated as prior mean candidates, so the GP is
+  learning a residual on top of prior local approximations gathered from the
+  same molecule’s conformer space.
+- This is a hierarchy across optimization tasks, not just a richer prior within
+  one task.
+
+* What Matters For ChemGP
+
+- This paper is the correct citation for /recycled local PES priors/ and
+  hierarchy-style meta-GP conformer search.
+- It should not be collapsed into the same box as fixed physical priors for
+  one-shot minimization or CI-NEB.
+- The directly portable idea for ChemGP is a prior-mean interface that can
+  accept previously trained local surrogates as candidate priors.
+- A faithful reproduction would require task sequencing, surrogate persistence,
+  and prior selection across related optimization runs, which is larger than the
+  minimal tutorial benchmark harness.
+- For the manuscript, the key point is that conformer-space exploration is a
+  distinct use case where cross-task reuse of local PES information becomes the
+  main methodological contribution.

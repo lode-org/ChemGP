@@ -1,18 +1,61 @@
-#+TITLE: Prior Mean NEB 2024 Notes
+#+TITLE: Physical Prior Mean CI-NEB 2024 Notes
 
-* Status
+* Role In The Literature
 
-Local PDF not yet ingested. Do not treat this note as a full-paper reading.
+This paper is a CI-NEB optimizer paper, not a general GP tutorial and not a
+deep-learning GP paper.
+Its core claim is that the GP prior mean should be a /nonconstant physical
+function/ that already approximates the global PES coarsely, rather than a
+constant or maximum-energy offset.
+The target problem is minimum-energy-path and transition-state optimization with
+CI-NEB across gas-phase, interfacial, and bulk-phase reactions.
 
-* Expected focus
+* Method Shape
 
-- physically informed prior mean for CI-NEB
-- acquisition and path search details
-- realistic small benchmark systems
+- GP regression is built around a physical prior mean \(\mu(x)\), so the GP fits
+  the residual relative to that prior instead of learning from a constant
+  baseline.
+- The optimizer uses a target-image global-surrogate update-and-search cycle:
+  one image is selected by surrogate uncertainty, evaluated on the true PES, the
+  global surrogate is updated, and then an AIE-style surrogate CI-NEB
+  relaxation is performed on the surrogate PES.
+- Image targeting is variance-driven. The paper defines the target image from
+  the largest component of the variance vector, then updates that image on the
+  true PES.
+- The method still optimizes the whole MEP, not just the saddle image, and it
+  states that the same force convergence criteria are enforced for all images.
 
-* Required extraction once PDF is present
+* Prior Mean Construction
 
-- initial path and prior construction
-- image selection or acquisition details
-- system list with runtime feasibility
-- comparison baselines and reported metrics
+- The prior mean is explicitly physical and nonconstant.
+- For surface chemistry cases, the paper proposes a hybrid energy-function prior
+  by partitioning the system into reaction-cluster and environment pieces.
+- The environment is modeled with EMT for supported metals; the reaction cluster
+  is modeled with DFTB3; an LJ term supplies the cross interaction.
+- The paper emphasizes that the prior need not be quantitatively exact: it is a
+  physically guided first approximation that points the surrogate search in the
+  right region of the PES.
+
+* Benchmarks And Metrics
+
+- The benchmark emphasis is efficiency relative to standard nonsurrogate CI-NEB
+  optimizers and relative to constant-prior GP baselines.
+- Reported metrics include total SCF calls and failed-convergence cases.
+- The paper explicitly compares a physical-prior GP against a constant-prior GP
+  and classical optimizers such as FIRE and L-BFGS.
+- The systems span Baker-TS-style molecular reactions, ion migration in
+  MOFs, and Cu(111) interfacial reactions.
+
+* What Matters For ChemGP
+
+- This paper is the correct citation for /physical prior mean CI-NEB/.
+- It is not the same method family as the zero-mean plus constant-offset local
+  GP taught in the main tutorial manuscript.
+- The directly comparable concept for ChemGP is: one-image CI-NEB acquisition
+  with a physically informed nonconstant prior mean.
+- The paper’s hybrid EMT+DFTB3+LJ prior is domain-specific and should be cited
+  as an example of physical prior construction, not treated as the only valid
+  form.
+- For the manuscript, the key pedagogical takeaway is that CI-NEB can be
+  accelerated either by changing the acquisition/update logic, by changing the
+  prior mean, or by doing both.

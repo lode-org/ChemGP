@@ -1,19 +1,64 @@
-#+TITLE: Prior Mean Optimization 2023 Notes
+#+TITLE: Adaptive Prior Mean Geometry Optimization 2023 Notes
 
-* Status
+* Role In The Literature
 
-Local PDF not yet ingested. Do not treat this note as a full-paper reading.
+This paper is about molecular geometry optimization via
+gradient-enhanced universal kriging (GEUK) with /adaptive ab initio prior mean
+functions/ in curvilinear coordinates.
+It is not a generic fixed-prior GP paper.
+Its main contribution is the combination of:
 
-* Expected focus
+- nonconstant ab initio prior means,
+- on-the-fly switching between candidate priors,
+- optimization in curvilinear/internal-coordinate representations.
 
-- geometry optimization
-- adaptive prior selection
-- curvilinear coordinates
+* Method Shape
 
-* Required extraction once PDF is present
+- The regression model is GEUK rather than ordinary kriging: the prior mean is
+  nonconstant and physically motivated.
+- The adaptive step is central. The optimizer switches among candidate prior
+  mean functions during the optimization rather than fixing one prior for the
+  whole run.
+- The prior-selection logic is based on gradient matching between the target QM
+  gradient and the prior-mean gradient at the current geometry.
+- The paper distinguishes an incomplete curvilinear scheme from a complete
+  curvilinear scheme; the complete scheme fits and minimizes in curvilinear
+  coordinates, while the incomplete scheme still minimizes through Cartesian
+  coordinates.
 
-- benchmark systems
-- coordinate systems actually used
-- prior-function families
-- optimizer control flow
-- metrics that can be reproduced within the ChemGP runtime budget
+* Coordinate And Transformation Content
+
+- Curvilinear coordinates are a first-class part of the method, not an
+  implementation detail.
+- The paper spends substantial effort on the algebra of the B matrix,
+  pseudo-inverse transformations, and iterative back transformation from
+  internal to Cartesian coordinates.
+- Redundant internal, delocalized internal, hybrid delocalized internal
+  Z-matrix, and redundant Coulombic coordinates are all discussed.
+- The complete-curvilinear approach is preferred for the adaptive-prior GEUK
+  setting.
+
+* Benchmarks And Metrics
+
+- The paper benchmarks on ext-Baker-style geometry sets and on more challenging
+  systems such as Criegee intermediates.
+- Performance is discussed mainly in optimization steps, not only wall time.
+- The comparisons are against constant-prior kriging and standard non-surrogate
+  geometry optimizers.
+- The paper concludes that internal/curvilinear coordinates still help, but the
+  advantage over Cartesian coordinates becomes weaker once informative adaptive
+  priors are used.
+
+* What Matters For ChemGP
+
+- This paper is the correct citation for /adaptive prior selection in geometry
+  optimization/.
+- Its key conceptual lesson is that prior quality and coordinate choice are
+  coupled: if the prior is physical and adaptive, the optimizer should also be
+  clear about what coordinate system the surrogate lives in.
+- A faithful reproduction in ChemGP would require more than a prior hook; it
+  would need an optimizer-side curvilinear-coordinate layer and transformation
+  machinery.
+- For the tutorial manuscript, this work should be presented as a neighboring
+  extension of surrogate geometry optimization, not as the same formulation as
+  the local inverse-distance Cartesian tutorial code.
