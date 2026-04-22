@@ -14,7 +14,7 @@ use crate::neb_path::{
 };
 use crate::neb::{NEBHistory, NEBResult, OracleFn};
 use crate::optim_step::OptimState;
-use crate::predict::{build_pred_model, PredModel};
+use crate::predict::{build_pred_model_with_prior, PredModel};
 use crate::train::{adaptive_train_iters, train_model};
 use crate::trust::{clip_images_to_trust, trust_distance, TrustClipParams};
 use crate::types::{init_kernel, GPModel, TrainingData};
@@ -369,7 +369,6 @@ struct InnerRelaxCtx<'a> {
     energies: &'a [f64],
     gradients: &'a [Vec<f64>],
     td: &'a TrainingData,
-    e_ref: f64,
     gp_tol: f64,
     path_scale: f64,
 }
@@ -382,8 +381,8 @@ fn oie_inner_relax(
     cfg: &NEBConfig,
     ci_on_outer: bool,
 ) -> (Vec<Vec<f64>>, usize, usize) {
-    let InnerRelaxCtx { model, images, energies, gradients, td, e_ref, gp_tol, path_scale } = ctx;
-    let (e_ref, gp_tol, path_scale) = (*e_ref, *gp_tol, *path_scale);
+    let InnerRelaxCtx { model, images, energies, gradients, td, gp_tol, path_scale } = ctx;
+    let (gp_tol, path_scale) = (*gp_tol, *path_scale);
     let n = images.len();
     let d = images[0].len();
     let n_mov = n - 2;
@@ -433,7 +432,7 @@ fn oie_inner_relax(
 
         for i in 1..n - 1 {
             let preds = model.predict(&gp_images[i]);
-            gp_energies[i] = preds[0] + e_ref;
+            gp_energies[i] = preds[0];
             gp_gradients[i] = preds[1..].to_vec();
         }
 
@@ -567,11 +566,11 @@ fn oie_inner_relax(
         .max_by(|&a, &b| {
             let ea = {
                 let p = model.predict(&gp_images[a]);
-                p[0] + e_ref
+                p[0]
             };
             let eb = {
                 let p = model.predict(&gp_images[b]);
-                p[0] + e_ref
+                p[0]
             };
             ea.partial_cmp(&eb).unwrap_or(std::cmp::Ordering::Equal)
         })
@@ -665,9 +664,8 @@ pub fn gp_neb_oie(
     }
 
     // Train initial GP and predict at all unevaluated images
-    let e_ref_init = td.energies[0];
-    let mut y_init: Vec<f64> = td.energies.iter().map(|e| e - e_ref_init).collect();
-    y_init.extend_from_slice(&td.gradients);
+    let (mut y_init, g_init) = cfg.prior_mean.residualize_training_data(&td);
+    y_init.extend_from_slice(&g_init);
     let kern_init = init_kernel(&td, kernel);
     let mut gp_init = GPModel::new(kern_init, &td, y_init, 1e-6, 1e-4, 1e-6)
         .expect("GPModel::new failed: invalid training data or kernel params");
@@ -677,14 +675,28 @@ pub fn gp_neb_oie(
     // Build initial prediction model
     // Initial prediction: use full td (small early on)
     let init_pred_model = if cfg.rff_features > 0 {
-        build_pred_model(&gp_init.kernel, &td, cfg.rff_features, 42, cfg.const_sigma2)
+        build_pred_model_with_prior(
+            &gp_init.kernel,
+            &td,
+            cfg.rff_features,
+            42,
+            cfg.const_sigma2,
+            &cfg.prior_mean,
+        )
     } else {
-        build_pred_model(&gp_init.kernel, &td, 0, 42, cfg.const_sigma2)
+        build_pred_model_with_prior(
+            &gp_init.kernel,
+            &td,
+            0,
+            42,
+            cfg.const_sigma2,
+            &cfg.prior_mean,
+        )
     };
 
     for i in 1..n - 1 {
         let preds = init_pred_model.predict(&images[i]);
-        energies[i] = preds[0] + e_ref_init;
+        energies[i] = preds[0];
         gradients[i] = preds[1..].to_vec();
     }
 
@@ -943,9 +955,8 @@ pub fn gp_neb_oie(
 
         let train_iters = adaptive_train_iters(cfg.gp_train_iter, prev_kern.is_none());
 
-        let e_ref_sub = td_use.energies[0];
-        let mut y_sub: Vec<f64> = td_use.energies.iter().map(|e| e - e_ref_sub).collect();
-        y_sub.extend_from_slice(&td_use.gradients);
+        let (mut y_sub, grad_sub) = cfg.prior_mean.residualize_training_data(&td_use);
+        y_sub.extend_from_slice(&grad_sub);
 
         let kern = match &prev_kern {
             None => init_kernel(&td_use, kernel),
@@ -980,16 +991,20 @@ pub fn gp_neb_oie(
         } else {
             td.clone()
         };
-        let e_ref_full = td_pred.energies[0];
-        let pred_model = build_pred_model(
-            &gp_sub.kernel, &td_pred, cfg.rff_features, 42, cfg.const_sigma2,
+        let pred_model = build_pred_model_with_prior(
+            &gp_sub.kernel,
+            &td_pred,
+            cfg.rff_features,
+            42,
+            cfg.const_sigma2,
+            &cfg.prior_mean,
         );
 
         // Predict at unevaluated images
         for i in 1..n - 1 {
             if uneval[i] {
                 let preds = pred_model.predict(&images[i]);
-                energies[i] = preds[0] + e_ref_full;
+                energies[i] = preds[0];
                 gradients[i] = preds[1..].to_vec();
             }
         }
@@ -1080,7 +1095,7 @@ pub fn gp_neb_oie(
             let mut relax_gradients = gradients.clone();
             for i in 1..n - 1 {
                 let preds = cached_model.predict(&images[i]);
-                relax_energies[i] = preds[0] + e_ref_full;
+                relax_energies[i] = preds[0];
                 relax_gradients[i] = preds[1..].to_vec();
             }
 
@@ -1101,7 +1116,7 @@ pub fn gp_neb_oie(
                 &InnerRelaxCtx {
                     model: &cached_model, images: &images,
                     energies: &relax_energies, gradients: &relax_gradients,
-                    td: &td, e_ref: e_ref_full, gp_tol: gp_tol_val, path_scale,
+                    td: &td, gp_tol: gp_tol_val, path_scale,
                 },
                 cfg,
                 cfg.climbing_image,
@@ -1136,7 +1151,7 @@ pub fn gp_neb_oie(
                 let mut max_unc: f64 = 0.0;
                 for i in 1..n - 1 {
                     let preds = cached_model.predict(&images[i]);
-                    post_energies[i] = preds[0] + e_ref_full;
+                    post_energies[i] = preds[0];
                     post_gradients[i] = preds[1..].to_vec();
                     let (_, var) = cached_model.predict_with_variance(&images[i]);
                     max_unc = max_unc.max(var[0].max(0.0).sqrt());

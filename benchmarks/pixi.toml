@@ -1,0 +1,24 @@
+[workspace]
+name = "chemgp-benchmarks"
+channels = ["conda-forge", "bioconda"]
+platforms = ["linux-64"]
+
+[dependencies]
+python = ">=3.10"
+snakemake = ">=9.16.3,<10"
+
+[pypi-dependencies]
+pyyaml = ">=6.0"
+polars = ">=1.0,<2"
+matplotlib = ">=3.8,<4"
+readcon = ">=0.7.0"
+rgpycrumbs = ">=1.4.0"
+chemparseplot = ">=1.4.0"
+
+[tasks]
+bench-smoke = "snakemake -j4 -s workflow/Snakefile smoke"
+bench-minimize = "snakemake -j4 -s workflow/Snakefile minimize"
+bench-dimer = "snakemake -j4 -s workflow/Snakefile dimer"
+bench-neb = "snakemake -j4 -s workflow/Snakefile neb"
+bench-all = "snakemake -j4 -s workflow/Snakefile all"
+summarize = "python analysis/summarize.py"

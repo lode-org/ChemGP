@@ -5,7 +5,8 @@
 use crate::distances::euclidean_distance;
 use crate::kernel::Kernel;
 use crate::optim_step::clip_to_max_move;
-use crate::predict::build_pred_model;
+use crate::predict::build_pred_model_with_prior;
+use crate::prior_mean::PriorMeanConfig;
 use crate::sampling::{prune_training_data, select_optim_subset};
 use crate::train::{adaptive_train_iters, train_model};
 use crate::trust::{
@@ -52,6 +53,7 @@ pub struct MinimizationConfig {
     pub lcb_kappa: f64,
     /// RNG seed for initial perturbations. Fixed seed ensures reproducibility.
     pub seed: u64,
+    pub prior_mean: PriorMeanConfig,
     pub verbose: bool,
 }
 
@@ -83,6 +85,7 @@ impl Default for MinimizationConfig {
             const_sigma2: 0.0,
             lcb_kappa: 0.0,
             seed: 42,
+            prior_mean: PriorMeanConfig::Reference,
             verbose: true,
         }
     }
@@ -174,9 +177,8 @@ pub fn gp_minimize(
         let train_iters = adaptive_train_iters(cfg.gp_train_iter, prev_kern.is_none());
 
         // Train on subset
-        let e_ref_sub = td_sub.energies[0];
-        let mut y_sub: Vec<f64> = td_sub.energies.iter().map(|e| e - e_ref_sub).collect();
-        y_sub.extend_from_slice(&td_sub.gradients);
+        let (mut y_sub, grad_sub) = cfg.prior_mean.residualize_training_data(&td_sub);
+        y_sub.extend_from_slice(&grad_sub);
 
         let kern = match &prev_kern {
             None => init_kernel(&td_sub, kernel),
@@ -209,7 +211,14 @@ pub fn gp_minimize(
         prev_kern = Some(gp_sub.kernel.clone());
 
         // Build prediction model on full data (RFF if configured, else exact GP)
-        let pred_model = build_pred_model(&gp_sub.kernel, &td, cfg.rff_features, 42, cfg.const_sigma2);
+        let pred_model = build_pred_model_with_prior(
+            &gp_sub.kernel,
+            &td,
+            cfg.rff_features,
+            42,
+            cfg.const_sigma2,
+            &cfg.prior_mean,
+        );
 
         // Step 3: Optimize on GP surface via L-BFGS
         let best_idx = td
@@ -232,11 +241,9 @@ pub fn gp_minimize(
         let mut prev_grad: Option<Vec<f64>> = None;
         let mut x_inner_prev = x_opt.clone();
 
-        let e_ref = td.energies[0];
-
         for inner in 0..100 {
             let preds = pred_model.predict(&x_opt);
-            let e_pred = preds[0] + e_ref;
+            let e_pred = preds[0];
             let g_pred: Vec<f64> = preds[1..].to_vec();
 
             // Trust penalty gradient

@@ -1,0 +1,19 @@
+#+TITLE: Prior Mean Optimization 2023 Notes
+
+* Status
+
+Local PDF not yet ingested. Do not treat this note as a full-paper reading.
+
+* Expected focus
+
+- geometry optimization
+- adaptive prior selection
+- curvilinear coordinates
+
+* Required extraction once PDF is present
+
+- benchmark systems
+- coordinate systems actually used
+- prior-function families
+- optimizer control flow
+- metrics that can be reproduced within the ChemGP runtime budget

@@ -12,7 +12,8 @@ use crate::dimer_utils::{
 };
 use crate::kernel::Kernel;
 use crate::lbfgs::LbfgsHistory;
-use crate::predict::{build_pred_model_full, GPNoiseParams, PredModel};
+use crate::predict::{build_pred_model_full_with_prior, GPNoiseParams, PredModel};
+use crate::prior_mean::PriorMeanConfig;
 use crate::sampling::select_optim_subset;
 use crate::train::{adaptive_train_iters, train_model};
 use crate::trust::{
@@ -85,6 +86,7 @@ pub struct DimerConfig {
     /// 0.0 = disabled (default, backward compatible).
     pub unc_convergence: f64,
     pub seed: u64,
+    pub prior_mean: PriorMeanConfig,
     pub verbose: bool,
 }
 
@@ -131,6 +133,7 @@ impl Default for DimerConfig {
             lcb_kappa: 0.0,
             unc_convergence: 0.0,
             seed: 42,
+            prior_mean: PriorMeanConfig::Reference,
             verbose: true,
         }
     }
@@ -613,9 +616,8 @@ pub fn gp_dimer(
         // Train GP
         let train_iters = adaptive_train_iters(cfg.gp_train_iter, prev_kern.is_none());
 
-        let e_ref_sub = td_sub.energies[0];
-        let mut y_sub: Vec<f64> = td_sub.energies.iter().map(|e| e - e_ref_sub).collect();
-        y_sub.extend_from_slice(&td_sub.gradients);
+        let (mut y_sub, grad_sub) = cfg.prior_mean.residualize_training_data(&td_sub);
+        y_sub.extend_from_slice(&grad_sub);
 
         // Use config-provided kernel for first iteration; SCG optimizes from there.
         // Data-dependent init is pathological for clustered dimer data (0.01A sep).
@@ -644,11 +646,11 @@ pub fn gp_dimer(
         prev_kern = Some(gp_sub.kernel.clone());
 
         // Build prediction model on full data (RFF if configured, else exact GP)
-        let y_mean = td.energies[0];
         let y_std = 1.0;
-        let model = build_pred_model_full(
+        let model = build_pred_model_full_with_prior(
             &gp_sub.kernel, &td, cfg.rff_features, 42, const_sigma2,
             &GPNoiseParams { noise_e: cfg.noise_e, noise_g: cfg.noise_g, jitter: cfg.jitter },
+            &cfg.prior_mean,
         );
 
         // Reset L-BFGS/CG state for new outer iteration
@@ -668,7 +670,7 @@ pub fn gp_dimer(
             rotate_dimer(&mut state, &model, cfg, &mut rot_hist, y_std);
             state.orient = normalize_vec(&state.orient);
             let (g0, g1, e0) = predict_dimer_gradients(&state, &model, y_std);
-            let e0_pred = e0 + y_mean;
+            let e0_pred = e0;
 
             // Translate (GP curvature from GP-predicted g0, g1)
             let (r_new, f_trans_cur, c) = if cfg.translation_method == "lbfgs" {

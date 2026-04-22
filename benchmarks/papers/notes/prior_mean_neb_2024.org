@@ -1,0 +1,18 @@
+#+TITLE: Prior Mean NEB 2024 Notes
+
+* Status
+
+Local PDF not yet ingested. Do not treat this note as a full-paper reading.
+
+* Expected focus
+
+- physically informed prior mean for CI-NEB
+- acquisition and path search details
+- realistic small benchmark systems
+
+* Required extraction once PDF is present
+
+- initial path and prior construction
+- image selection or acquisition details
+- system list with runtime feasibility
+- comparison baselines and reported metrics

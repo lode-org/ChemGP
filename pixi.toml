@@ -76,6 +76,7 @@ jax           = ">=0.4"
 rich          = ">=13.0"
 rgpycrumbs    = ">=1.4.0"
 chemparseplot = ">=1.4.0"
+sympy         = ">=1.13,<2"
 
 [feature.dev.tasks.test]
 cmd = "cargo test -p chemgp-core"
@@ -113,6 +114,26 @@ cmd = "snakemake -j4 rpc_pdfs -s scripts/figures/Snakefile --resources rpc_slot=
 cmd = "snakemake -j12 -s scripts/figures/Snakefile --resources rpc_slot=1"
 description = "Build all figures. Requires: pixi run -e rpc serve-petmad (in another terminal)"
 
+[feature.dev.tasks.bench-smoke]
+cwd = "benchmarks"
+cmd = "pixi run bench-smoke"
+
+[feature.dev.tasks.bench-minimize]
+cwd = "benchmarks"
+cmd = "pixi run bench-minimize"
+
+[feature.dev.tasks.bench-dimer]
+cwd = "benchmarks"
+cmd = "pixi run bench-dimer"
+
+[feature.dev.tasks.bench-neb]
+cwd = "benchmarks"
+cmd = "pixi run bench-neb"
+
+[feature.dev.tasks.bench-all]
+cwd = "benchmarks"
+cmd = "pixi run bench-all"
+
 [feature.rpc.dependencies]
 eon        = ">=2.12.0,<3"
 rust       = ">=1.75"
@@ -147,4 +168,3 @@ cmd = "cargo run --release --features rgpot --example rpc_smoke_test"
 docs = ["docs"]
 dev  = ["dev"]
 rpc  = ["rpc"]
-

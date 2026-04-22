@@ -1,0 +1,31 @@
+runtime:
+  target_minutes: 45
+
+tasks:
+  smoke:
+    synthetic:
+      - mb_minimize
+      - mb_dimer
+      - leps_neb
+  minimize:
+    synthetic:
+      - mb_minimize
+      - leps_minimize
+    literature: []
+  dimer:
+    synthetic:
+      - mb_dimer
+      - leps_dimer
+    literature: []
+  neb:
+    synthetic:
+      - mb_neb
+      - leps_neb
+    literature: []
+
+methods:
+  - classical
+  - chemgp
+  - physical_prior
+  - adaptive_prior
+  - recycled_local_pes

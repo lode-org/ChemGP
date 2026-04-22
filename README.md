@@ -66,6 +66,23 @@ All manuscript figures are generated via a Snakemake pipeline in
 `scripts/figures/`. See [`scripts/figures/README.org`](scripts/figures/README.org)
 for the full workflow.
 
+# Benchmark Harness
+
+The repository now includes a dedicated benchmark subproject under
+`benchmarks/` for minimization, dimer, and NEB comparisons. The top-level
+development entrypoints are:
+
+```shell
+pixi run -e dev bench-smoke
+pixi run -e dev bench-minimize
+pixi run -e dev bench-dimer
+pixi run -e dev bench-neb
+pixi run -e dev bench-all
+```
+
+The compact production slice is designed to stay useful within roughly
+45 minutes on `rg.cosmolab`.
+
 A rehydration archive is deposited on Materials Cloud Archive for exact
 reproduction without recomputation.
 <!-- TODO: replace with actual DOI after submission -->

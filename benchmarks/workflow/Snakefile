@@ -1,0 +1,34 @@
+configfile: "config/benchmarks.yaml"
+
+include: "rules/common.smk"
+
+rule all:
+    input:
+        expand("results/{task}/summary.json", task=["minimize", "dimer", "neb"]),
+        "results/summary/benchmark_table.csv",
+        "results/summary/benchmark_table.md"
+
+rule smoke:
+    input:
+        "results/smoke/summary.json"
+
+rule minimize:
+    input:
+        "results/minimize/summary.json"
+
+rule dimer:
+    input:
+        "results/dimer/summary.json"
+
+rule neb:
+    input:
+        "results/neb/summary.json"
+
+rule aggregate:
+    input:
+        expand("results/{task}/summary.json", task=["minimize", "dimer", "neb"])
+    output:
+        "results/summary/benchmark_table.csv",
+        "results/summary/benchmark_table.md"
+    shell:
+        "python analysis/summarize.py"

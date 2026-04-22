@@ -11,7 +11,7 @@ use crate::neb_path::{
     compute_all_neb_forces, get_hessian_points, linear_interpolation, NEBConfig, NEBPath,
 };
 use crate::optim_step::OptimState;
-use crate::predict::{build_pred_model, PredModel};
+use crate::predict::{build_pred_model_with_prior, PredModel};
 use crate::sampling::select_optim_subset;
 use crate::train::{adaptive_train_iters, train_model};
 use crate::trust::{clip_images_to_trust, trust_distance, TrustClipParams, TrustMetric};
@@ -402,17 +402,24 @@ pub fn gp_neb_aie(
 
         let train_iters = adaptive_train_iters(cfg.gp_train_iter, prev_kern.is_none());
 
-        let e_ref = td_use.energies[0];
-        let mut y_sub: Vec<f64> = td_use.energies.iter().map(|e| e - e_ref).collect();
+        let (mut y_sub, grad_sub) = cfg.prior_mean.residualize_training_data(&td_use);
 
         // Optionally include Hessian data
         let use_hess = !hess_x.is_empty() && outer_iter < cfg.num_hess_iter;
         if use_hess {
-            let hess_y: Vec<f64> = hess_e.iter().map(|e| e - e_ref).collect();
+            let reference_energy = td_use.energies[0];
+            let hess_y: Vec<f64> = hess_x
+                .iter()
+                .zip(hess_e.iter())
+                .map(|(x, e)| {
+                    let (prior_e, _) = cfg.prior_mean.evaluate(x, reference_energy);
+                    e - prior_e
+                })
+                .collect();
             y_sub.splice(0..0, hess_y);
             y_sub.extend_from_slice(&hess_g);
         }
-        y_sub.extend_from_slice(&td_use.gradients);
+        y_sub.extend_from_slice(&grad_sub);
 
         let kern = match &prev_kern {
             None => init_kernel(&td_use, kernel),
@@ -448,9 +455,13 @@ pub fn gp_neb_aie(
         } else {
             td.clone()
         };
-        let e_ref_full = td_pred.energies[0];
-        let pred_model = build_pred_model(
-            &gp_sub.kernel, &td_pred, cfg.rff_features, 42, cfg.const_sigma2,
+        let pred_model = build_pred_model_with_prior(
+            &gp_sub.kernel,
+            &td_pred,
+            cfg.rff_features,
+            42,
+            cfg.const_sigma2,
+            &cfg.prior_mean,
         );
 
         // Inner loop: relax on GP/RFF surface with gradual tightening.
@@ -466,7 +477,7 @@ pub fn gp_neb_aie(
             &InnerRelaxCtx {
                 model: &pred_model, images: &images,
                 energies: &energies, gradients: &gradients,
-                td: &td, e_ref: e_ref_full, gp_tol, path_scale,
+                td: &td, gp_tol, path_scale,
             },
             cfg,
             ci_on,
@@ -526,7 +537,6 @@ struct InnerRelaxCtx<'a> {
     energies: &'a [f64],
     gradients: &'a [Vec<f64>],
     td: &'a TrainingData,
-    e_ref: f64,
     gp_tol: f64,
     path_scale: f64,
 }
@@ -536,8 +546,8 @@ fn gp_inner_relax(
     cfg: &NEBConfig,
     ci_on: bool,
 ) -> (Vec<Vec<f64>>, bool) {
-    let InnerRelaxCtx { model, images, energies, gradients, td, e_ref, gp_tol, path_scale } = ctx;
-    let (e_ref, gp_tol, path_scale) = (*e_ref, *gp_tol, *path_scale);
+    let InnerRelaxCtx { model, images, energies, gradients, td, gp_tol, path_scale } = ctx;
+    let (gp_tol, path_scale) = (*gp_tol, *path_scale);
     let n = images.len();
     let d = images[0].len();
     let n_mov = n - 2;
@@ -553,7 +563,7 @@ fn gp_inner_relax(
 
         for i in 1..n - 1 {
             let preds = model.predict(&gp_images[i]);
-            gp_energies[i] = preds[0] + e_ref;
+            gp_energies[i] = preds[0];
             gp_gradients[i] = preds[1..].to_vec();
         }
 

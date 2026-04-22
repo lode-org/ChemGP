@@ -3,6 +3,7 @@ pub mod invdist;
 pub mod kernel;
 pub mod types;
 pub mod covariance;
+pub mod prior_mean;
 pub mod predict;
 pub mod nll;
 pub mod scg;

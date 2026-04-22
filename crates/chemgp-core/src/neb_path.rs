@@ -3,6 +3,7 @@
 //! Ports `neb_path.jl`: improved tangent (Henkelman & Jonsson 2000),
 //! energy-weighted springs, climbing image force.
 
+use crate::prior_mean::PriorMeanConfig;
 use serde::{Deserialize, Serialize};
 
 /// Mutable NEB path state.
@@ -298,6 +299,7 @@ pub struct NEBConfig {
     /// Set to 1.0 for molecular systems (matches C++ ConstantCF).
     /// Default 0.0 (disabled, backward compatible for 2D surfaces).
     pub const_sigma2: f64,
+    pub prior_mean: PriorMeanConfig,
     pub verbose: bool,
 }
 
@@ -358,6 +360,7 @@ impl Default for NEBConfig {
             hod_max_history: 30,
             max_pred_points: 0,
             const_sigma2: 0.0,
+            prior_mean: PriorMeanConfig::Reference,
             verbose: true,
         }
     }

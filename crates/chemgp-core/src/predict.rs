@@ -5,6 +5,7 @@
 
 use crate::covariance::{build_full_covariance, robust_cholesky};
 use crate::kernel::Kernel;
+use crate::prior_mean::PriorMeanConfig;
 use crate::rff::{build_rff, rff_predict, rff_predict_with_variance, RffConfig, RffModel};
 use crate::types::{GPModel, TrainingData};
 use faer::linalg::solvers::Solve;
@@ -66,22 +67,46 @@ impl CachedGpModel {
 
 /// Prediction model: either cached exact GP or RFF approximation.
 pub enum PredModel {
-    Gp(CachedGpModel),
-    Rff(RffModel),
+    Gp {
+        model: CachedGpModel,
+        prior_mean: PriorMeanConfig,
+        reference_energy: f64,
+    },
+    Rff {
+        model: RffModel,
+        prior_mean: PriorMeanConfig,
+        reference_energy: f64,
+    },
 }
 
 impl PredModel {
     pub fn predict(&self, x: &[f64]) -> Vec<f64> {
         match self {
-            PredModel::Gp(m) => cached_predict(m, x, 1),
-            PredModel::Rff(m) => rff_predict(m, x, 1),
+            PredModel::Gp { model, prior_mean, reference_energy } => {
+                let mut pred = cached_predict(model, x, 1);
+                apply_prior_to_prediction(&mut pred, x, prior_mean, *reference_energy);
+                pred
+            }
+            PredModel::Rff { model, prior_mean, reference_energy } => {
+                let mut pred = rff_predict(model, x, 1);
+                apply_prior_to_prediction(&mut pred, x, prior_mean, *reference_energy);
+                pred
+            }
         }
     }
 
     pub fn predict_with_variance(&self, x: &[f64]) -> (Vec<f64>, Vec<f64>) {
         match self {
-            PredModel::Gp(m) => cached_predict_with_variance(m, x, 1),
-            PredModel::Rff(m) => rff_predict_with_variance(m, x, 1),
+            PredModel::Gp { model, prior_mean, reference_energy } => {
+                let (mut mu, var) = cached_predict_with_variance(model, x, 1);
+                apply_prior_to_prediction(&mut mu, x, prior_mean, *reference_energy);
+                (mu, var)
+            }
+            PredModel::Rff { model, prior_mean, reference_energy } => {
+                let (mut mu, var) = rff_predict_with_variance(model, x, 1);
+                apply_prior_to_prediction(&mut mu, x, prior_mean, *reference_energy);
+                (mu, var)
+            }
         }
     }
 }
@@ -134,7 +159,11 @@ pub fn build_pred_model_full(
             seed,
             const_sigma2,
         });
-        PredModel::Rff(rff)
+        PredModel::Rff {
+            model: rff,
+            prior_mean: PriorMeanConfig::Zero,
+            reference_energy: e_ref,
+        }
     } else {
         let mut y_gp: Vec<f64> = td.energies.iter().map(|e| e - e_ref).collect();
         y_gp.extend_from_slice(&td.gradients);
@@ -142,7 +171,100 @@ pub fn build_pred_model_full(
             .expect("GPModel::new failed: invalid training data or kernel params");
         gp_model.const_sigma2 = const_sigma2;
         let cached = CachedGpModel::from_gp(&gp_model);
-        PredModel::Gp(cached)
+        PredModel::Gp {
+            model: cached,
+            prior_mean: PriorMeanConfig::Zero,
+            reference_energy: e_ref,
+        }
+    }
+}
+
+/// Build a PredModel with a configurable prior mean.
+///
+/// The prior is subtracted from energies and gradients before fitting, then
+/// added back to predicted means during inference.
+pub fn build_pred_model_with_prior(
+    kernel: &Kernel,
+    td: &TrainingData,
+    rff_features: usize,
+    seed: u64,
+    const_sigma2: f64,
+    prior_mean: &PriorMeanConfig,
+) -> PredModel {
+    build_pred_model_full_with_prior(
+        kernel,
+        td,
+        rff_features,
+        seed,
+        const_sigma2,
+        &GPNoiseParams { noise_e: 1e-6, noise_g: 1e-4, jitter: 1e-6 },
+        prior_mean,
+    )
+}
+
+/// Build a PredModel with explicit noise and a configurable prior mean.
+pub fn build_pred_model_full_with_prior(
+    kernel: &Kernel,
+    td: &TrainingData,
+    rff_features: usize,
+    seed: u64,
+    const_sigma2: f64,
+    noise: &GPNoiseParams,
+    prior_mean: &PriorMeanConfig,
+) -> PredModel {
+    let GPNoiseParams { noise_e, noise_g, jitter } = *noise;
+    let reference_energy = td.energies.first().copied().unwrap_or(0.0);
+    let (residual_energies, residual_gradients) = prior_mean.residualize_training_data(td);
+
+    if rff_features > 0 {
+        let mut y_rff = residual_energies;
+        y_rff.extend_from_slice(&residual_gradients);
+        let rff = build_rff(&RffConfig {
+            kernel,
+            x_train: &td.data,
+            dim: td.dim,
+            n: td.npoints(),
+            y_train: &y_rff,
+            d_rff: rff_features,
+            noise_var: noise_e,
+            grad_noise_var: noise_g,
+            seed,
+            const_sigma2,
+        });
+        PredModel::Rff {
+            model: rff,
+            prior_mean: prior_mean.clone(),
+            reference_energy,
+        }
+    } else {
+        let mut y_gp = residual_energies;
+        y_gp.extend_from_slice(&residual_gradients);
+        let mut gp_model = GPModel::new(kernel.clone(), td, y_gp, noise_e, noise_g, jitter)
+            .expect("GPModel::new failed: invalid training data or kernel params");
+        gp_model.const_sigma2 = const_sigma2;
+        let cached = CachedGpModel::from_gp(&gp_model);
+        PredModel::Gp {
+            model: cached,
+            prior_mean: prior_mean.clone(),
+            reference_energy,
+        }
+    }
+}
+
+fn apply_prior_to_prediction(
+    pred: &mut [f64],
+    x: &[f64],
+    prior_mean: &PriorMeanConfig,
+    reference_energy: f64,
+) {
+    let (prior_e, prior_g) = prior_mean.evaluate(x, reference_energy);
+    if let Some(first) = pred.first_mut() {
+        *first += prior_e;
+    }
+    for (i, prior_gi) in prior_g.iter().enumerate() {
+        if let Some(v) = pred.get_mut(i + 1) {
+            *v += prior_gi;
+        }
     }
 }
 
@@ -260,6 +382,44 @@ fn cached_predict_with_variance(
     }
 
     (mu, variance)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::build_pred_model_with_prior;
+    use crate::kernel::{CartesianSE, Kernel};
+    use crate::prior_mean::PriorMeanConfig;
+    use crate::types::TrainingData;
+
+    #[test]
+    fn constant_prior_model_predicts_training_energy_at_seen_point() {
+        let kernel = Kernel::Cartesian(CartesianSE::new(1.0, 1.0));
+        let mut td = TrainingData::new(1);
+        td.add_point(&[0.0], 2.0, &[0.0]).unwrap();
+
+        let model = build_pred_model_with_prior(
+            &kernel,
+            &td,
+            0,
+            42,
+            0.0,
+            &PriorMeanConfig::Constant { energy: 2.0 },
+        );
+        let pred = model.predict(&[0.0]);
+        assert!((pred[0] - 2.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn reference_prior_matches_current_reference_energy_behavior() {
+        let kernel = Kernel::Cartesian(CartesianSE::new(1.0, 1.0));
+        let mut td = TrainingData::new(1);
+        td.add_point(&[0.0], 3.0, &[0.0]).unwrap();
+
+        let model =
+            build_pred_model_with_prior(&kernel, &td, 0, 42, 0.0, &PriorMeanConfig::Reference);
+        let pred = model.predict(&[0.0]);
+        assert!((pred[0] - 3.0).abs() < 1e-6);
+    }
 }
 
 /// Convert a Vec<f64> to an (n, 1) column Mat.

@@ -1,0 +1,7 @@
+#+TITLE: Benchmark Paper Inputs
+
+This directory stores the locally vendored literature used to define realistic
+benchmark cases and method deltas for prior-mean benchmarking.
+
+If publisher PDF download is blocked from the command line, place the files here
+manually and keep the stable names referenced by the notes in =papers/notes/=.

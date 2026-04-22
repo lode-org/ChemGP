@@ -1,0 +1,42 @@
+#+TITLE: ChemGP Benchmarks
+
+This subproject provides a reproducible benchmark harness for =ChemGP= across
+three task families:
+
+- minimization
+- dimer / saddle search
+- nudged elastic band (NEB)
+
+The benchmark design has two layers:
+
+- synthetic controls for regression and smoke testing
+- literature-driven realistic cases using physically informed prior means,
+  adaptive prior selection, and recycled local PES priors where applicable
+
+The workflow is driven by =pixi= and =Snakemake=.
+
+* Layout
+
+#+begin_example
+benchmarks/
+  config/
+  workflow/
+  cases/
+  papers/
+  analysis/
+  results/
+#+end_example
+
+* Targets
+
+- =bench-smoke=: quick synthetic validation for all three task families
+- =bench-minimize=: minimization benchmark slice
+- =bench-dimer=: dimer / saddle benchmark slice
+- =bench-neb=: NEB benchmark slice
+- =bench-all=: compact production slice
+
+* Runtime Budget
+
+The default production slice should remain useful within roughly 45 minutes on
+=rg.cosmolab=. Cases that violate that budget belong in non-default or deferred
+configurations.
