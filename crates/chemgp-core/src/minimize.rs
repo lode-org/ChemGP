@@ -104,6 +104,7 @@ pub struct MinimizationResult {
     pub oracle_calls: usize,
     pub trajectory: Vec<Vec<f64>>,
     pub energies: Vec<f64>,
+    pub final_training_data: TrainingData,
 }
 
 /// Oracle function type: x -> (energy, gradient).
@@ -504,5 +505,6 @@ pub fn gp_minimize(
         oracle_calls,
         trajectory,
         energies: all_energies,
+        final_training_data: td,
     }
 }

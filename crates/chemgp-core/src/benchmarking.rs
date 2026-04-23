@@ -108,6 +108,44 @@ pub fn sampled_taylor_prior(
     PriorMeanConfig::NearestTaylor { candidates }
 }
 
+pub fn prior_library_from_training_data(
+    td: &TrainingData,
+    label_prefix: &str,
+    max_points: usize,
+) -> Vec<PriorCandidate> {
+    let n = td.npoints();
+    if n == 0 {
+        return Vec::new();
+    }
+    let stride = if max_points > 0 && n > max_points {
+        ((n as f64) / (max_points as f64)).ceil() as usize
+    } else {
+        1
+    };
+    (0..n)
+        .step_by(stride)
+        .map(|i| {
+            PriorCandidate::linear(
+                format!("{label_prefix}_{i}"),
+                td.col(i).to_vec(),
+                td.energies[i],
+                td.gradients[i * td.dim..(i + 1) * td.dim].to_vec(),
+            )
+        })
+        .collect()
+}
+
+pub fn save_prior_library(path: &str, candidates: &[PriorCandidate]) -> Result<(), String> {
+    let serialized = serde_json::to_string_pretty(candidates)
+        .map_err(|e| format!("Failed to serialize prior library: {e}"))?;
+    std::fs::write(path, serialized).map_err(|e| format!("Failed to write {path}: {e}"))
+}
+
+pub fn load_prior_library(path: &str) -> Result<Vec<PriorCandidate>, String> {
+    let raw = std::fs::read_to_string(path).map_err(|e| format!("Failed to read {path}: {e}"))?;
+    serde_json::from_str(&raw).map_err(|e| format!("Failed to parse {path}: {e}"))
+}
+
 pub fn select_adaptive_prior(
     x: &[f64],
     energy: f64,
@@ -137,8 +175,12 @@ pub fn nearest_prior_library_label(labels: &[&str]) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{nearest_prior_library_label, select_adaptive_prior_with_label, BenchmarkVariant};
+    use super::{
+        load_prior_library, nearest_prior_library_label, prior_library_from_training_data,
+        save_prior_library, select_adaptive_prior_with_label, BenchmarkVariant,
+    };
     use crate::prior_mean::PriorMeanConfig;
+    use crate::types::TrainingData;
 
     #[test]
     fn benchmark_variant_env_aliases_work() {
@@ -175,6 +217,19 @@ mod tests {
             nearest_prior_library_label(&["reactant", "product"]),
             "nearest:[reactant,product]"
         );
+    }
+
+    #[test]
+    fn prior_library_roundtrips() {
+        let mut td = TrainingData::new(1);
+        td.add_point(&[0.0], 1.0, &[2.0]).unwrap();
+        td.add_point(&[1.0], 3.0, &[4.0]).unwrap();
+        let lib = prior_library_from_training_data(&td, "test", 8);
+        let path = std::env::temp_dir().join("chemgp_prior_library_roundtrip.json");
+        save_prior_library(path.to_str().unwrap(), &lib).unwrap();
+        let loaded = load_prior_library(path.to_str().unwrap()).unwrap();
+        assert_eq!(lib, loaded);
+        let _ = std::fs::remove_file(path);
     }
 }
 

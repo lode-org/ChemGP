@@ -15,8 +15,9 @@ use std::cell::RefCell;
 use std::io::Write;
 
 use chemgp_core::benchmarking::{
-    linear_prior, linear_prior_candidates, nearest_linear_prior, nearest_prior_library_label,
-    output_path, seed_training_data, select_adaptive_prior_with_label, BenchmarkVariant,
+    linear_prior, linear_prior_candidates, load_prior_library, nearest_linear_prior,
+    nearest_prior_library_label, output_path, prior_library_from_training_data,
+    save_prior_library, seed_training_data, select_adaptive_prior_with_label, BenchmarkVariant,
 };
 use chemgp_core::kernel::{Kernel, MolInvDistSE};
 use chemgp_core::minimize::{gp_minimize, MinimizationConfig};
@@ -24,6 +25,7 @@ use chemgp_core::minimize::{gp_minimize, MinimizationConfig};
 use chemgp_core::oracle::{LocalMetatomicConfig, LocalMetatomicOracle};
 #[cfg(feature = "rgpot")]
 use chemgp_core::oracle::RpcOracle;
+use chemgp_core::prior_mean::PriorMeanConfig;
 
 /// System100 reactant (9-atom organic fragment from ORCA).
 /// Atomic numbers: C=6, O=8, N=7, H=1
@@ -203,28 +205,64 @@ pub fn main() {
                 prior
             }
             BenchmarkVariant::RecycledLocalPes => {
-                prior_label =
-                    nearest_prior_library_label(&["initial", "best_sample", "worst_sample"]);
-                nearest_linear_prior(&[
-                    (
-                        "initial",
-                        observations[0].0.as_slice(),
-                        observations[0].1,
-                        observations[0].2.as_slice(),
-                    ),
-                    (
-                        "best_sample",
-                        best_obs.0.as_slice(),
-                        best_obs.1,
-                        best_obs.2.as_slice(),
-                    ),
-                    (
-                        "worst_sample",
-                        worst_obs.0.as_slice(),
-                        worst_obs.1,
-                        worst_obs.2.as_slice(),
-                    ),
-                ])
+                if let Ok(path) = std::env::var("CHEMGP_PRIOR_LIBRARY") {
+                    match load_prior_library(&path) {
+                        Ok(candidates) if !candidates.is_empty() => {
+                            prior_label = format!("loaded:{path}");
+                            PriorMeanConfig::NearestTaylor { candidates }
+                        }
+                        Ok(_) | Err(_) => {
+                            prior_label = nearest_prior_library_label(&[
+                                "initial",
+                                "best_sample",
+                                "worst_sample",
+                            ]);
+                            nearest_linear_prior(&[
+                                (
+                                    "initial",
+                                    observations[0].0.as_slice(),
+                                    observations[0].1,
+                                    observations[0].2.as_slice(),
+                                ),
+                                (
+                                    "best_sample",
+                                    best_obs.0.as_slice(),
+                                    best_obs.1,
+                                    best_obs.2.as_slice(),
+                                ),
+                                (
+                                    "worst_sample",
+                                    worst_obs.0.as_slice(),
+                                    worst_obs.1,
+                                    worst_obs.2.as_slice(),
+                                ),
+                            ])
+                        }
+                    }
+                } else {
+                    prior_label =
+                        nearest_prior_library_label(&["initial", "best_sample", "worst_sample"]);
+                    nearest_linear_prior(&[
+                        (
+                            "initial",
+                            observations[0].0.as_slice(),
+                            observations[0].1,
+                            observations[0].2.as_slice(),
+                        ),
+                        (
+                            "best_sample",
+                            best_obs.0.as_slice(),
+                            best_obs.1,
+                            best_obs.2.as_slice(),
+                        ),
+                        (
+                            "worst_sample",
+                            worst_obs.0.as_slice(),
+                            worst_obs.1,
+                            worst_obs.2.as_slice(),
+                        ),
+                    ])
+                }
             }
         };
         gp_training_data = Some(td_seed);
@@ -241,6 +279,15 @@ pub fn main() {
             "  GP: {} oracle calls, final E = {:.6}, converged = {}",
             gp_result.oracle_calls, gp_result.e_final, gp_result.converged
         );
+        if let Ok(path) = std::env::var("CHEMGP_SAVE_PRIOR_LIBRARY") {
+            let library =
+                prior_library_from_training_data(&gp_result.final_training_data, "gp_local", 16);
+            if let Err(err) = save_prior_library(&path, &library) {
+                eprintln!("  Failed to save prior library {}: {}", path, err);
+            } else {
+                eprintln!("  Saved prior library to {}", path);
+            }
+        }
 
         for pt in &gp_result.trajectory {
             let (_, grad) = oracle(pt);
