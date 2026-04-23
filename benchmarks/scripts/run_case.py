@@ -69,6 +69,7 @@ def start_rpc_server(
 
     log_path.parent.mkdir(parents=True, exist_ok=True)
     log_handle = log_path.open("w", encoding="utf-8")
+    config_path = materialize_rpc_config(repo_root, log_path.parent, env)
     proc = subprocess.Popen(
         [
             "pixi",
@@ -79,7 +80,7 @@ def start_rpc_server(
             "-p",
             "metatomic",
             "--config",
-            "config/eon_serve_petmad.ini",
+            str(config_path),
             "--serve-port",
             str(port),
         ],
@@ -185,6 +186,27 @@ def resolve_petmad_model_path(repo_root: Path, env: dict[str, str]) -> str | Non
         if candidate.exists():
             return str(candidate.resolve())
     return None
+
+
+def materialize_rpc_config(repo_root: Path, run_dir: Path, env: dict[str, str]) -> Path:
+    src = repo_root / "config" / "eon_serve_petmad.ini"
+    raw = src.read_text(encoding="utf-8")
+    model_path = env.get("RGPOT_MODEL_PATH")
+    if model_path:
+        lines = []
+        replaced = False
+        for line in raw.splitlines():
+            if line.strip().startswith("model_path"):
+                lines.append(f"model_path = {model_path}")
+                replaced = True
+            else:
+                lines.append(line)
+        if not replaced:
+            lines.extend(["[Metatomic]", f"model_path = {model_path}"])
+        raw = "\n".join(lines) + "\n"
+    dest = run_dir / "eon_serve_petmad.generated.ini"
+    dest.write_text(raw, encoding="utf-8")
+    return dest
 
 
 def main() -> int:
