@@ -1,25 +1,36 @@
-//! GP-NEB benchmark on system100 cycloaddition via eOn serve RPC.
-//!
-//! Runs standard NEB, GP-NEB AIE, and/or GP-NEB OIE on the N2O + C2H4 system.
-//! Requires a running eOn serve instance:
-//!   pixi run -e rpc serve-petmad
-//!
-//! Usage:
-//!   cargo run --release --features rgpot,io,cli --example system100_neb -- --help
-//!   cargo run --release --features rgpot,io,cli --example system100_neb -- --method oie
-//!   cargo run --release --features rgpot,io,cli --example system100_neb -- --method all
+// GP-NEB benchmark on system100 cycloaddition using either the rgpot RPC
+// client or the direct local metatomic backend.
+//
+// Runs standard NEB, GP-NEB AIE, and/or GP-NEB OIE on the N2O + C2H4 system.
+// RPC mode requires a running eOn serve instance:
+//   pixi run -e rpc serve-petmad
+//
+// Usage:
+//   cargo run --release --features rgpot,io,cli --example system100_neb -- --help
+//   cargo run --release --features rgpot,io,cli --example system100_neb -- --method oie
+//   cargo run --release --features rgpot,io,cli --example system100_neb -- --method all
+//
+// Direct local mode:
+//   export RGPOT_BUILD_DIR=/path/to/rgpot/bbdir
+//   cargo run --release --features rgpot_local,io,cli --example system100_neb_local -- --method all
 
 use std::cell::RefCell;
 use std::io::Write;
 
 use clap::{Parser, ValueEnum};
 
+use chemgp_core::benchmarking::{
+    artifact_path, linear_prior, nearest_linear_prior, output_path, BenchmarkVariant,
+};
 use chemgp_core::io::{read_con, write_con, write_neb_dat, MolConfig};
 use chemgp_core::kernel::{Kernel, MolInvDistSE};
 use chemgp_core::minimize::{gp_minimize, MinimizationConfig};
 use chemgp_core::neb::{gp_neb_aie, neb_optimize, NEBResult};
 use chemgp_core::neb_oie::gp_neb_oie;
 use chemgp_core::neb_path::{AcquisitionStrategy, NEBConfig};
+#[cfg(feature = "rgpot_local")]
+use chemgp_core::oracle::{LocalMetatomicConfig, LocalMetatomicOracle};
+#[cfg(feature = "rgpot")]
 use chemgp_core::oracle::RpcOracle;
 
 #[derive(Debug, Clone, ValueEnum)]
@@ -57,9 +68,21 @@ struct Args {
     #[arg(long, default_value_t = 10)]
     images: usize,
 
+    /// Convergence threshold on the climbing-image force
+    #[arg(long, default_value_t = 0.5)]
+    conv_tol: f64,
+
+    /// Optional cap for GP-NEB outer iterations in tutorial-style runs
+    #[arg(long)]
+    max_outer: Option<usize>,
+
     /// Skip GP endpoint minimization
     #[arg(long)]
     skip_minimize: bool,
+
+    /// Convergence threshold for endpoint GP minimization
+    #[arg(long, default_value_t = 0.05)]
+    endpoint_conv_tol: f64,
 
     /// Acquisition strategy for OIE (ucb, ei, thompson, max-force, max-variance)
     #[arg(long, default_value = "ucb")]
@@ -81,12 +104,12 @@ fn parse_acquisition(s: &str) -> AcquisitionStrategy {
     }
 }
 
-/// Shared NEB config matching eOn 2.11.1 exactly.
-fn base_neb_config(images: usize) -> NEBConfig {
+/// Shared NEB config matching eOn 2.11.1 exactly unless overridden by CLI.
+fn base_neb_config(images: usize, conv_tol: f64) -> NEBConfig {
     let mut cfg = NEBConfig::default();
     cfg.images = images;
     cfg.max_iter = 1000;
-    cfg.conv_tol = 0.5;              // molecular CI force threshold
+    cfg.conv_tol = conv_tol;         // molecular CI force threshold
     cfg.climbing_image = true;
     cfg.ci_activation_tol = 0.5;
     cfg.ci_trigger_rel = 0.8;
@@ -101,8 +124,9 @@ fn base_neb_config(images: usize) -> NEBConfig {
     cfg
 }
 
-fn main() {
+pub fn main() {
     let args = Args::parse();
+    let variant = BenchmarkVariant::from_env();
 
     // Load minimized endpoints (from nebviz reference pipeline)
     let react_frames =
@@ -121,16 +145,38 @@ fn main() {
         reactant.cell[2][0], reactant.cell[2][1], reactant.cell[2][2],
     ];
 
-    eprintln!("System100 cycloaddition NEB (PET-MAD via RPC)");
+    #[cfg(feature = "rgpot_local")]
+    let local_cfg = LocalMetatomicConfig {
+        model_path: std::env::var("RGPOT_MODEL_PATH")
+            .map(std::path::PathBuf::from)
+            .unwrap_or_else(|_| std::path::PathBuf::from("models/pet-mad-xs-v1.5.0.pt")),
+        device: std::env::var("RGPOT_DEVICE").unwrap_or_else(|_| "cpu".into()),
+        length_unit: std::env::var("RGPOT_LENGTH_UNIT").unwrap_or_else(|_| "angstrom".into()),
+        extensions_directory: std::env::var("RGPOT_EXTENSIONS_DIRECTORY")
+            .ok()
+            .map(std::path::PathBuf::from),
+        check_consistency: false,
+        uncertainty_threshold: -1.0,
+        dtype_override: std::env::var("RGPOT_DTYPE_OVERRIDE").ok(),
+    };
+
+    eprintln!("System100 cycloaddition NEB");
     eprintln!("  atoms: {} ({:?})", n_atoms, atomic_numbers);
     eprintln!("  box: [{:.1}, {:.1}, {:.1}]", box_matrix[0], box_matrix[4], box_matrix[8]);
     eprintln!("  method: {:?}", args.method);
+    #[cfg(feature = "rgpot")]
     eprintln!("  connecting to {}:{}", args.host, args.port);
+    #[cfg(feature = "rgpot_local")]
+    eprintln!("  local model: {}", local_cfg.model_path.display());
 
-    let rpc_oracle = RpcOracle::new(&args.host, args.port, atomic_numbers.clone(), box_matrix)
+    #[cfg(feature = "rgpot")]
+    let oracle_impl = RpcOracle::new(&args.host, args.port, atomic_numbers.clone(), box_matrix)
         .expect("Failed to connect to eOn serve");
+    #[cfg(feature = "rgpot_local")]
+    let oracle_impl = LocalMetatomicOracle::new(&local_cfg, atomic_numbers.clone(), box_matrix)
+        .expect("Failed to create local metatomic oracle");
 
-    let oracle_cell = RefCell::new(rpc_oracle);
+    let oracle_cell = RefCell::new(oracle_impl);
     let oracle = move |x: &[f64]| -> (f64, Vec<f64>) {
         oracle_cell
             .borrow_mut()
@@ -154,6 +200,16 @@ fn main() {
         &atomic_numbers, vec![], &[], 1.0, 1.0,
     ));
     eprintln!("  Kernel pair types from {:?}", atomic_numbers);
+    let neb_prior = match variant {
+        BenchmarkVariant::Chemgp => None,
+        BenchmarkVariant::PhysicalPrior => Some(linear_prior(&x_start, e_r, &g_r, "reactant")),
+        BenchmarkVariant::AdaptivePrior | BenchmarkVariant::RecycledLocalPes => {
+            Some(nearest_linear_prior(&[
+                ("reactant", x_start.as_slice(), e_r, g_r.as_slice()),
+                ("product", x_end.as_slice(), e_p, g_p.as_slice()),
+            ]))
+        }
+    };
 
     // GP-minimize endpoints on PET-MAD surface
     let mut min_calls = 2; // initial evals
@@ -161,7 +217,7 @@ fn main() {
         let mut min_cfg = MinimizationConfig::default();
         min_cfg.max_iter = 50;
         min_cfg.max_oracle_calls = 20;
-        min_cfg.conv_tol = 0.05;
+        min_cfg.conv_tol = args.endpoint_conv_tol;
         min_cfg.trust_metric = chemgp_core::trust::TrustMetric::Emd;
         min_cfg.atom_types = atomic_numbers.clone();
         min_cfg.const_sigma2 = 1.0;
@@ -196,7 +252,7 @@ fn main() {
     // --- Standard NEB ---
     let neb_result: Option<NEBResult> = if run_neb {
         eprintln!("\n=== Standard NEB (eOn-matched config) ===");
-        let neb_cfg = base_neb_config(args.images);
+        let neb_cfg = base_neb_config(args.images, args.conv_tol);
         let r = neb_optimize(&oracle, &x_start, &x_end, &neb_cfg);
         eprintln!(
             "  NEB: {} calls, {} iters, max|F| = {:.5}, stop = {:?}",
@@ -213,10 +269,12 @@ fn main() {
     let aie_result: Option<NEBResult> = if run_aie {
         eprintln!("\n=== GP-NEB AIE ===");
         let n_img = args.images;
-        let max_outer = ((neb_calls.saturating_sub(12)) / n_img).min(40);
+        let max_outer = args
+            .max_outer
+            .unwrap_or_else(|| ((neb_calls.saturating_sub(12)) / n_img).min(40));
         eprintln!("  Budget: {} outer iters (from {} NEB calls)", max_outer, neb_calls);
 
-        let mut cfg = base_neb_config(n_img);
+        let mut cfg = base_neb_config(n_img, args.conv_tol);
         cfg.max_outer_iter = max_outer;
         cfg.max_iter = 100;
         cfg.max_move = 0.1;
@@ -229,6 +287,9 @@ fn main() {
         cfg.trust_metric = chemgp_core::trust::TrustMetric::Emd;
         cfg.atom_types = atomic_numbers.clone();
         cfg.const_sigma2 = 1.0;
+        if let Some(prior) = neb_prior.clone() {
+            cfg.prior_mean = prior;
+        }
 
         let r = gp_neb_aie(&oracle, &x_start, &x_end, &kernel, &cfg);
         eprintln!(
@@ -244,10 +305,10 @@ fn main() {
     // Koistinen et al. (2019): energy variance selection, exact GP, path reset.
     let oie_result: Option<NEBResult> = if run_oie {
         eprintln!("\n=== GP-NEB OIE (baseline) ===");
-        let max_outer = neb_calls.min(400);
+        let max_outer = args.max_outer.unwrap_or_else(|| neb_calls.min(400));
         eprintln!("  Budget: {} outer iters (1 call/iter, cap from {} NEB calls)", max_outer, neb_calls);
 
-        let mut cfg = base_neb_config(args.images);
+        let mut cfg = base_neb_config(args.images, args.conv_tol);
         cfg.max_outer_iter = max_outer;
         cfg.max_iter = 1000;
         cfg.max_move = 0.05;
@@ -266,6 +327,9 @@ fn main() {
         cfg.qm_dt = 0.1;
         cfg.atom_types = atomic_numbers.clone();
         cfg.const_sigma2 = 1.0;
+        if let Some(prior) = neb_prior.clone() {
+            cfg.prior_mean = prior;
+        }
 
         let r = gp_neb_oie(&oracle, &x_start, &x_end, &kernel, &cfg);
         eprintln!(
@@ -280,10 +344,10 @@ fn main() {
     // --- GP-NEB OIE (enhanced: triplet + FPS + EMD) ---
     let oie_enh_result: Option<NEBResult> = if run_oie_enh {
         eprintln!("\n=== GP-NEB OIE (enhanced) ===");
-        let max_outer = neb_calls.min(400);
+        let max_outer = args.max_outer.unwrap_or_else(|| neb_calls.min(400));
         eprintln!("  Budget: {} outer iters, cap from {} NEB calls", max_outer, neb_calls);
 
-        let mut cfg = base_neb_config(args.images);
+        let mut cfg = base_neb_config(args.images, args.conv_tol);
         cfg.max_outer_iter = max_outer;
         cfg.max_iter = 100;             // match AIE: enough inner iters for GP relaxation
         cfg.max_move = 0.05;
@@ -295,7 +359,6 @@ fn main() {
         cfg.gp_tol_divisor = 5;
         cfg.max_step_frac = 0.1;
         cfg.bond_stretch_limit = 2.0 / 3.0;
-        cfg.lcb_kappa = 0.0;
         cfg.fps_history = 30;
         cfg.fps_latest_points = 3;
         cfg.trust_radius = 0.1;         // match AIE
@@ -303,11 +366,19 @@ fn main() {
         cfg.atom_types = atomic_numbers.clone();
         cfg.unc_convergence = 0.0;
         cfg.evals_per_iter = 3;         // triplet {i-1, i, i+1}
+        cfg.use_adaptive_triplet_exploration = false;
         cfg.max_pred_points = 0;        // no KNN: use full FPS subset for prediction
         cfg.unc_revert_tol = 0.0;
         cfg.hod_max_history = 80;
         cfg.const_sigma2 = 1.0;
         cfg.acquisition = parse_acquisition(&args.acquisition);
+        cfg.lcb_kappa = match cfg.acquisition {
+            AcquisitionStrategy::Ucb => 2.0,
+            _ => 0.0,
+        };
+        if let Some(prior) = neb_prior.clone() {
+            cfg.prior_mean = prior;
+        }
 
         let r = gp_neb_oie(&oracle, &x_start, &x_end, &kernel, &cfg);
         eprintln!(
@@ -329,11 +400,11 @@ fn main() {
             ("max_force", AcquisitionStrategy::MaxForce),
             ("max_variance", AcquisitionStrategy::MaxVariance),
         ];
-        let max_outer = neb_calls.min(400);
+        let max_outer = args.max_outer.unwrap_or_else(|| neb_calls.min(400));
 
         for (name, acq) in &strategies {
             eprintln!("\n=== GP-NEB OIE ({}) ===", name);
-            let mut cfg = base_neb_config(args.images);
+            let mut cfg = base_neb_config(args.images, args.conv_tol);
             cfg.max_outer_iter = max_outer;
             cfg.max_iter = 30;
             cfg.max_move = 0.05;
@@ -353,6 +424,10 @@ fn main() {
             cfg.atom_types = atomic_numbers.clone();
             cfg.const_sigma2 = 1.0;
             cfg.acquisition = acq.clone();
+            cfg.use_adaptive_triplet_exploration = false;
+            if let Some(prior) = neb_prior.clone() {
+                cfg.prior_mean = prior;
+            }
 
             let r = gp_neb_oie(&oracle, &x_start, &x_end, &kernel, &cfg);
             eprintln!(
@@ -366,7 +441,10 @@ fn main() {
     }
 
     // --- Write JSONL ---
-    let mut f = std::fs::File::create(&args.output).expect("Failed to create output file");
+    let output_path = output_path(&args.output);
+    let mut f = std::fs::File::create(&output_path).expect("Failed to create output file");
+    let aie_label = format!("{}_aie", variant.label());
+    let oie_label = format!("{}_oie", variant.label());
 
     // Helper to write convergence records (includes CI force when available)
     let write_convergence = |f: &mut std::fs::File, method: &str, result: &NEBResult| {
@@ -380,19 +458,19 @@ fn main() {
     };
 
     if let Some(ref r) = neb_result {
-        write_convergence(&mut f, "neb", r);
+        write_convergence(&mut f, "classical", r);
     }
     if let Some(ref r) = aie_result {
-        write_convergence(&mut f, "gp_neb_aie", r);
+        write_convergence(&mut f, &aie_label, r);
     }
     if let Some(ref r) = oie_result {
-        write_convergence(&mut f, "gp_neb_oie", r);
+        write_convergence(&mut f, &oie_label, r);
     }
     if let Some(ref r) = oie_enh_result {
-        write_convergence(&mut f, "gp_neb_oie", r);
+        write_convergence(&mut f, &oie_label, r);
     }
     for (name, ref r) in &compare_results {
-        write_convergence(&mut f, &format!("oie_{}", name), r);
+        write_convergence(&mut f, &format!("{}_oie_{}", variant.label(), name), r);
     }
 
     // Path energies for each method
@@ -403,16 +481,16 @@ fn main() {
         }
     };
     if let Some(ref r) = neb_result {
-        write_path_energies(&mut f, "neb", r);
+        write_path_energies(&mut f, "classical", r);
     }
     if let Some(ref r) = aie_result {
-        write_path_energies(&mut f, "gp_neb_aie", r);
+        write_path_energies(&mut f, &aie_label, r);
     }
     if let Some(ref r) = oie_result {
-        write_path_energies(&mut f, "gp_neb_oie", r);
+        write_path_energies(&mut f, &oie_label, r);
     }
     if let Some(ref r) = oie_enh_result {
-        write_path_energies(&mut f, "gp_neb_oie", r);
+        write_path_energies(&mut f, &oie_label, r);
     }
 
     // Write .con + .dat for rgpycrumbs
@@ -428,10 +506,10 @@ fn main() {
             })
             .collect();
 
-        let con_path = format!("system100_neb_path_{}.con", label);
+        let con_path = artifact_path(&format!("system100_neb_path_{}.con", label));
         write_con(&con_path, &configs).unwrap_or_else(|e| eprintln!("  warn: {}", e));
 
-        let dat_path = format!("system100_neb_{}.dat", label);
+        let dat_path = artifact_path(&format!("system100_neb_{}.dat", label));
         write_neb_dat(&dat_path, &r.path.images, &r.path.energies, &r.path.gradients)
             .unwrap_or_else(|e| eprintln!("  warn: {}", e));
 
@@ -450,7 +528,7 @@ fn main() {
             forces: None,
             cell,
         }];
-        let sp_path = format!("system100_neb_sp_{}.con", label);
+        let sp_path = artifact_path(&format!("system100_neb_sp_{}.con", label));
         write_con(&sp_path, &sp_config).unwrap_or_else(|e| eprintln!("  warn: {}", e));
         eprintln!("  wrote {} (image {})", sp_path, sp_idx);
     };
@@ -463,12 +541,33 @@ fn main() {
 
     // Summary
     let oie_calls = oie_enh_result.as_ref().or(oie_result.as_ref()).map_or(0, |r| r.oracle_calls);
-    let base_cfg = base_neb_config(args.images);
-    writeln!(f, r#"{{"summary":true,"conv_tol":{},"neb_calls":{},"aie_calls":{},"oie_calls":{}}}"#,
+    let base_cfg = base_neb_config(args.images, args.conv_tol);
+    writeln!(f, r#"{{"summary":true,"variant":"{}","conv_tol":{},"neb_calls":{},"neb_converged":{},"neb_max_force":{},"neb_ci_force":{},"aie_calls":{},"aie_converged":{},"aie_max_force":{},"aie_ci_force":{},"oie_calls":{},"oie_converged":{},"oie_max_force":{},"oie_ci_force":{}}}"#,
+        variant.label(),
         base_cfg.conv_tol,
         neb_result.as_ref().map_or(0, |r| r.oracle_calls),
+        neb_result.as_ref().is_some_and(|r| r.converged),
+        neb_result.as_ref().and_then(|r| r.history.max_force.last().copied()).unwrap_or(f64::NAN),
+        neb_result.as_ref().and_then(|r| r.history.ci_force.last().copied()).unwrap_or(f64::NAN),
         aie_result.as_ref().map_or(0, |r| r.oracle_calls),
+        aie_result.as_ref().is_some_and(|r| r.converged),
+        aie_result.as_ref().and_then(|r| r.history.max_force.last().copied()).unwrap_or(f64::NAN),
+        aie_result.as_ref().and_then(|r| r.history.ci_force.last().copied()).unwrap_or(f64::NAN),
         oie_calls,
+        oie_enh_result
+            .as_ref()
+            .or(oie_result.as_ref())
+            .is_some_and(|r| r.converged),
+        oie_enh_result
+            .as_ref()
+            .or(oie_result.as_ref())
+            .and_then(|r| r.history.max_force.last().copied())
+            .unwrap_or(f64::NAN),
+        oie_enh_result
+            .as_ref()
+            .or(oie_result.as_ref())
+            .and_then(|r| r.history.ci_force.last().copied())
+            .unwrap_or(f64::NAN),
     ).expect("Operation failed");
     for (name, ref r) in &compare_results {
         writeln!(f, r#"{{"summary_acq":"{}","calls":{},"converged":{},"final_max_f":{},"final_ci_f":{}}}"#,
@@ -496,5 +595,5 @@ fn main() {
             name, r.oracle_calls, r.converged,
             r.history.max_force.last().unwrap_or(&f64::NAN));
     }
-    eprintln!("Output: {}", args.output);
+    eprintln!("Output: {}", output_path);
 }

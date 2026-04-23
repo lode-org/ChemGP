@@ -3,29 +3,127 @@ runtime:
 
 tasks:
   smoke:
-    synthetic:
-      - mb_minimize
-      - mb_dimer
-      - leps_neb
+    cases:
+      - id: mb_minimize
+        group: synthetic
+        runner_env: dev
+        example: mb_minimize
+        variants: [chemgp]
+      - id: leps_dimer
+        group: synthetic
+        runner_env: dev
+        example: leps_dimer
+        variants: [chemgp]
+      - id: leps_neb
+        group: synthetic
+        runner_env: dev
+        example: leps_neb
+        variants: [chemgp]
   minimize:
-    synthetic:
-      - mb_minimize
-      - leps_minimize
-    literature: []
+    cases:
+      - id: mb_minimize
+        group: synthetic
+        runner_env: dev
+        example: mb_minimize
+        variants: [chemgp, physical_prior, adaptive_prior]
+      - id: leps_minimize
+        group: synthetic
+        runner_env: dev
+        example: leps_minimize
+        variants: [chemgp, physical_prior, adaptive_prior]
+      - id: system100_petmad_classical
+        group: literature
+        runner_env: rpc
+        example: petmad_minimize
+        features: [rgpot]
+        requires_rpc: true
+        args:
+          - --method
+          - classical
+        variants: [chemgp]
+      - id: system100_petmad
+        group: literature
+        runner_env: rpc
+        example: petmad_minimize
+        features: [rgpot]
+        requires_rpc: true
+        args:
+          - --method
+          - gp
+        variants: [chemgp, physical_prior, adaptive_prior, recycled_local_pes]
   dimer:
-    synthetic:
-      - mb_dimer
-      - leps_dimer
-    literature: []
+    cases:
+      - id: leps_dimer
+        group: synthetic
+        runner_env: dev
+        example: leps_dimer
+        variants: [chemgp, physical_prior, adaptive_prior]
+      - id: d000_metatomic_dimer_classical
+        group: literature
+        runner_env: rpc
+        example: rpc_dimer
+        features: [io, rgpot]
+        requires_rpc: true
+        args:
+          - --pos
+          - data/d000/pos.con
+          - --disp
+          - data/d000/displacement.con
+          - --method
+          - standard
+          - --max-calls
+          - "50"
+        variants: [chemgp]
+      - id: d000_metatomic_dimer
+        group: literature
+        runner_env: rpc
+        example: rpc_dimer
+        features: [io, rgpot]
+        requires_rpc: true
+        args:
+          - --pos
+          - data/d000/pos.con
+          - --disp
+          - data/d000/displacement.con
+          - --method
+          - otgpd
+          - --max-calls
+          - "50"
+        variants: [chemgp, physical_prior, adaptive_prior, recycled_local_pes]
   neb:
-    synthetic:
-      - mb_neb
-      - leps_neb
-    literature: []
-
-methods:
-  - classical
-  - chemgp
-  - physical_prior
-  - adaptive_prior
-  - recycled_local_pes
+    cases:
+      - id: leps_neb
+        group: synthetic
+        runner_env: dev
+        example: leps_neb
+        variants: [chemgp, physical_prior, adaptive_prior]
+      - id: system100_neb_baseline
+        group: literature
+        runner_env: rpc
+        example: system100_neb
+        features: [io, rgpot, cli]
+        requires_rpc: true
+        args:
+          - --method
+          - neb
+          - --conv-tol
+          - "0.1"
+          - --images
+          - "5"
+        variants: [chemgp, physical_prior, adaptive_prior, recycled_local_pes]
+      - id: system100_neb_oie
+        group: literature
+        runner_env: rpc
+        example: system100_neb
+        features: [io, rgpot, cli]
+        requires_rpc: true
+        args:
+          - --method
+          - oie
+          - --conv-tol
+          - "0.1"
+          - --max-outer
+          - "120"
+          - --images
+          - "5"
+        variants: [chemgp, physical_prior, adaptive_prior, recycled_local_pes]

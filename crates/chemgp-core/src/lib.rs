@@ -4,6 +4,7 @@ pub mod kernel;
 pub mod types;
 pub mod covariance;
 pub mod prior_mean;
+pub mod benchmarking;
 pub mod predict;
 pub mod nll;
 pub mod scg;
@@ -28,7 +29,7 @@ pub mod otgpd;
 #[cfg(feature = "io")]
 pub mod io;
 
-#[cfg(feature = "rgpot")]
+#[cfg(any(feature = "rgpot", feature = "rgpot_local"))]
 pub mod oracle;
 
 /// Analytical potentials: LJ, Muller-Brown, LEPS.

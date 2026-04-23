@@ -1,25 +1,39 @@
-//! GP-Dimer / OTGPD / Standard dimer saddle search via RPC oracle.
-//!
-//! Generic CLI: reads any pos.con + displacement.con pair,
-//! connects to a running eOn serve instance for energy/gradient.
-//!
-//! Requires:
-//!   1. Export model:  uvx --from metatrain mtt export model.ckpt -o model.pt
-//!   2. Start server:  pixi run -e rpc eonclient -p metatomic --config <ini> --serve-port 12345
-//!
-//! Usage:
-//!   cargo run --release --example rpc_dimer --features io,rgpot -- \
-//!     --pos data/d000/pos.con --disp data/d000/displacement.con \
-//!     --method {standard,dimer,otgpd,all} [--max-calls 20]
-//!
-//! Outputs rpc_dimer.jsonl for plotting.
+// GP-Dimer / OTGPD / Standard dimer saddle search via either the rgpot RPC
+// client or the direct local metatomic backend.
+//
+// Generic CLI: reads any pos.con + displacement.con pair,
+// connects to a running eOn serve instance for energy/gradient.
+//
+// RPC mode:
+//   1. Export model:  uvx --from metatrain mtt export model.ckpt -o model.pt
+//   2. Start server:  pixi run -e rpc eonclient -p metatomic --config <ini> --serve-port 12345
+//
+// Direct local mode:
+//   export RGPOT_BUILD_DIR=/path/to/rgpot/bbdir
+//   cargo run --release --example metatomic_dimer --features io,rgpot_local -- \
+//     --pos data/d000/pos.con --disp data/d000/displacement.con \
+//     --method {standard,dimer,otgpd,all} [--max-calls 20]
+//
+// Usage:
+//   cargo run --release --example rpc_dimer --features io,rgpot -- \
+//     --pos data/d000/pos.con --disp data/d000/displacement.con \
+//     --method {standard,dimer,otgpd,all} [--max-calls 20]
+//
+// Outputs rpc_dimer.jsonl for plotting.
 
 use std::cell::RefCell;
 use std::io::Write;
 
+use chemgp_core::benchmarking::{
+    linear_prior, nearest_linear_prior, output_path, seed_training_data, select_adaptive_prior,
+    BenchmarkVariant,
+};
 use chemgp_core::dimer::{gp_dimer, standard_dimer, DimerConfig};
 use chemgp_core::io::read_con;
 use chemgp_core::kernel::{Kernel, MolInvDistSE};
+#[cfg(feature = "rgpot_local")]
+use chemgp_core::oracle::{LocalMetatomicConfig, LocalMetatomicOracle};
+#[cfg(feature = "rgpot")]
 use chemgp_core::oracle::RpcOracle;
 use chemgp_core::otgpd::{otgpd, OTGPDConfig};
 
@@ -31,7 +45,7 @@ fn get_arg(args: &[String], flag: &str) -> Option<String> {
         .cloned()
 }
 
-fn main() {
+pub fn main() {
     let args: Vec<String> = std::env::args().collect();
 
     let pos_path = get_arg(&args, "--pos").unwrap_or_else(|| "data/d000/pos.con".into());
@@ -41,11 +55,27 @@ fn main() {
     let max_calls: usize = get_arg(&args, "--max-calls")
         .and_then(|s| s.parse().ok())
         .unwrap_or(50);
+    #[cfg(feature = "rgpot")]
     let host = std::env::var("RGPOT_HOST").unwrap_or_else(|_| "localhost".into());
+    #[cfg(feature = "rgpot")]
     let port: u16 = std::env::var("RGPOT_PORT")
         .unwrap_or_else(|_| "12345".into())
         .parse()
         .expect("RGPOT_PORT must be a valid port number");
+    #[cfg(feature = "rgpot_local")]
+    let local_cfg = LocalMetatomicConfig {
+        model_path: std::env::var("RGPOT_MODEL_PATH")
+            .map(std::path::PathBuf::from)
+            .unwrap_or_else(|_| std::path::PathBuf::from("models/pet-mad-xs-v1.5.0.pt")),
+        device: std::env::var("RGPOT_DEVICE").unwrap_or_else(|_| "cpu".into()),
+        length_unit: std::env::var("RGPOT_LENGTH_UNIT").unwrap_or_else(|_| "angstrom".into()),
+        extensions_directory: std::env::var("RGPOT_EXTENSIONS_DIRECTORY")
+            .ok()
+            .map(std::path::PathBuf::from),
+        check_consistency: false,
+        uncertainty_threshold: -1.0,
+        dtype_override: std::env::var("RGPOT_DTYPE_OVERRIDE").ok(),
+    };
 
     // Load geometry
     let pos_frames = read_con(&pos_path).unwrap_or_else(|e| panic!("Failed to read {}: {}", pos_path, e));
@@ -66,14 +96,21 @@ fn main() {
     eprintln!("  pos:    {}", pos_path);
     eprintln!("  disp:   {}", disp_path);
     eprintln!("  atoms:  {} ({:?})", n_atoms, atomic_numbers);
+    #[cfg(feature = "rgpot")]
     eprintln!("  server: {}:{}", host, port);
+    #[cfg(feature = "rgpot_local")]
+    eprintln!("  local model: {}", local_cfg.model_path.display());
     eprintln!("  method: {}", method);
     eprintln!("  max_calls: {}", max_calls);
 
-    let rpc_oracle = RpcOracle::new(&host, port, atomic_numbers.clone(), box_matrix)
+    #[cfg(feature = "rgpot")]
+    let oracle_impl = RpcOracle::new(&host, port, atomic_numbers.clone(), box_matrix)
         .expect("Failed to connect to eOn serve");
+    #[cfg(feature = "rgpot_local")]
+    let oracle_impl = LocalMetatomicOracle::new(&local_cfg, atomic_numbers.clone(), box_matrix)
+        .expect("Failed to create local metatomic oracle");
 
-    let oracle_cell = RefCell::new(rpc_oracle);
+    let oracle_cell = RefCell::new(oracle_impl);
     let oracle = move |x: &[f64]| -> (f64, Vec<f64>) {
         oracle_cell
             .borrow_mut()
@@ -108,6 +145,7 @@ fn main() {
     let run_std = method == "standard" || method == "all";
     let run_dimer = method == "dimer" || method == "all";
     let run_otgpd = method == "otgpd" || method == "all";
+    let variant = BenchmarkVariant::from_env();
 
     // --- Probe: single-point evaluation ---
     if run_probe {
@@ -164,10 +202,13 @@ fn main() {
         return;
     }
 
-    let outfile = "rpc_dimer.jsonl";
-    let mut f = std::fs::File::create(outfile).expect("Failed to create output file");
+    let outfile = output_path("rpc_dimer.jsonl");
+    let mut f = std::fs::File::create(&outfile).expect("Failed to create output file");
 
     let conv_threshold = 0.1; // eV/A, consistent with NEB examples
+    let mut standard_summary = (0usize, false, f64::NAN, f64::NAN);
+    let mut gp_dimer_summary = (0usize, false, f64::NAN, f64::NAN);
+    let mut otgpd_summary = (0usize, false, f64::NAN, f64::NAN);
 
     // --- Standard Dimer ---
     if run_std {
@@ -187,6 +228,12 @@ fn main() {
             result.converged,
             result.stop_reason,
         );
+        standard_summary = (
+            result.oracle_calls,
+            result.converged,
+            result.history.f_true.last().copied().unwrap_or(f64::NAN),
+            result.history.curv_true.last().copied().unwrap_or(f64::NAN),
+        );
 
         for (i, ((&e, &ft), &oc)) in result
             .history
@@ -198,7 +245,7 @@ fn main() {
         {
             writeln!(
                 f,
-                r#"{{"method":"standard_dimer","step":{},"energy":{},"force":{},"oracle_calls":{}}}"#,
+                r#"{{"method":"classical","step":{},"energy":{},"force":{},"oracle_calls":{}}}"#,
                 i, e, ft, oc
             )
             .expect("Operation failed");
@@ -218,8 +265,80 @@ fn main() {
         cfg.atom_types = atomic_numbers.clone();
         cfg.const_sigma2 = 1.0;
 
+        let mut gp_training_data = None;
+        if variant.uses_prior() {
+            let (td_seed, observations) = seed_training_data(
+                &oracle,
+                &x_start,
+                cfg.n_initial_perturb,
+                cfg.perturb_scale,
+                cfg.seed,
+            );
+            let best_obs = observations
+                .iter()
+                .min_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal))
+                .expect("No benchmark observations found");
+            let worst_obs = observations
+                .iter()
+                .max_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal))
+                .expect("No benchmark observations found");
+            cfg.prior_mean = match variant {
+                BenchmarkVariant::Chemgp => cfg.prior_mean.clone(),
+                BenchmarkVariant::PhysicalPrior => {
+                    linear_prior(&observations[0].0, observations[0].1, &observations[0].2, "initial")
+                }
+                BenchmarkVariant::AdaptivePrior => select_adaptive_prior(
+                    &td_seed,
+                    &[
+                        (
+                            "initial",
+                            observations[0].0.as_slice(),
+                            observations[0].1,
+                            observations[0].2.as_slice(),
+                        ),
+                        (
+                            "best_sample",
+                            best_obs.0.as_slice(),
+                            best_obs.1,
+                            best_obs.2.as_slice(),
+                        ),
+                    ],
+                ),
+                BenchmarkVariant::RecycledLocalPes => nearest_linear_prior(&[
+                    (
+                        "initial",
+                        observations[0].0.as_slice(),
+                        observations[0].1,
+                        observations[0].2.as_slice(),
+                    ),
+                    (
+                        "best_sample",
+                        best_obs.0.as_slice(),
+                        best_obs.1,
+                        best_obs.2.as_slice(),
+                    ),
+                    (
+                        "worst_sample",
+                        worst_obs.0.as_slice(),
+                        worst_obs.1,
+                        worst_obs.2.as_slice(),
+                    ),
+                ]),
+            };
+            gp_training_data = Some(td_seed);
+        }
+
+        let gp_label = variant.label();
         eprintln!("\n=== GP-Dimer ===");
-        let result = gp_dimer(&oracle, &x_start, &orient, &kernel, &cfg, None, dimer_sep);
+        let result = gp_dimer(
+            &oracle,
+            &x_start,
+            &orient,
+            &kernel,
+            &cfg,
+            gp_training_data,
+            dimer_sep,
+        );
         eprintln!(
             "  Result: {} calls, |F| = {:.5}, curv = {:.4}, conv = {}, stop = {:?}",
             result.oracle_calls,
@@ -227,6 +346,12 @@ fn main() {
             result.history.curv_true.last().unwrap_or(&f64::NAN),
             result.converged,
             result.stop_reason,
+        );
+        gp_dimer_summary = (
+            result.oracle_calls,
+            result.converged,
+            result.history.f_true.last().copied().unwrap_or(f64::NAN),
+            result.history.curv_true.last().copied().unwrap_or(f64::NAN),
         );
 
         for (i, ((&e, &ft), &oc)) in result
@@ -240,7 +365,8 @@ fn main() {
             let sp = result.history.sigma_perp[i];
             writeln!(
                 f,
-                r#"{{"method":"gp_dimer","step":{},"energy":{},"force":{},"oracle_calls":{},"sigma_perp":{}}}"#,
+                r#"{{"method":"{}","step":{},"energy":{},"force":{},"oracle_calls":{},"sigma_perp":{}}}"#,
+                gp_label,
                 i, e, ft, oc, sp
             )
             .expect("Operation failed");
@@ -264,6 +390,66 @@ fn main() {
         cfg.use_adaptive_threshold = true;
         cfg.divisor_t_dimer_gp = 3.0;
         cfg.rff_features = 500;
+        if variant.uses_prior() {
+            let (td_seed, observations) = seed_training_data(
+                &oracle,
+                &x_start,
+                cfg.n_initial_perturb,
+                cfg.perturb_scale,
+                cfg.seed,
+            );
+            let best_obs = observations
+                .iter()
+                .min_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal))
+                .expect("No benchmark observations found");
+            let worst_obs = observations
+                .iter()
+                .max_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal))
+                .expect("No benchmark observations found");
+            cfg.prior_mean = match variant {
+                BenchmarkVariant::Chemgp => cfg.prior_mean.clone(),
+                BenchmarkVariant::PhysicalPrior => {
+                    linear_prior(&observations[0].0, observations[0].1, &observations[0].2, "initial")
+                }
+                BenchmarkVariant::AdaptivePrior => select_adaptive_prior(
+                    &td_seed,
+                    &[
+                        (
+                            "initial",
+                            observations[0].0.as_slice(),
+                            observations[0].1,
+                            observations[0].2.as_slice(),
+                        ),
+                        (
+                            "best_sample",
+                            best_obs.0.as_slice(),
+                            best_obs.1,
+                            best_obs.2.as_slice(),
+                        ),
+                    ],
+                ),
+                BenchmarkVariant::RecycledLocalPes => nearest_linear_prior(&[
+                    (
+                        "initial",
+                        observations[0].0.as_slice(),
+                        observations[0].1,
+                        observations[0].2.as_slice(),
+                    ),
+                    (
+                        "best_sample",
+                        best_obs.0.as_slice(),
+                        best_obs.1,
+                        best_obs.2.as_slice(),
+                    ),
+                    (
+                        "worst_sample",
+                        worst_obs.0.as_slice(),
+                        worst_obs.1,
+                        worst_obs.2.as_slice(),
+                    ),
+                ]),
+            };
+        }
 
         eprintln!("\n=== OTGPD ===");
         let result = otgpd(&oracle, &x_start, &orient, &kernel, &cfg, None);
@@ -276,6 +462,12 @@ fn main() {
             result.stop_reason,
         );
         eprintln!("  Reference (gprdzbl NWChem): 15 oracle calls, converged");
+        otgpd_summary = (
+            result.oracle_calls,
+            result.converged,
+            result.history.f_true.last().copied().unwrap_or(f64::NAN),
+            result.history.curv_true.last().copied().unwrap_or(f64::NAN),
+        );
 
         for (i, ((&e, &ft), &oc)) in result
             .history
@@ -298,8 +490,21 @@ fn main() {
     // Summary with convergence threshold
     writeln!(
         f,
-        r#"{{"summary":true,"conv_tol":{}}}"#,
-        conv_threshold
+        r#"{{"summary":true,"conv_tol":{},"variant":"{}","standard_calls":{},"standard_converged":{},"standard_force":{},"standard_curv":{},"gpdimer_calls":{},"gpdimer_converged":{},"gpdimer_force":{},"gpdimer_curv":{},"otgpd_calls":{},"otgpd_converged":{},"otgpd_force":{},"otgpd_curv":{}}}"#,
+        conv_threshold,
+        variant.label(),
+        standard_summary.0,
+        standard_summary.1,
+        standard_summary.2,
+        standard_summary.3,
+        gp_dimer_summary.0,
+        gp_dimer_summary.1,
+        gp_dimer_summary.2,
+        gp_dimer_summary.3,
+        otgpd_summary.0,
+        otgpd_summary.1,
+        otgpd_summary.2,
+        otgpd_summary.3
     )
     .expect("Operation failed");
 

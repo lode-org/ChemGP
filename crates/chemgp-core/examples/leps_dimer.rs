@@ -3,6 +3,10 @@
 //! Starts near the saddle point (as in the C++ gpr_optim reference)
 //! to demonstrate GP-accelerated dimer convergence with fewer oracle calls.
 
+use chemgp_core::benchmarking::{
+    linear_prior, nearest_linear_prior, output_path, seed_training_data, select_adaptive_prior,
+    BenchmarkVariant,
+};
 use chemgp_core::dimer::{gp_dimer, standard_dimer, DimerConfig};
 use chemgp_core::kernel::{Kernel, MolInvDistSE};
 use chemgp_core::otgpd::{otgpd, OTGPDConfig};
@@ -79,9 +83,80 @@ fn main() {
     dimer_cfg.max_rot_iter = 0; // skip GP rotation: orient from NEB tangent is reliable
     dimer_cfg.verbose = false;
 
+    let variant = BenchmarkVariant::from_env();
+    let mut gp_training_data = None;
+    if variant.uses_prior() {
+        let (td_seed, observations) = seed_training_data(
+            &oracle,
+            &x_init,
+            dimer_cfg.n_initial_perturb,
+            dimer_cfg.perturb_scale,
+            dimer_cfg.seed,
+        );
+        let best_obs = observations
+            .iter()
+            .min_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal))
+            .expect("No benchmark observations found");
+        let worst_obs = observations
+            .iter()
+            .max_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal))
+            .expect("No benchmark observations found");
+        dimer_cfg.prior_mean = match variant {
+            BenchmarkVariant::Chemgp => dimer_cfg.prior_mean.clone(),
+            BenchmarkVariant::PhysicalPrior => {
+                linear_prior(&observations[0].0, observations[0].1, &observations[0].2, "initial")
+            }
+            BenchmarkVariant::AdaptivePrior => select_adaptive_prior(
+                &td_seed,
+                &[
+                    (
+                        "initial",
+                        observations[0].0.as_slice(),
+                        observations[0].1,
+                        observations[0].2.as_slice(),
+                    ),
+                    (
+                        "best_sample",
+                        best_obs.0.as_slice(),
+                        best_obs.1,
+                        best_obs.2.as_slice(),
+                    ),
+                ],
+            ),
+            BenchmarkVariant::RecycledLocalPes => nearest_linear_prior(&[
+                (
+                    "initial",
+                    observations[0].0.as_slice(),
+                    observations[0].1,
+                    observations[0].2.as_slice(),
+                ),
+                (
+                    "best_sample",
+                    best_obs.0.as_slice(),
+                    best_obs.1,
+                    best_obs.2.as_slice(),
+                ),
+                (
+                    "worst_sample",
+                    worst_obs.0.as_slice(),
+                    worst_obs.1,
+                    worst_obs.2.as_slice(),
+                ),
+            ]),
+        };
+        gp_training_data = Some(td_seed);
+    }
+
+    let gp_label = variant.label();
     eprintln!("Running GP-Dimer...");
     let dimer_result = gp_dimer(
-        &oracle, &x_init, &orient_init, &kernel, &dimer_cfg, None, gp_dimer_sep,
+        &oracle,
+        &x_init,
+        &orient_init,
+        &kernel,
+        &dimer_cfg,
+        gp_training_data,
+        gp_dimer_sep,
     );
     eprintln!(
         "  GP-Dimer: {} calls, |F| = {:.5}, converged = {}",
@@ -118,8 +193,8 @@ fn main() {
     );
 
     // Write comparison data
-    let outfile = "leps_dimer_comparison.jsonl";
-    let mut f = std::fs::File::create(outfile).expect("Failed to create output file");
+    let outfile = output_path("leps_dimer_comparison.jsonl");
+    let mut f = std::fs::File::create(&outfile).expect("Failed to create output file");
 
     for (i, (&e, &fv)) in std_result
         .history
@@ -130,7 +205,7 @@ fn main() {
     {
         writeln!(
             f,
-            r#"{{"method":"standard_dimer","step":{},"energy":{},"force":{},"oracle_calls":{}}}"#,
+            r#"{{"method":"classical","step":{},"energy":{},"force":{},"oracle_calls":{}}}"#,
             i,
             e,
             fv,
@@ -148,7 +223,8 @@ fn main() {
     {
         writeln!(
             f,
-            r#"{{"method":"gp_dimer","step":{},"energy":{},"force":{},"oracle_calls":{},"sigma_perp":{}}}"#,
+            r#"{{"method":"{}","step":{},"energy":{},"force":{},"oracle_calls":{},"sigma_perp":{}}}"#,
+            gp_label,
             i,
             e,
             fv,
@@ -179,8 +255,11 @@ fn main() {
 
     writeln!(
         f,
-        r#"{{"summary":true,"standard_calls":{},"dimer_calls":{},"otgpd_calls":{}}}"#,
-        std_result.oracle_calls, dimer_result.oracle_calls, otgpd_result.oracle_calls
+        r#"{{"summary":true,"gp_method":"{}","standard_calls":{},"dimer_calls":{},"otgpd_calls":{}}}"#,
+        gp_label,
+        std_result.oracle_calls,
+        dimer_result.oracle_calls,
+        otgpd_result.oracle_calls
     )
     .expect("Operation failed");
 

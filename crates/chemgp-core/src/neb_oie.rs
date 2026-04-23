@@ -766,7 +766,7 @@ pub fn gp_neb_oie(
                 eprintln!("  CI focus: triplet on CI image {} (force rising)", i_ci);
             }
             cfg.acquisition.clone()
-        } else if cfg.evals_per_iter >= 3 && outer_iter > 3 {
+        } else if cfg.use_adaptive_triplet_exploration && cfg.evals_per_iter >= 3 && outer_iter > 3 {
             // Triplet mode (molecular): explore with Thompson sampling
             if cfg.verbose {
                 eprintln!("  Exploration: Thompson sampling");

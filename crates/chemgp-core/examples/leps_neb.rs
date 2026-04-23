@@ -3,6 +3,7 @@
 //! Outputs JSONL data showing oracle call efficiency:
 //! GP OIE > GP AIE > standard NEB.
 
+use chemgp_core::benchmarking::{linear_prior, nearest_linear_prior, output_path, BenchmarkVariant};
 use chemgp_core::kernel::{Kernel, MolInvDistSE};
 use chemgp_core::neb::gp_neb_aie;
 use chemgp_core::neb::neb_optimize;
@@ -18,6 +19,21 @@ fn main() {
     let x_end = LEPS_PRODUCT.to_vec();
 
     let kernel = Kernel::MolInvDist(MolInvDistSE::isotropic(1.0, 1.0, vec![]));
+    let variant = BenchmarkVariant::from_env();
+    let (e_start, g_start) = oracle(&x_start);
+    let (e_end, g_end) = oracle(&x_end);
+    let aie_label = format!("{}_aie", variant.label());
+    let oie_label = format!("{}_oie", variant.label());
+    let neb_prior = match variant {
+        BenchmarkVariant::Chemgp => None,
+        BenchmarkVariant::PhysicalPrior => Some(linear_prior(&x_start, e_start, &g_start, "reactant")),
+        BenchmarkVariant::AdaptivePrior | BenchmarkVariant::RecycledLocalPes => {
+            Some(nearest_linear_prior(&[
+                ("reactant", x_start.as_slice(), e_start, g_start.as_slice()),
+                ("product", x_end.as_slice(), e_end, g_end.as_slice()),
+            ]))
+        }
+    };
 
     // Standard NEB
     let mut neb_cfg = NEBConfig::default();
@@ -45,6 +61,9 @@ fn main() {
     aie_cfg.max_gp_points = 50;
     aie_cfg.rff_features = 500;
     aie_cfg.verbose = false;
+    if let Some(prior) = neb_prior.clone() {
+        aie_cfg.prior_mean = prior;
+    }
 
     eprintln!("Running GP-NEB AIE...");
     let aie_result = gp_neb_aie(&oracle, &x_start, &x_end, &kernel, &aie_cfg);
@@ -64,6 +83,9 @@ fn main() {
     oie_cfg.max_gp_points = 50;
     oie_cfg.rff_features = 1000;
     oie_cfg.verbose = false;
+    if let Some(prior) = neb_prior {
+        oie_cfg.prior_mean = prior;
+    }
 
     eprintln!("Running GP-NEB OIE...");
     let oie_result = gp_neb_oie(&oracle, &x_start, &x_end, &kernel, &oie_cfg);
@@ -73,14 +95,14 @@ fn main() {
         oie_result.converged);
 
     // Write comparison data
-    let outfile = "leps_neb_comparison.jsonl";
-    let mut f = std::fs::File::create(outfile).expect("Failed to create output file");
+    let outfile = output_path("leps_neb_comparison.jsonl");
+    let mut f = std::fs::File::create(&outfile).expect("Failed to create output file");
 
     // NEB convergence history
     for (i, (&mf, &oc)) in neb_result.history.max_force.iter()
         .zip(neb_result.history.oracle_calls.iter()).enumerate()
     {
-        writeln!(f, r#"{{"method":"neb","step":{},"max_force":{},"oracle_calls":{}}}"#,
+        writeln!(f, r#"{{"method":"classical","step":{},"max_force":{},"oracle_calls":{}}}"#,
             i, mf, oc).expect("Failed to write to output file");
     }
 
@@ -88,21 +110,21 @@ fn main() {
     for (i, (&mf, &oc)) in aie_result.history.max_force.iter()
         .zip(aie_result.history.oracle_calls.iter()).enumerate()
     {
-        writeln!(f, r#"{{"method":"gp_neb_aie","step":{},"max_force":{},"oracle_calls":{}}}"#,
-            i, mf, oc).expect("Failed to write to output file");
+        writeln!(f, r#"{{"method":"{}","step":{},"max_force":{},"oracle_calls":{}}}"#,
+            aie_label, i, mf, oc).expect("Failed to write to output file");
     }
 
     // OIE convergence history
     for (i, (&mf, &oc)) in oie_result.history.max_force.iter()
         .zip(oie_result.history.oracle_calls.iter()).enumerate()
     {
-        writeln!(f, r#"{{"method":"gp_neb_oie","step":{},"max_force":{},"oracle_calls":{}}}"#,
-            i, mf, oc).expect("Failed to write to output file");
+        writeln!(f, r#"{{"method":"{}","step":{},"max_force":{},"oracle_calls":{}}}"#,
+            oie_label, i, mf, oc).expect("Failed to write to output file");
     }
 
     // Summary
-    writeln!(f, r#"{{"summary":true,"neb_calls":{},"aie_calls":{},"oie_calls":{},"conv_tol":{}}}"#,
-        neb_result.oracle_calls, aie_result.oracle_calls, oie_result.oracle_calls,
+    writeln!(f, r#"{{"summary":true,"variant":"{}","neb_calls":{},"aie_calls":{},"oie_calls":{},"conv_tol":{}}}"#,
+        variant.label(), neb_result.oracle_calls, aie_result.oracle_calls, oie_result.oracle_calls,
         neb_cfg.conv_tol).expect("Failed to write to output file");
 
     // LEPS energy grid in (rAB, rBC) space for contour plot

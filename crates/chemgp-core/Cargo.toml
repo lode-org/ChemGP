@@ -16,6 +16,7 @@ readme = "../../README.md"
 default = []
 io = ["dep:chemfiles", "dep:readcon-core"]
 rgpot = ["dep:rgpot-core"]
+rgpot_local = ["dep:dlpk"]
 cli = ["dep:clap"]
 
 [dependencies]
@@ -27,6 +28,7 @@ rand_distr = { workspace = true }
 chemfiles = { workspace = true, optional = true }
 readcon-core = { workspace = true, optional = true }
 rgpot-core = { workspace = true, optional = true }
+dlpk = { workspace = true, optional = true }
 clap = { workspace = true, optional = true }
 
 [dev-dependencies]
@@ -36,6 +38,10 @@ approx = { workspace = true }
 [[example]]
 name = "petmad_minimize"
 required-features = ["rgpot"]
+
+[[example]]
+name = "petmad_minimize_local"
+required-features = ["rgpot_local"]
 
 [[example]]
 name = "rpc_smoke_test"
@@ -50,9 +56,17 @@ name = "rpc_dimer"
 required-features = ["io", "rgpot"]
 
 [[example]]
+name = "metatomic_dimer"
+required-features = ["io", "rgpot_local"]
+
+[[example]]
 name = "petmad_rff_quality"
 required-features = ["io", "rgpot"]
 
 [[example]]
 name = "system100_neb"
 required-features = ["cli", "io", "rgpot"]
+
+[[example]]
+name = "system100_neb_local"
+required-features = ["cli", "io", "rgpot_local"]

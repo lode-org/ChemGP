@@ -1,35 +1,56 @@
-import json
 from pathlib import Path
 
 
-def _summary_payload(task_name):
-    task_cfg = config["tasks"].get(task_name, {})
-    return {
-        "task": task_name,
-        "synthetic": task_cfg.get("synthetic", []),
-        "literature": task_cfg.get("literature", []),
-        "methods": config.get("methods", []),
-        "runtime_target_minutes": config.get("runtime", {}).get("target_minutes", 45),
-    }
+def task_cases(task_name):
+    return config["tasks"].get(task_name, {}).get("cases", [])
 
 
-rule emit_summary:
+def task_run_meta(task_name):
+    targets = []
+    for case in task_cases(task_name):
+        for variant in case.get("variants", []):
+            targets.append(f"results/{task_name}/{case['id']}/{variant}/run_meta.json")
+    return targets
+
+
+def task_run_jsonl(task_name):
+    targets = []
+    for case in task_cases(task_name):
+        for variant in case.get("variants", []):
+            targets.append(f"results/{task_name}/{case['id']}/{variant}/raw.jsonl")
+    return targets
+
+
+rule run_case:
+    input:
+        cfg="config/benchmarks.yaml",
+        runner="scripts/run_case.py",
     output:
-        "results/{task}/summary.json"
-    run:
-        task_name = wildcards.task
-        Path(output[0]).parent.mkdir(parents=True, exist_ok=True)
-        with open(output[0], "w", encoding="ascii") as fh:
-            json.dump(_summary_payload(task_name), fh, indent=2)
-            fh.write("\n")
+        meta="results/{task}/{case}/{variant}/run_meta.json",
+        jsonl="results/{task}/{case}/{variant}/raw.jsonl",
+    shell:
+        (
+            "python {input.runner} "
+            "--config {input.cfg} "
+            "--task {wildcards.task} "
+            "--case {wildcards.case} "
+            "--variant {wildcards.variant} "
+            "--output-jsonl {output.jsonl} "
+            "--output-meta {output.meta}"
+        )
 
 
-rule emit_smoke_summary:
+rule task_summary:
+    input:
+        lambda wc: task_run_meta(wc.task),
     output:
-        "results/smoke/summary.json"
-    run:
-        Path(output[0]).parent.mkdir(parents=True, exist_ok=True)
-        payload = _summary_payload("smoke")
-        with open(output[0], "w", encoding="ascii") as fh:
-            json.dump(payload, fh, indent=2)
-            fh.write("\n")
+        "results/{task}/summary.json",
+    params:
+        task=lambda wc: wc.task,
+    shell:
+        (
+            "python scripts/task_summary.py "
+            "--task {params.task} "
+            "--output {output} "
+            "{input}"
+        )

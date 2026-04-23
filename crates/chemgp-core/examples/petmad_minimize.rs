@@ -1,15 +1,28 @@
-//! GP minimize on a 9-atom organic fragment via eOn serve RPC (PET-MAD).
-//!
-//! Requires a running eOn serve instance:
-//!   pixi run -e rpc serve-petmad
-//!
-//! Outputs `petmad_minimize_comparison.jsonl` for plotting.
+// GP minimize on a 9-atom organic fragment using either the rgpot RPC client
+// or the direct local metatomic backend.
+//
+// RPC mode:
+//   pixi run -e rpc serve-petmad
+//   cargo run --release --features rgpot --example petmad_minimize
+//
+// Direct local mode:
+//   export RGPOT_BUILD_DIR=/path/to/rgpot/bbdir
+//   cargo run --release --features rgpot_local --example petmad_minimize_local
+//
+// Outputs `petmad_minimize_comparison.jsonl` for plotting.
 
 use std::cell::RefCell;
 use std::io::Write;
 
+use chemgp_core::benchmarking::{
+    linear_prior, nearest_linear_prior, nearest_prior_library_label, output_path,
+    seed_training_data, select_adaptive_prior_with_label, BenchmarkVariant,
+};
 use chemgp_core::kernel::{Kernel, MolInvDistSE};
 use chemgp_core::minimize::{gp_minimize, MinimizationConfig};
+#[cfg(feature = "rgpot_local")]
+use chemgp_core::oracle::{LocalMetatomicConfig, LocalMetatomicOracle};
+#[cfg(feature = "rgpot")]
 use chemgp_core::oracle::RpcOracle;
 
 /// System100 reactant (9-atom organic fragment from ORCA).
@@ -43,8 +56,37 @@ fn max_atom_motion(d: &[f64]) -> f64 {
     max_disp
 }
 
-fn main() {
+fn get_arg(args: &[String], flag: &str) -> Option<String> {
+    args.iter()
+        .position(|a| a == flag)
+        .and_then(|i| args.get(i + 1))
+        .cloned()
+}
+
+pub fn main() {
+    let args: Vec<String> = std::env::args().collect();
+    let method = get_arg(&args, "--method").unwrap_or_else(|| "all".into());
+    let run_gp = method == "gp" || method == "all";
+    let run_classical = method == "classical" || method == "all";
+
+    #[cfg(feature = "rgpot_local")]
+    let local_cfg = LocalMetatomicConfig {
+        model_path: std::env::var("RGPOT_MODEL_PATH")
+            .map(std::path::PathBuf::from)
+            .unwrap_or_else(|_| std::path::PathBuf::from("models/pet-mad-xs-v1.5.0.pt")),
+        device: std::env::var("RGPOT_DEVICE").unwrap_or_else(|_| "cpu".into()),
+        length_unit: std::env::var("RGPOT_LENGTH_UNIT").unwrap_or_else(|_| "angstrom".into()),
+        extensions_directory: std::env::var("RGPOT_EXTENSIONS_DIRECTORY")
+            .ok()
+            .map(std::path::PathBuf::from),
+        check_consistency: false,
+        uncertainty_threshold: -1.0,
+        dtype_override: std::env::var("RGPOT_DTYPE_OVERRIDE").ok(),
+    };
+
+    #[cfg(feature = "rgpot")]
     let host = std::env::var("RGPOT_HOST").unwrap_or_else(|_| "localhost".into());
+    #[cfg(feature = "rgpot")]
     let port: u16 = std::env::var("RGPOT_PORT")
         .unwrap_or_else(|_| "12345".into())
         .parse()
@@ -57,12 +99,19 @@ fn main() {
 
     eprintln!("PET-MAD GP minimize on system100 (9 atoms)");
     eprintln!("  atoms: {} ({:?})", n_atoms, atomic_numbers);
+    #[cfg(feature = "rgpot")]
     eprintln!("  connecting to {}:{}", host, port);
+    #[cfg(feature = "rgpot_local")]
+    eprintln!("  local model: {}", local_cfg.model_path.display());
 
-    let rpc_oracle = RpcOracle::new(&host, port, atomic_numbers.clone(), box_matrix)
+    #[cfg(feature = "rgpot")]
+    let oracle_impl = RpcOracle::new(&host, port, atomic_numbers.clone(), box_matrix)
         .expect("Failed to connect to eOn serve");
+    #[cfg(feature = "rgpot_local")]
+    let oracle_impl = LocalMetatomicOracle::new(&local_cfg, atomic_numbers.clone(), box_matrix)
+        .expect("Failed to create local metatomic oracle");
 
-    let oracle_cell = RefCell::new(rpc_oracle);
+    let oracle_cell = RefCell::new(oracle_impl);
     let oracle = move |x: &[f64]| -> (f64, Vec<f64>) {
         oracle_cell
             .borrow_mut()
@@ -91,23 +140,101 @@ fn main() {
     gp_cfg.fps_latest_points = 3;
     gp_cfg.verbose = true;
 
-    eprintln!("Running GP minimize...");
-    let gp_result = gp_minimize(&oracle, &x_init, &kernel, &gp_cfg, None);
-    eprintln!(
-        "  GP: {} oracle calls, final E = {:.6}, converged = {}",
-        gp_result.oracle_calls, gp_result.e_final, gp_result.converged
-    );
+    let variant = BenchmarkVariant::from_env();
+    let mut gp_training_data = None;
+    let mut prior_label = "reference".to_string();
+    if variant.uses_prior() {
+        let (td_seed, observations) = seed_training_data(
+            &oracle,
+            &x_init,
+            gp_cfg.n_initial_perturb,
+            gp_cfg.perturb_scale,
+            gp_cfg.seed,
+        );
+        let best_obs = observations
+            .iter()
+            .min_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal))
+            .expect("No benchmark observations found");
+        let worst_obs = observations
+            .iter()
+            .max_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal))
+            .expect("No benchmark observations found");
+        gp_cfg.prior_mean = match variant {
+            BenchmarkVariant::Chemgp => gp_cfg.prior_mean.clone(),
+            BenchmarkVariant::PhysicalPrior => {
+                prior_label = "initial".to_string();
+                linear_prior(&observations[0].0, observations[0].1, &observations[0].2, "initial")
+            }
+            BenchmarkVariant::AdaptivePrior => {
+                let (prior, label) = select_adaptive_prior_with_label(
+                    &td_seed,
+                    &[
+                        (
+                            "initial",
+                            observations[0].0.as_slice(),
+                            observations[0].1,
+                            observations[0].2.as_slice(),
+                        ),
+                        (
+                            "best_sample",
+                            best_obs.0.as_slice(),
+                            best_obs.1,
+                            best_obs.2.as_slice(),
+                        ),
+                    ],
+                );
+                prior_label = label;
+                prior
+            }
+            BenchmarkVariant::RecycledLocalPes => {
+                prior_label =
+                    nearest_prior_library_label(&["initial", "best_sample", "worst_sample"]);
+                nearest_linear_prior(&[
+                    (
+                        "initial",
+                        observations[0].0.as_slice(),
+                        observations[0].1,
+                        observations[0].2.as_slice(),
+                    ),
+                    (
+                        "best_sample",
+                        best_obs.0.as_slice(),
+                        best_obs.1,
+                        best_obs.2.as_slice(),
+                    ),
+                    (
+                        "worst_sample",
+                        worst_obs.0.as_slice(),
+                        worst_obs.1,
+                        worst_obs.2.as_slice(),
+                    ),
+                ])
+            }
+        };
+        gp_training_data = Some(td_seed);
+    }
+    eprintln!("  Prior selection: {}", prior_label);
 
-    // Compute max per-atom force norm for GP trajectory
+    let gp_label = variant.label();
+    let mut gp_result_opt = None;
     let mut gp_max_fatom: Vec<f64> = Vec::new();
-    for pt in &gp_result.trajectory {
-        let (_, grad) = oracle(pt);
-        // Oracle returns gradient; force magnitude is the same
-        let max_f = (0..n_atoms).map(|a| {
-            let off = a * 3;
-            grad[off..off + 3].iter().map(|v| v * v).sum::<f64>().sqrt()
-        }).fold(0.0f64, f64::max);
-        gp_max_fatom.push(max_f);
+    if run_gp {
+        eprintln!("Running GP minimize...");
+        let gp_result = gp_minimize(&oracle, &x_init, &kernel, &gp_cfg, gp_training_data);
+        eprintln!(
+            "  GP: {} oracle calls, final E = {:.6}, converged = {}",
+            gp_result.oracle_calls, gp_result.e_final, gp_result.converged
+        );
+
+        for pt in &gp_result.trajectory {
+            let (_, grad) = oracle(pt);
+            let max_f = (0..n_atoms).map(|a| {
+                let off = a * 3;
+                grad[off..off + 3].iter().map(|v| v * v).sum::<f64>().sqrt()
+            }).fold(0.0f64, f64::max);
+            gp_max_fatom.push(max_f);
+        }
+        gp_result_opt = Some(gp_result);
     }
 
     // Direct L-BFGS for comparison (eOn client algorithm: LBFGS.cpp)
@@ -129,8 +256,13 @@ fn main() {
     let mut prev_x: Option<Vec<f64>> = None;
     let mut prev_forces: Option<Vec<f64>> = None;
 
-    eprintln!("Running direct L-BFGS...");
+    if run_classical {
+        eprintln!("Running direct L-BFGS...");
+    }
     for _ in 0..200 {
+        if !run_classical {
+            break;
+        }
         let (e, grad) = oracle(&x);
         direct_calls += 1;
         // Oracle returns gradient; negate for forces
@@ -219,33 +351,39 @@ fn main() {
     }
 
     // Write JSONL
-    let outfile = "petmad_minimize_comparison.jsonl";
-    let mut f = std::fs::File::create(outfile).expect("Failed to create output file");
+    let outfile = output_path("petmad_minimize_comparison.jsonl");
+    let mut f = std::fs::File::create(&outfile).expect("Failed to create output file");
 
-    for (i, (e, max_f)) in gp_result.energies.iter().zip(gp_max_fatom.iter()).enumerate() {
-        writeln!(
-            f,
-            r#"{{"method":"gp_minimize","step":{},"energy":{},"max_fatom":{},"oracle_calls":{}}}"#,
-            i, e, max_f, i + 1
-        )
-        .expect("Operation failed");
+    if let Some(ref gp_result) = gp_result_opt {
+        for (i, (e, max_f)) in gp_result.energies.iter().zip(gp_max_fatom.iter()).enumerate() {
+            writeln!(
+                f,
+                r#"{{"method":"{}","step":{},"energy":{},"max_fatom":{},"oracle_calls":{}}}"#,
+                gp_label, i, e, max_f, i + 1
+            )
+            .expect("Operation failed");
+        }
     }
 
-    for (i, (oc, e, max_f)) in direct_data.iter().enumerate() {
-        writeln!(
-            f,
-            r#"{{"method":"direct_lbfgs","step":{},"energy":{},"max_fatom":{},"oracle_calls":{}}}"#,
-            i, e, max_f, oc
-        )
-        .expect("Operation failed");
+    if run_classical {
+        for (i, (oc, e, max_f)) in direct_data.iter().enumerate() {
+            writeln!(
+                f,
+                r#"{{"method":"classical","step":{},"energy":{},"max_fatom":{},"oracle_calls":{}}}"#,
+                i, e, max_f, oc
+            )
+            .expect("Operation failed");
+        }
     }
 
     writeln!(
         f,
-        r#"{{"summary":true,"gp_calls":{},"gp_energy":{},"gp_converged":{},"direct_calls":{},"direct_energy":{},"direct_max_fatom":{},"conv_tol":{}}}"#,
-        gp_result.oracle_calls,
-        gp_result.e_final,
-        gp_result.converged,
+        r#"{{"summary":true,"gp_method":"{}","prior_label":"{}","gp_calls":{},"gp_energy":{},"gp_converged":{},"direct_calls":{},"direct_energy":{},"direct_max_fatom":{},"conv_tol":{}}}"#,
+        gp_label,
+        prior_label,
+        gp_result_opt.as_ref().map(|r| r.oracle_calls).unwrap_or(0),
+        gp_result_opt.as_ref().map(|r| r.e_final).unwrap_or(f64::NAN),
+        gp_result_opt.as_ref().map(|r| r.converged).unwrap_or(false),
         direct_calls,
         direct_data.last().map(|d| d.1).unwrap_or(f64::NAN),
         direct_data.last().map(|d| d.2).unwrap_or(f64::NAN),

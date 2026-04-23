@@ -71,3 +71,34 @@ print("\n--- Rust correspondence ---")
 print("prior_mean.rs: residualize_training_data() subtracts prior energy/gradient")
 print("predict.rs: build_pred_model_with_prior() fits residual targets")
 print("predict.rs: apply_prior_to_prediction() adds the prior back to the mean")
+
+# Taylor-diagonal prior example
+print("\n" + "=" * 60)
+print("Taylor-diagonal prior example")
+print("=" * 60)
+
+g01, g02 = sp.symbols("g01 g02", real=True)
+
+taylor_m = (
+    e0
+    + g01 * (x1 - c1)
+    + g02 * (x2 - c2)
+    + sp.Rational(1, 2) * k1 * (x1 - c1) ** 2
+    + sp.Rational(1, 2) * k2 * (x2 - c2) ** 2
+)
+taylor_g1 = sp.diff(taylor_m, x1)
+taylor_g2 = sp.diff(taylor_m, x2)
+
+print(f"m_taylor(x)   = {sp.expand(taylor_m)}")
+print(f"dm_taylor/dx1 = {sp.expand(taylor_g1)}")
+print(f"dm_taylor/dx2 = {sp.expand(taylor_g2)}")
+
+expected_g1 = g01 + k1 * (x1 - c1)
+expected_g2 = g02 + k2 * (x2 - c2)
+
+assert sp.simplify(taylor_g1 - expected_g1) == 0
+assert sp.simplify(taylor_g2 - expected_g2) == 0
+
+print("\nIdentity verified for the ChemGP `TaylorDiagonal` prior:")
+print("  E(x) = e0 + g0·(x-c) + 0.5 * sum_i k_i (x_i - c_i)^2")
+print("  G_i  = g0_i + k_i (x_i - c_i)")

@@ -13,7 +13,8 @@ use crate::dimer_utils::{
 use crate::hod::{HodConfig, HodState};
 use crate::kernel::Kernel;
 use crate::lbfgs::LbfgsHistory;
-use crate::predict::{build_pred_model_full, GPNoiseParams, PredModel};
+use crate::predict::{build_pred_model_full_with_prior, GPNoiseParams, PredModel};
+use crate::prior_mean::PriorMeanConfig;
 use crate::sampling::{prune_training_data, select_optim_subset};
 use crate::train::{adaptive_train_iters, train_model};
 use crate::trust::{
@@ -58,6 +59,7 @@ pub struct OTGPDConfig {
     pub hod_history_increment: usize,
     pub hod_max_history: usize,
     pub rff_features: usize,
+    pub prior_mean: PriorMeanConfig,
     pub trust_metric: TrustMetric,
     pub atom_types: Vec<i32>,
     pub use_adaptive_threshold: bool,
@@ -132,6 +134,7 @@ impl Default for OTGPDConfig {
             hod_history_increment: 2,
             hod_max_history: 30,
             rff_features: 0,
+            prior_mean: PriorMeanConfig::Reference,
             trust_metric: TrustMetric::Emd,
             atom_types: Vec::new(),
             use_adaptive_threshold: false,
@@ -547,16 +550,15 @@ pub fn otgpd(
 
         let train_iters = adaptive_train_iters(cfg.gp_train_iter, prev_kern.is_none());
 
-        let e_ref_sub = td_sub.energies[0];
-        let mut y_sub: Vec<f64> = td_sub.energies.iter().map(|e| e - e_ref_sub).collect();
-        y_sub.extend_from_slice(&td_sub.gradients);
-
         // Use config-provided kernel for first iteration; SCG optimizes from there.
         // Data-dependent init is pathological for clustered dimer data (0.01A sep).
         let kern = match &prev_kern {
             None => kernel.clone(),
             Some(k) => k.clone(),
         };
+
+        let (mut y_sub, grad_sub) = cfg.prior_mean.residualize_training_data(&td_sub);
+        y_sub.extend_from_slice(&grad_sub);
 
         let mut gp_sub = GPModel::new(kern, &td_sub, y_sub.clone(), cfg.noise_e, cfg.noise_g, cfg.jitter)
             .expect("GPModel::new failed: invalid training data or kernel params");
@@ -595,9 +597,10 @@ pub fn otgpd(
         }
 
         // Build prediction model on full data (RFF if configured, else exact GP)
-        let model = build_pred_model_full(
+        let model = build_pred_model_full_with_prior(
             &gp_sub.kernel, &td, cfg.rff_features, 42, const_sigma2,
             &GPNoiseParams { noise_e: cfg.noise_e, noise_g: cfg.noise_g, jitter: cfg.jitter },
+            &cfg.prior_mean,
         );
         let e_ref = td.energies[0];
 

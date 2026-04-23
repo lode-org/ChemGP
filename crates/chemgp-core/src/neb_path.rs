@@ -277,6 +277,9 @@ pub struct NEBConfig {
     /// Triplet mode evaluates {i-1, i, i+1} so the Henkelman-Jonsson improved
     /// tangent at image i uses ground-truth data on both sides.
     pub evals_per_iter: usize,
+    /// When true, triplet mode may temporarily override the configured
+    /// acquisition with Thompson sampling to explore the band.
+    pub use_adaptive_triplet_exploration: bool,
     /// Hard oracle call budget for NEB OIE (0 = unlimited).
     pub max_neb_oracle_calls: usize,
     /// Enable Hyperparameter Oscillation Detection (HOD).
@@ -352,6 +355,7 @@ impl Default for NEBConfig {
             unc_conv_tol: 0.0,
             unc_revert_tol: 0.0,
             evals_per_iter: 1,
+            use_adaptive_triplet_exploration: true,
             max_neb_oracle_calls: 0,
             use_hod: true,
             hod_monitoring_window: 5,
