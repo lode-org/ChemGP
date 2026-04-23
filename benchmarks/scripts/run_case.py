@@ -170,6 +170,23 @@ def configure_tool_paths(env: dict[str, str]) -> None:
         env["PATH"] = prefix + (f":{existing}" if existing else "")
 
 
+def resolve_petmad_model_path(repo_root: Path, env: dict[str, str]) -> str | None:
+    configured = env.get("RGPOT_MODEL_PATH")
+    if configured and Path(configured).exists():
+        return str(Path(configured).resolve())
+
+    candidates = [
+        repo_root / "models" / "pet-mad-xs-v1.5.0.pt",
+        repo_root.parent / "ChemGP" / "models" / "pet-mad-xs-v1.5.0.pt",
+        repo_root.parent / "ChemGP-prior-mean-benchmarks" / "models" / "pet-mad-xs-v1.5.0.pt",
+        Path.home() / "Git/Github/Rust/ChemGP" / "models" / "pet-mad-xs-v1.5.0.pt",
+    ]
+    for candidate in candidates:
+        if candidate.exists():
+            return str(candidate.resolve())
+    return None
+
+
 def main() -> int:
     args = parse_args()
     cfg = load_config(Path(args.config))
@@ -192,6 +209,9 @@ def main() -> int:
     env.setdefault("CMAKE_POLICY_VERSION_MINIMUM", "3.5")
     env.setdefault("RGPOT_HOST", "127.0.0.1")
     env.setdefault("RGPOT_PORT", "12345")
+    model_path = resolve_petmad_model_path(repo_root, env)
+    if model_path:
+        env["RGPOT_MODEL_PATH"] = model_path
     env.setdefault(
         "CARGO_TARGET_DIR",
         str((repo_root / "target" / "benchmarks" / args.task / args.case).resolve()),
