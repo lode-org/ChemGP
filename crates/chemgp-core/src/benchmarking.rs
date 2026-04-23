@@ -72,13 +72,19 @@ pub fn linear_prior(center: &[f64], energy: f64, gradient: &[f64], label: &str) 
 }
 
 pub fn nearest_linear_prior(observations: &[(&str, &[f64], f64, &[f64])]) -> PriorMeanConfig {
-    let candidates = observations
+    let candidates = linear_prior_candidates(observations);
+    PriorMeanConfig::NearestTaylor { candidates }
+}
+
+pub fn linear_prior_candidates(
+    observations: &[(&str, &[f64], f64, &[f64])],
+) -> Vec<PriorCandidate> {
+    observations
         .iter()
         .map(|(label, center, energy, gradient)| {
             PriorCandidate::linear(*label, center.to_vec(), *energy, gradient.to_vec())
         })
-        .collect();
-    PriorMeanConfig::NearestTaylor { candidates }
+        .collect()
 }
 
 pub fn sampled_taylor_prior(
@@ -117,12 +123,7 @@ pub fn select_adaptive_prior_with_label(
     gradient: &[f64],
     observations: &[(&str, &[f64], f64, &[f64])],
 ) -> (PriorMeanConfig, String) {
-    let candidates: Vec<PriorCandidate> = observations
-        .iter()
-        .map(|(label, center, energy, gradient)| {
-            PriorCandidate::linear(*label, center.to_vec(), *energy, gradient.to_vec())
-        })
-        .collect();
+    let candidates = linear_prior_candidates(observations);
     let best_idx = select_best_candidate_by_gradient_match(x, energy, gradient, &candidates);
     (
         PriorMeanConfig::from_candidate(&candidates[best_idx]),

@@ -3,7 +3,7 @@
 //! Outputs JSONL data for plotting: GP should converge in fewer oracle calls.
 
 use chemgp_core::benchmarking::{
-    linear_prior, nearest_linear_prior, output_path, seed_training_data, select_adaptive_prior,
+    linear_prior, linear_prior_candidates, nearest_linear_prior, output_path, seed_training_data,
     BenchmarkVariant,
 };
 use chemgp_core::kernel::{Kernel, MolInvDistSE};
@@ -48,11 +48,8 @@ fn main() {
             BenchmarkVariant::PhysicalPrior => {
                 linear_prior(&observations[0].0, observations[0].1, &observations[0].2, "initial")
             }
-            BenchmarkVariant::AdaptivePrior => select_adaptive_prior(
-                observations[0].0.as_slice(),
-                observations[0].1,
-                observations[0].2.as_slice(),
-                &[
+            BenchmarkVariant::AdaptivePrior => {
+                gp_cfg.adaptive_prior_candidates = linear_prior_candidates(&[
                     (
                         "initial",
                         observations[0].0.as_slice(),
@@ -65,8 +62,9 @@ fn main() {
                         best_obs.1,
                         best_obs.2.as_slice(),
                     ),
-                ],
-            ),
+                ]);
+                gp_cfg.prior_mean.clone()
+            }
             BenchmarkVariant::RecycledLocalPes => nearest_linear_prior(&[
                 (
                     "initial",

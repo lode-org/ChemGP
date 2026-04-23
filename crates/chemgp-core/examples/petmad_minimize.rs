@@ -15,8 +15,8 @@ use std::cell::RefCell;
 use std::io::Write;
 
 use chemgp_core::benchmarking::{
-    linear_prior, nearest_linear_prior, nearest_prior_library_label, output_path,
-    seed_training_data, select_adaptive_prior_with_label, BenchmarkVariant,
+    linear_prior, linear_prior_candidates, nearest_linear_prior, nearest_prior_library_label,
+    output_path, seed_training_data, select_adaptive_prior_with_label, BenchmarkVariant,
 };
 use chemgp_core::kernel::{Kernel, MolInvDistSE};
 use chemgp_core::minimize::{gp_minimize, MinimizationConfig};
@@ -186,6 +186,20 @@ pub fn main() {
                     ],
                 );
                 prior_label = label;
+                gp_cfg.adaptive_prior_candidates = linear_prior_candidates(&[
+                    (
+                        "initial",
+                        observations[0].0.as_slice(),
+                        observations[0].1,
+                        observations[0].2.as_slice(),
+                    ),
+                    (
+                        "best_sample",
+                        best_obs.0.as_slice(),
+                        best_obs.1,
+                        best_obs.2.as_slice(),
+                    ),
+                ]);
                 prior
             }
             BenchmarkVariant::RecycledLocalPes => {

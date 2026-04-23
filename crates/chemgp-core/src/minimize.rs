@@ -6,7 +6,7 @@ use crate::distances::euclidean_distance;
 use crate::kernel::Kernel;
 use crate::optim_step::clip_to_max_move;
 use crate::predict::build_pred_model_with_prior;
-use crate::prior_mean::PriorMeanConfig;
+use crate::prior_mean::{select_best_candidate_by_gradient_match, PriorCandidate, PriorMeanConfig};
 use crate::sampling::{prune_training_data, select_optim_subset};
 use crate::train::{adaptive_train_iters, train_model};
 use crate::trust::{
@@ -54,6 +54,7 @@ pub struct MinimizationConfig {
     /// RNG seed for initial perturbations. Fixed seed ensures reproducibility.
     pub seed: u64,
     pub prior_mean: PriorMeanConfig,
+    pub adaptive_prior_candidates: Vec<PriorCandidate>,
     pub verbose: bool,
 }
 
@@ -86,6 +87,7 @@ impl Default for MinimizationConfig {
             lcb_kappa: 0.0,
             seed: 42,
             prior_mean: PriorMeanConfig::Reference,
+            adaptive_prior_candidates: Vec::new(),
             verbose: true,
         }
     }
@@ -154,6 +156,8 @@ pub fn gp_minimize(
     let mut stagnation_count = 0;
     let mut prev_force = f64::NEG_INFINITY;
     let mut stop_reason = StopReason::MaxIterations;
+    let mut current_true_e = td.energies[0];
+    let mut current_true_g = td.gradients[0..d].to_vec();
 
     for outer_step in 0..cfg.max_iter {
         if cfg.max_oracle_calls > 0 && oracle_calls >= cfg.max_oracle_calls {
@@ -175,9 +179,20 @@ pub fn gp_minimize(
         };
 
         let train_iters = adaptive_train_iters(cfg.gp_train_iter, prev_kern.is_none());
+        let active_prior = if cfg.adaptive_prior_candidates.is_empty() {
+            cfg.prior_mean.clone()
+        } else {
+            let best_idx = select_best_candidate_by_gradient_match(
+                &x_curr,
+                current_true_e,
+                &current_true_g,
+                &cfg.adaptive_prior_candidates,
+            );
+            PriorMeanConfig::from_candidate(&cfg.adaptive_prior_candidates[best_idx])
+        };
 
         // Train on subset
-        let (mut y_sub, grad_sub) = cfg.prior_mean.residualize_training_data(&td_sub);
+        let (mut y_sub, grad_sub) = active_prior.residualize_training_data(&td_sub);
         y_sub.extend_from_slice(&grad_sub);
 
         let kern = match &prev_kern {
@@ -217,7 +232,7 @@ pub fn gp_minimize(
             cfg.rff_features,
             42,
             cfg.const_sigma2,
-            &cfg.prior_mean,
+            &active_prior,
         );
 
         // Step 3: Optimize on GP surface via L-BFGS
@@ -375,6 +390,8 @@ pub fn gp_minimize(
         // Step 4: Call oracle
         let (e_true, g_true) = oracle(&x_curr);
         oracle_calls += 1;
+        current_true_e = e_true;
+        current_true_g = g_true.clone();
 
         // Per-atom max force (only for 3D molecules, otherwise L2 norm)
         let g_norm = if n_atoms >= 1 && d == 3 * n_atoms {
@@ -415,6 +432,8 @@ pub fn gp_minimize(
             for xc in x_curr.iter_mut().take(d) {
                 *xc += (rng.random::<f64>() - 0.5) * cfg.perturb_scale * 0.5;
             }
+            current_true_e = td.energies[best_idx];
+            current_true_g = td.gradients[best_idx * d..(best_idx + 1) * d].to_vec();
             continue;
         }
 
@@ -446,6 +465,8 @@ pub fn gp_minimize(
             all_energies.push(e_true);
             td.add_point(&x_curr, e_true, &g_true).expect("add_point failed: invalid data");
             x_curr = td.col(best_idx).to_vec();
+            current_true_e = td.energies[best_idx];
+            current_true_g = td.gradients[best_idx * d..(best_idx + 1) * d].to_vec();
             continue;
         }
 
