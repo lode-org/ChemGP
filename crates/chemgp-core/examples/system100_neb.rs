@@ -20,14 +20,14 @@ use std::io::Write;
 use clap::{Parser, ValueEnum};
 
 use chemgp_core::benchmarking::{
-    artifact_path, linear_prior, nearest_linear_prior, output_path, BenchmarkVariant,
+    artifact_path, nearest_linear_prior, output_path, sampled_taylor_prior, BenchmarkVariant,
 };
 use chemgp_core::io::{read_con, write_con, write_neb_dat, MolConfig};
 use chemgp_core::kernel::{Kernel, MolInvDistSE};
 use chemgp_core::minimize::{gp_minimize, MinimizationConfig};
 use chemgp_core::neb::{gp_neb_aie, neb_optimize, NEBResult};
 use chemgp_core::neb_oie::gp_neb_oie;
-use chemgp_core::neb_path::{AcquisitionStrategy, NEBConfig};
+use chemgp_core::neb_path::{linear_interpolation, AcquisitionStrategy, NEBConfig};
 #[cfg(feature = "rgpot_local")]
 use chemgp_core::oracle::{LocalMetatomicConfig, LocalMetatomicOracle};
 #[cfg(feature = "rgpot")]
@@ -184,6 +184,41 @@ pub fn main() {
             .unwrap_or_else(|e| panic!("RPC oracle failed: {}", e))
     };
 
+    #[cfg(feature = "rgpot")]
+    let prior_host = std::env::var("RGPOT_PRIOR_HOST").unwrap_or_else(|_| args.host.clone());
+    #[cfg(feature = "rgpot")]
+    let prior_port: u16 = std::env::var("RGPOT_PRIOR_PORT")
+        .unwrap_or_else(|_| args.port.to_string())
+        .parse()
+        .expect("RGPOT_PRIOR_PORT must be a valid port number");
+    #[cfg(feature = "rgpot")]
+    let prior_oracle_impl =
+        RpcOracle::new(&prior_host, prior_port, atomic_numbers.clone(), box_matrix)
+            .expect("Failed to connect to prior eOn serve");
+    #[cfg(feature = "rgpot_local")]
+    let prior_local_cfg = LocalMetatomicConfig {
+        model_path: std::env::var("RGPOT_PRIOR_MODEL_PATH")
+            .map(std::path::PathBuf::from)
+            .unwrap_or_else(|_| local_cfg.model_path.clone()),
+        device: local_cfg.device.clone(),
+        length_unit: local_cfg.length_unit.clone(),
+        extensions_directory: local_cfg.extensions_directory.clone(),
+        check_consistency: local_cfg.check_consistency,
+        uncertainty_threshold: local_cfg.uncertainty_threshold,
+        dtype_override: local_cfg.dtype_override.clone(),
+    };
+    #[cfg(feature = "rgpot_local")]
+    let prior_oracle_impl =
+        LocalMetatomicOracle::new(&prior_local_cfg, atomic_numbers.clone(), box_matrix)
+            .expect("Failed to create local prior metatomic oracle");
+    let prior_oracle_cell = RefCell::new(prior_oracle_impl);
+    let prior_oracle = move |x: &[f64]| -> (f64, Vec<f64>) {
+        prior_oracle_cell
+            .borrow_mut()
+            .evaluate(x)
+            .unwrap_or_else(|e| panic!("Prior oracle failed: {}", e))
+    };
+
     let mut x_start = reactant.positions.clone();
     let mut x_end = product.positions.clone();
 
@@ -200,9 +235,14 @@ pub fn main() {
         &atomic_numbers, vec![], &[], 1.0, 1.0,
     ));
     eprintln!("  Kernel pair types from {:?}", atomic_numbers);
+    let prior_path = linear_interpolation(&x_start, &x_end, args.images.max(5));
     let neb_prior = match variant {
         BenchmarkVariant::Chemgp => None,
-        BenchmarkVariant::PhysicalPrior => Some(linear_prior(&x_start, e_r, &g_r, "reactant")),
+        BenchmarkVariant::PhysicalPrior => Some(sampled_taylor_prior(
+            &prior_oracle,
+            &prior_path,
+            "prior_path",
+        )),
         BenchmarkVariant::AdaptivePrior | BenchmarkVariant::RecycledLocalPes => {
             Some(nearest_linear_prior(&[
                 ("reactant", x_start.as_slice(), e_r, g_r.as_slice()),

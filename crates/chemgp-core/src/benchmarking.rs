@@ -81,6 +81,27 @@ pub fn nearest_linear_prior(observations: &[(&str, &[f64], f64, &[f64])]) -> Pri
     PriorMeanConfig::NearestTaylor { candidates }
 }
 
+pub fn sampled_taylor_prior(
+    oracle: &dyn Fn(&[f64]) -> (f64, Vec<f64>),
+    points: &[Vec<f64>],
+    label_prefix: &str,
+) -> PriorMeanConfig {
+    let candidates = points
+        .iter()
+        .enumerate()
+        .map(|(idx, x)| {
+            let (energy, gradient) = oracle(x);
+            PriorCandidate::linear(
+                format!("{label_prefix}_{idx}"),
+                x.clone(),
+                energy,
+                gradient,
+            )
+        })
+        .collect();
+    PriorMeanConfig::NearestTaylor { candidates }
+}
+
 pub fn select_adaptive_prior(
     x: &[f64],
     energy: f64,
