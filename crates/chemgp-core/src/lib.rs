@@ -15,6 +15,7 @@ pub mod sampling;
 pub mod lbfgs;
 pub mod optim_step;
 pub mod trust;
+pub mod internal_coords;
 pub mod minimize;
 pub mod rff;
 pub mod neb_path;

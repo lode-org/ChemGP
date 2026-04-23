@@ -20,6 +20,7 @@ use chemgp_core::benchmarking::{
     save_prior_library, seed_training_data, select_adaptive_prior_with_label, BenchmarkVariant,
 };
 use chemgp_core::kernel::{Kernel, MolInvDistSE};
+use chemgp_core::internal_coords::CoordinateMode;
 use chemgp_core::minimize::{gp_minimize, MinimizationConfig};
 #[cfg(feature = "rgpot_local")]
 use chemgp_core::oracle::{LocalMetatomicConfig, LocalMetatomicOracle};
@@ -168,6 +169,7 @@ pub fn main() {
                 linear_prior(&observations[0].0, observations[0].1, &observations[0].2, "initial")
             }
             BenchmarkVariant::AdaptivePrior => {
+                gp_cfg.coordinate_mode = CoordinateMode::CompleteRedundantInvDist;
                 let (prior, label) = select_adaptive_prior_with_label(
                     x_init.as_slice(),
                     e0,

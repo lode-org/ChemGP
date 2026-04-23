@@ -3,6 +3,7 @@
 //! Ports `minimize.jl`: the main outer loop.
 
 use crate::distances::euclidean_distance;
+use crate::internal_coords::{CoordinateMode, RedundantInverseDistance};
 use crate::kernel::Kernel;
 use crate::optim_step::clip_to_max_move;
 use crate::predict::build_pred_model_with_prior;
@@ -55,6 +56,10 @@ pub struct MinimizationConfig {
     pub seed: u64,
     pub prior_mean: PriorMeanConfig,
     pub adaptive_prior_candidates: Vec<PriorCandidate>,
+    pub coordinate_mode: CoordinateMode,
+    pub internal_damping: f64,
+    pub internal_backtransform_iter: usize,
+    pub internal_backtransform_tol: f64,
     pub verbose: bool,
 }
 
@@ -88,6 +93,10 @@ impl Default for MinimizationConfig {
             seed: 42,
             prior_mean: PriorMeanConfig::Reference,
             adaptive_prior_candidates: Vec::new(),
+            coordinate_mode: CoordinateMode::Cartesian,
+            internal_damping: 1e-8,
+            internal_backtransform_iter: 20,
+            internal_backtransform_tol: 1e-8,
             verbose: true,
         }
     }
@@ -159,6 +168,13 @@ pub fn gp_minimize(
     let mut stop_reason = StopReason::MaxIterations;
     let mut current_true_e = td.energies[0];
     let mut current_true_g = td.gradients[0..d].to_vec();
+    let internal_system = match cfg.coordinate_mode {
+        CoordinateMode::Cartesian => None,
+        CoordinateMode::CompleteRedundantInvDist if d >= 6 && d % 3 == 0 => {
+            Some(RedundantInverseDistance::new(d / 3))
+        }
+        CoordinateMode::CompleteRedundantInvDist => None,
+    };
 
     for outer_step in 0..cfg.max_iter {
         if cfg.max_oracle_calls > 0 && oracle_calls >= cfg.max_oracle_calls {
@@ -306,35 +322,54 @@ pub fn gp_minimize(
                 break;
             }
 
-            // L-BFGS direction (track inner iterates, not outer x_prev)
-            if let Some(ref pg) = prev_grad {
-                let s: Vec<f64> = x_opt
-                    .iter()
-                    .zip(x_inner_prev.iter())
-                    .map(|(a, b)| a - b)
-                    .collect();
-                let y: Vec<f64> = grad.iter().zip(pg.iter()).map(|(a, b)| a - b).collect();
-                lbfgs.push_pair(s, y);
-            }
-            prev_grad = Some(grad.clone());
-            x_inner_prev = x_opt.clone();
-
-            let dir = lbfgs.compute_direction(&grad);
-
-            // Step size: L-BFGS direction is curvature-scaled, so use
-            // alpha=1.0 by default, clamp displacement to trust_radius.
-            // For steepest descent (no pairs), use trust_radius / (2 * |dir|).
-            // Trust radius provides the upper bound; no additional cap needed.
-            let dir_norm: f64 = dir.iter().map(|x| x * x).sum::<f64>().sqrt();
-            let step_size = if lbfgs.count > 0 {
-                // L-BFGS: trust the direction, clip by trust radius
-                (1.0f64).min(cfg.trust_radius / (dir_norm + 1e-30))
+            if let Some(ref internal) = internal_system {
+                let grad_q =
+                    internal.cartesian_to_internal_gradient(&x_opt, &grad, cfg.internal_damping);
+                let q_norm: f64 = grad_q.iter().map(|x| x * x).sum::<f64>().sqrt();
+                if q_norm < 1e-12 {
+                    break;
+                }
+                let step_size = cfg.trust_radius * 0.5 / (q_norm + 1e-30);
+                x_opt = internal.internal_step(
+                    &x_opt,
+                    &grad,
+                    step_size,
+                    cfg.internal_damping,
+                    cfg.internal_backtransform_iter,
+                    cfg.internal_backtransform_tol,
+                    cfg.max_move,
+                );
             } else {
-                // Steepest descent: step = trust_radius / (2 * |dir|)
-                cfg.trust_radius * 0.5 / (dir_norm + 1e-30)
-            };
-            for j in 0..d {
-                x_opt[j] += step_size * dir[j];
+                // L-BFGS direction (track inner iterates, not outer x_prev)
+                if let Some(ref pg) = prev_grad {
+                    let s: Vec<f64> = x_opt
+                        .iter()
+                        .zip(x_inner_prev.iter())
+                        .map(|(a, b)| a - b)
+                        .collect();
+                    let y: Vec<f64> = grad.iter().zip(pg.iter()).map(|(a, b)| a - b).collect();
+                    lbfgs.push_pair(s, y);
+                }
+                prev_grad = Some(grad.clone());
+                x_inner_prev = x_opt.clone();
+
+                let dir = lbfgs.compute_direction(&grad);
+
+                // Step size: L-BFGS direction is curvature-scaled, so use
+                // alpha=1.0 by default, clamp displacement to trust_radius.
+                // For steepest descent (no pairs), use trust_radius / (2 * |dir|).
+                // Trust radius provides the upper bound; no additional cap needed.
+                let dir_norm: f64 = dir.iter().map(|x| x * x).sum::<f64>().sqrt();
+                let step_size = if lbfgs.count > 0 {
+                    // L-BFGS: trust the direction, clip by trust radius
+                    (1.0f64).min(cfg.trust_radius / (dir_norm + 1e-30))
+                } else {
+                    // Steepest descent: step = trust_radius / (2 * |dir|)
+                    cfg.trust_radius * 0.5 / (dir_norm + 1e-30)
+                };
+                for j in 0..d {
+                    x_opt[j] += step_size * dir[j];
+                }
             }
 
             let _ = (inner, e_pred); // suppress warnings
