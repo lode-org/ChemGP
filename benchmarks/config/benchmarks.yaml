@@ -92,11 +92,6 @@ tasks:
         variants: [chemgp, physical_prior, adaptive_prior, recycled_local_pes]
   neb:
     cases:
-      - id: leps_neb
-        group: synthetic
-        runner_env: dev
-        example: leps_neb
-        variants: [chemgp, physical_prior, adaptive_prior]
       - id: system100_neb_baseline
         group: literature
         runner_env: rpc

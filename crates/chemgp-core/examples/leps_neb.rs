@@ -38,8 +38,8 @@ fn main() {
     // Standard NEB
     let mut neb_cfg = NEBConfig::default();
     neb_cfg.images = 7;
-    neb_cfg.max_iter = 200;
-    neb_cfg.conv_tol = 0.1;
+    neb_cfg.max_iter = 120;
+    neb_cfg.conv_tol = 0.15;
     neb_cfg.climbing_image = false;
     neb_cfg.verbose = false;
 
@@ -53,13 +53,13 @@ fn main() {
     // GP-NEB AIE (per-bead subset + RFF for fast inner relax)
     let mut aie_cfg = NEBConfig::default();
     aie_cfg.images = 7;
-    aie_cfg.max_outer_iter = 40;
-    aie_cfg.max_iter = 100;
-    aie_cfg.conv_tol = 0.1;
+    aie_cfg.max_outer_iter = 12;
+    aie_cfg.max_iter = 40;
+    aie_cfg.conv_tol = 0.15;
     aie_cfg.climbing_image = false;
-    aie_cfg.gp_train_iter = 100;
-    aie_cfg.max_gp_points = 50;
-    aie_cfg.rff_features = 500;
+    aie_cfg.gp_train_iter = 50;
+    aie_cfg.max_gp_points = 25;
+    aie_cfg.rff_features = 200;
     aie_cfg.verbose = false;
     if let Some(prior) = neb_prior.clone() {
         aie_cfg.prior_mean = prior;
@@ -75,13 +75,13 @@ fn main() {
     // GP-NEB OIE (one oracle call per outer iteration + RFF)
     let mut oie_cfg = NEBConfig::default();
     oie_cfg.images = 7;
-    oie_cfg.max_outer_iter = 60;
-    oie_cfg.max_iter = 100;
-    oie_cfg.conv_tol = 0.1;
+    oie_cfg.max_outer_iter = 20;
+    oie_cfg.max_iter = 40;
+    oie_cfg.conv_tol = 0.15;
     oie_cfg.climbing_image = false;
-    oie_cfg.gp_train_iter = 100;
-    oie_cfg.max_gp_points = 50;
-    oie_cfg.rff_features = 1000;
+    oie_cfg.gp_train_iter = 50;
+    oie_cfg.max_gp_points = 25;
+    oie_cfg.rff_features = 400;
     oie_cfg.verbose = false;
     if let Some(prior) = neb_prior {
         oie_cfg.prior_mean = prior;
