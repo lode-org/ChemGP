@@ -1,6 +1,8 @@
 //! Shared helpers for benchmark-oriented examples and workflow runners.
 
-use crate::prior_mean::{select_best_candidate, PriorCandidate, PriorMeanConfig};
+use crate::prior_mean::{
+    select_best_candidate_by_gradient_match, PriorCandidate, PriorMeanConfig,
+};
 use crate::types::TrainingData;
 use rand::rngs::StdRng;
 use rand::{Rng, SeedableRng};
@@ -80,14 +82,18 @@ pub fn nearest_linear_prior(observations: &[(&str, &[f64], f64, &[f64])]) -> Pri
 }
 
 pub fn select_adaptive_prior(
-    td: &TrainingData,
+    x: &[f64],
+    energy: f64,
+    gradient: &[f64],
     observations: &[(&str, &[f64], f64, &[f64])],
 ) -> PriorMeanConfig {
-    select_adaptive_prior_with_label(td, observations).0
+    select_adaptive_prior_with_label(x, energy, gradient, observations).0
 }
 
 pub fn select_adaptive_prior_with_label(
-    td: &TrainingData,
+    x: &[f64],
+    energy: f64,
+    gradient: &[f64],
     observations: &[(&str, &[f64], f64, &[f64])],
 ) -> (PriorMeanConfig, String) {
     let candidates: Vec<PriorCandidate> = observations
@@ -96,7 +102,7 @@ pub fn select_adaptive_prior_with_label(
             PriorCandidate::linear(*label, center.to_vec(), *energy, gradient.to_vec())
         })
         .collect();
-    let best_idx = select_best_candidate(td, &candidates);
+    let best_idx = select_best_candidate_by_gradient_match(x, energy, gradient, &candidates);
     (
         PriorMeanConfig::from_candidate(&candidates[best_idx]),
         candidates[best_idx].label.clone(),
@@ -111,7 +117,6 @@ pub fn nearest_prior_library_label(labels: &[&str]) -> String {
 mod tests {
     use super::{nearest_prior_library_label, select_adaptive_prior_with_label, BenchmarkVariant};
     use crate::prior_mean::PriorMeanConfig;
-    use crate::types::TrainingData;
 
     #[test]
     fn benchmark_variant_env_aliases_work() {
@@ -124,12 +129,10 @@ mod tests {
 
     #[test]
     fn adaptive_prior_returns_selected_label() {
-        let mut td = TrainingData::new(1);
-        td.add_point(&[0.0], 1.0, &[2.0]).unwrap();
-        td.add_point(&[1.0], 3.0, &[2.0]).unwrap();
-
         let (cfg, label) = select_adaptive_prior_with_label(
-            &td,
+            &[0.0],
+            1.0,
+            &[2.0],
             &[
                 ("good", &[0.0], 1.0, &[2.0]),
                 ("bad", &[0.0], 0.0, &[0.0]),

@@ -288,7 +288,9 @@ pub fn main() {
                     linear_prior(&observations[0].0, observations[0].1, &observations[0].2, "initial")
                 }
                 BenchmarkVariant::AdaptivePrior => select_adaptive_prior(
-                    &td_seed,
+                    observations[0].0.as_slice(),
+                    observations[0].1,
+                    observations[0].2.as_slice(),
                     &[
                         (
                             "initial",
@@ -412,7 +414,9 @@ pub fn main() {
                     linear_prior(&observations[0].0, observations[0].1, &observations[0].2, "initial")
                 }
                 BenchmarkVariant::AdaptivePrior => select_adaptive_prior(
-                    &td_seed,
+                    observations[0].0.as_slice(),
+                    observations[0].1,
+                    observations[0].2.as_slice(),
                     &[
                         (
                             "initial",

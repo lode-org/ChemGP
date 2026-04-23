@@ -167,7 +167,9 @@ pub fn main() {
             }
             BenchmarkVariant::AdaptivePrior => {
                 let (prior, label) = select_adaptive_prior_with_label(
-                    &td_seed,
+                    x_init.as_slice(),
+                    e0,
+                    g0.as_slice(),
                     &[
                         (
                             "initial",

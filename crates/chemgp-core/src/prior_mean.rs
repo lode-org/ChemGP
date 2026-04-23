@@ -223,6 +223,27 @@ pub fn candidate_residual_score(td: &TrainingData, candidate: &PriorCandidate) -
     score
 }
 
+pub fn candidate_gradient_match_score(
+    x: &[f64],
+    energy: f64,
+    gradient: &[f64],
+    candidate: &PriorCandidate,
+) -> f64 {
+    let (prior_e, prior_g) = candidate.evaluate(x);
+    let e_res = energy - prior_e;
+    let g_res2: f64 = gradient
+        .iter()
+        .zip(prior_g.iter())
+        .map(|(g, p)| {
+            let dg = g - p;
+            dg * dg
+        })
+        .sum();
+    // The adaptive-prior paper chooses by local gradient agreement.
+    // Keep a tiny energy tie-breaker so exactly equal gradients remain stable.
+    g_res2 + 1e-12 * e_res * e_res
+}
+
 pub fn select_best_candidate(td: &TrainingData, candidates: &[PriorCandidate]) -> usize {
     assert!(
         !candidates.is_empty(),
@@ -240,9 +261,35 @@ pub fn select_best_candidate(td: &TrainingData, candidates: &[PriorCandidate]) -
         .expect("candidate selection failed")
 }
 
+pub fn select_best_candidate_by_gradient_match(
+    x: &[f64],
+    energy: f64,
+    gradient: &[f64],
+    candidates: &[PriorCandidate],
+) -> usize {
+    assert!(
+        !candidates.is_empty(),
+        "select_best_candidate_by_gradient_match requires at least one candidate",
+    );
+    candidates
+        .iter()
+        .enumerate()
+        .min_by(|(_, a), (_, b)| {
+            candidate_gradient_match_score(x, energy, gradient, a)
+                .partial_cmp(&candidate_gradient_match_score(x, energy, gradient, b))
+                .unwrap_or(std::cmp::Ordering::Equal)
+        })
+        .map(|(idx, _)| idx)
+        .expect("gradient-match candidate selection failed")
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{candidate_residual_score, select_best_candidate, PriorCandidate, PriorMeanConfig};
+    use super::{
+        candidate_gradient_match_score, candidate_residual_score,
+        select_best_candidate, select_best_candidate_by_gradient_match, PriorCandidate,
+        PriorMeanConfig,
+    };
     use crate::types::TrainingData;
 
     #[test]
@@ -319,5 +366,20 @@ mod tests {
 
         assert!(candidate_residual_score(&td, &good) < candidate_residual_score(&td, &bad));
         assert_eq!(select_best_candidate(&td, &[bad, good]), 1);
+    }
+
+    #[test]
+    fn gradient_match_selection_prefers_matching_gradient() {
+        let good = PriorCandidate::linear("good", vec![0.0], 5.0, vec![2.0]);
+        let bad = PriorCandidate::linear("bad", vec![0.0], 1.0, vec![0.0]);
+
+        assert!(
+            candidate_gradient_match_score(&[0.0], 1.0, &[2.0], &good)
+                < candidate_gradient_match_score(&[0.0], 1.0, &[2.0], &bad)
+        );
+        assert_eq!(
+            select_best_candidate_by_gradient_match(&[0.0], 1.0, &[2.0], &[bad, good]),
+            1
+        );
     }
 }
