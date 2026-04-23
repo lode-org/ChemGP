@@ -7,8 +7,9 @@ gradient noise corrupts finite-difference curvature estimates used by the
 dimer method.
 
 Key results:
-1. Block covariance structure K = [[K_EE, K_EF], [K_FE, K_FF]] with noise
-   only on the EE diagonal (MATLAB/C++/Stan convention for dimer).
+1. Block covariance structure K = [[K_EE, K_EG], [K_GE, K_GG]] in the same
+   energy/gradient convention used by `kernel.rs`, with noise only on the EE
+   diagonal in the reference dimer implementations.
 2. Curvature = (g1_pred - g0_pred) . orient / dimer_sep is a linear
    functional of the GP posterior mean, so noise on gradient observations
    propagates linearly into curvature error.
@@ -44,21 +45,22 @@ h = sp.Symbol("h", positive=True)  # dimer separation
 # SE kernel in 1D
 k_se = sigma2 * sp.exp(-theta**2 * (x - y) ** 2)
 
-# Derivative blocks
+# Derivative blocks in ChemGP's gradient-space convention.
 k_EE = k_se  # k(x, y)
-k_EF = -sp.diff(k_se, y)  # -dk/dy (negative: force = -gradient)
-k_FE = sp.diff(k_se, x)  # dk/dx
-k_FF = -sp.diff(k_se, x, y)  # -d^2k/dxdy
+k_EG = sp.diff(k_se, y)  # dk/dy
+k_GE = sp.diff(k_se, x)  # dk/dx
+k_GG = sp.diff(k_se, x, y)  # d^2k/dxdy
 
 print(f"\nSE kernel:  k(x,y) = sigma_m^2 * exp(-theta^2 * (x-y)^2)")
 print(f"\nBlock derivatives (D=1 case):")
 print(f"  K_EE = k(x,y)         = {k_EE}")
-print(f"  K_EF = -dk/dy          = {sp.simplify(k_EF)}")
-print(f"  K_FE =  dk/dx          = {sp.simplify(k_FE)}")
-print(f"  K_FF = -d^2k/dxdy      = {sp.simplify(k_FF)}")
+print(f"  K_EG =  dk/dy          = {sp.simplify(k_EG)}")
+print(f"  K_GE =  dk/dx          = {sp.simplify(k_GE)}")
+print(f"  K_GG =  d^2k/dxdy      = {sp.simplify(k_GG)}")
+print("  Forces enter later via F = -∇V at the oracle/optimizer boundary.")
 
-# Verify K_EF and K_FE relationship
-print(f"\n  K_FE = -K_EF^T?  {sp.simplify(k_FE + k_EF) == 0}")
+# Verify K_EG and K_GE relationship
+print(f"\n  K_GE = -K_EG^T?  {sp.simplify(k_GE + k_EG) == 0}")
 
 # ============================================================================
 # Part 2: Noise model for dimer
@@ -97,8 +99,8 @@ print("=" * 60)
 # The GP posterior mean for gradient is a linear functional of observations.
 # Let alpha = (K + noise)^{-1} y  (standard GP weights).
 # Then gradient prediction at x* is:
-#   g_pred(x*) = sum_i K_FE(x*, x_i) * alpha_i   (energy obs)
-#              + sum_j K_FF(x*, x_j) * alpha_j     (gradient obs)
+#   g_pred(x*) = sum_i K_GE(x*, x_i) * alpha_i   (energy obs)
+#              + sum_j K_GG(x*, x_j) * alpha_j   (gradient obs)
 #
 # Noise on the gradient observations enters (K + noise)^{-1}, affecting alpha.
 # With N_obs = 2 (midpoint + image1) and D=1, we can compute explicitly.
@@ -110,7 +112,7 @@ Since GP posterior mean is linear in observations:
   g_pred(x*) = K_*^T (K + Sigma_noise)^{-1} y
 
 The noise matrix Sigma_noise = diag(sigma_e^2 * I_n, sigma_g^2 * I_{n*D})
-adds sigma_g^2 to the force-force diagonal block.
+adds sigma_g^2 to the gradient-gradient diagonal block.
 
 For dimer_sep=h, curvature error scales as:
   Var(C) ~ sigma_g^2 / h^2
@@ -142,16 +144,16 @@ print("=" * 60)
 
 # For the simplest case: 2 training points at r0, r1 = r0 + h
 # The GP posterior variance at r0 for the gradient prediction is:
-#   Var[g(r0)] >= sigma_g^2 * K_FF(0,0)^{-1} * K_FF(0,0) = sigma_g^2
+#   Var[g(r0)] >= sigma_g^2 * K_GG(0,0)^{-1} * K_GG(0,0) = sigma_g^2
 # (diagonal noise directly inflates prediction uncertainty)
 
 print("""
 Consider the simplest case: N=2 points at r0 and r1=r0+h (dimer pair).
 
-K_FF(r0,r0) = sigma_m^2 * 2*theta^2  (second derivative of SE at distance 0)
+K_GG(r0,r0) = sigma_m^2 * 2*theta^2  (second derivative of SE at distance 0)
 
-With gradient noise sigma_g^2, the effective K_FF diagonal becomes:
-  K_FF(r0,r0) + sigma_g^2
+With gradient noise sigma_g^2, the effective K_GG diagonal becomes:
+  K_GG(r0,r0) + sigma_g^2
 
 For sigma_m^2*2*theta^2 ~ 1 and sigma_g^2 = 1e-4:
   The noise is small relative to the kernel. But the curvature estimate:
@@ -171,15 +173,15 @@ For sigma_m^2*2*theta^2 ~ 1 and sigma_g^2 = 1e-4:
   hyperparameters (sigma2 ~ 8e-5 from data-dependent init on clustered data),
   the kernel itself is near-singular, and the noise term dominates the GG block:
 
-  K_FF(r0,r0) ~ sigma_m^2 * 2*theta^2 ~ 8e-5 * 2 * 270^2 ~ 11.7
-  K_FF(r0,r0) + sigma_g^2 = 11.7 + 1e-4  (OK, small relative to kernel)
+  K_GG(r0,r0) ~ sigma_m^2 * 2*theta^2 ~ 8e-5 * 2 * 270^2 ~ 11.7
+  K_GG(r0,r0) + sigma_g^2 = 11.7 + 1e-4  (OK, small relative to kernel)
 
-  But K_FF(r0,r1) ~ sigma_m^2 * 2*theta^2 * (1 - 2*theta^2*h^2) * exp(-theta^2*h^2)
+  But K_GG(r0,r1) ~ sigma_m^2 * 2*theta^2 * (1 - 2*theta^2*h^2) * exp(-theta^2*h^2)
   With theta=270, h=0.01: theta^2*h^2 = 7.29
 
-  exp(-7.29) ~ 7e-4, so K_FF(r0,r1) ~ 11.7 * (1 - 14.58) * 7e-4 ~ -0.11
+  exp(-7.29) ~ 7e-4, so K_GG(r0,r1) ~ 11.7 * (1 - 14.58) * 7e-4 ~ -0.11
 
-  The condition number of the FF block is dominated by the diagonal.
+  The condition number of the GG block is dominated by the diagonal.
   When sigma_g^2 >> 0, it shifts all eigenvalues, making the GP less
   responsive to training data. Combined with lambda=100 preventing SCG
   from correcting the hyperparameters, the curvature prediction becomes
@@ -201,21 +203,21 @@ def se_kernel_1d(x1, x2, sigma2_val, theta_val):
     """SE kernel value."""
     return sigma2_val * np.exp(-theta_val**2 * (x1 - x2)**2)
 
-def se_kernel_deriv_EF(x1, x2, sigma2_val, theta_val):
-    """K_EF: -dk/dx2."""
+def se_kernel_deriv_EG(x1, x2, sigma2_val, theta_val):
+    """K_EG: dk/dx2."""
     return sigma2_val * 2 * theta_val**2 * (x1 - x2) * np.exp(-theta_val**2 * (x1 - x2)**2)
 
-def se_kernel_deriv_FE(x1, x2, sigma2_val, theta_val):
-    """K_FE: dk/dx1."""
+def se_kernel_deriv_GE(x1, x2, sigma2_val, theta_val):
+    """K_GE: dk/dx1."""
     return -sigma2_val * 2 * theta_val**2 * (x1 - x2) * np.exp(-theta_val**2 * (x1 - x2)**2)
 
-def se_kernel_deriv_FF(x1, x2, sigma2_val, theta_val):
-    """K_FF: -d2k/dx1dx2."""
+def se_kernel_deriv_GG(x1, x2, sigma2_val, theta_val):
+    """K_GG: d2k/dx1dx2."""
     r2 = (x1 - x2)**2
     return sigma2_val * 2 * theta_val**2 * (1 - 2 * theta_val**2 * r2) * np.exp(-theta_val**2 * r2)
 
 def build_gp_matrix(xs, sigma2_val, theta_val, noise_e_val, noise_g_val):
-    """Build full [EE, EF; FE, FF] covariance matrix + noise."""
+    """Build full [EE, EG; GE, GG] covariance matrix + noise."""
     n = len(xs)
     m = 2 * n  # 1D: each point has energy + 1 gradient component
     K = np.zeros((m, m))
@@ -223,9 +225,9 @@ def build_gp_matrix(xs, sigma2_val, theta_val, noise_e_val, noise_g_val):
     for i in range(n):
         for j in range(n):
             K[i, j] = se_kernel_1d(xs[i], xs[j], sigma2_val, theta_val)
-            K[i, n + j] = se_kernel_deriv_EF(xs[i], xs[j], sigma2_val, theta_val)
-            K[n + i, j] = se_kernel_deriv_FE(xs[i], xs[j], sigma2_val, theta_val)
-            K[n + i, n + j] = se_kernel_deriv_FF(xs[i], xs[j], sigma2_val, theta_val)
+            K[i, n + j] = se_kernel_deriv_EG(xs[i], xs[j], sigma2_val, theta_val)
+            K[n + i, j] = se_kernel_deriv_GE(xs[i], xs[j], sigma2_val, theta_val)
+            K[n + i, n + j] = se_kernel_deriv_GG(xs[i], xs[j], sigma2_val, theta_val)
 
     # Add noise
     for i in range(n):
@@ -269,16 +271,16 @@ for noise_g_val in [0.0, 1e-8, 1e-5, 1e-4, 1e-3]:
         alpha = np.linalg.solve(K, y_obs)
         # Predict at x0 and x1
         k_star_0 = np.array([
-            se_kernel_deriv_FE(x0_val, xs[0], sigma2_good, theta_good),
-            se_kernel_deriv_FE(x0_val, xs[1], sigma2_good, theta_good),
-            se_kernel_deriv_FF(x0_val, xs[0], sigma2_good, theta_good),
-            se_kernel_deriv_FF(x0_val, xs[1], sigma2_good, theta_good),
+            se_kernel_deriv_GE(x0_val, xs[0], sigma2_good, theta_good),
+            se_kernel_deriv_GE(x0_val, xs[1], sigma2_good, theta_good),
+            se_kernel_deriv_GG(x0_val, xs[0], sigma2_good, theta_good),
+            se_kernel_deriv_GG(x0_val, xs[1], sigma2_good, theta_good),
         ])
         k_star_1 = np.array([
-            se_kernel_deriv_FE(x1_val, xs[0], sigma2_good, theta_good),
-            se_kernel_deriv_FE(x1_val, xs[1], sigma2_good, theta_good),
-            se_kernel_deriv_FF(x1_val, xs[0], sigma2_good, theta_good),
-            se_kernel_deriv_FF(x1_val, xs[1], sigma2_good, theta_good),
+            se_kernel_deriv_GE(x1_val, xs[0], sigma2_good, theta_good),
+            se_kernel_deriv_GE(x1_val, xs[1], sigma2_good, theta_good),
+            se_kernel_deriv_GG(x1_val, xs[0], sigma2_good, theta_good),
+            se_kernel_deriv_GG(x1_val, xs[1], sigma2_good, theta_good),
         ])
         g0_pred = k_star_0 @ alpha
         g1_pred = k_star_1 @ alpha
@@ -302,16 +304,16 @@ for noise_g_val in [0.0, 1e-8, 1e-5, 1e-4, 1e-3]:
         cond = np.linalg.cond(K)
         alpha = np.linalg.solve(K, y_obs)
         k_star_0 = np.array([
-            se_kernel_deriv_FE(x0_val, xs[0], sigma2_bad, theta_bad),
-            se_kernel_deriv_FE(x0_val, xs[1], sigma2_bad, theta_bad),
-            se_kernel_deriv_FF(x0_val, xs[0], sigma2_bad, theta_bad),
-            se_kernel_deriv_FF(x0_val, xs[1], sigma2_bad, theta_bad),
+            se_kernel_deriv_GE(x0_val, xs[0], sigma2_bad, theta_bad),
+            se_kernel_deriv_GE(x0_val, xs[1], sigma2_bad, theta_bad),
+            se_kernel_deriv_GG(x0_val, xs[0], sigma2_bad, theta_bad),
+            se_kernel_deriv_GG(x0_val, xs[1], sigma2_bad, theta_bad),
         ])
         k_star_1 = np.array([
-            se_kernel_deriv_FE(x1_val, xs[0], sigma2_bad, theta_bad),
-            se_kernel_deriv_FE(x1_val, xs[1], sigma2_bad, theta_bad),
-            se_kernel_deriv_FF(x1_val, xs[0], sigma2_bad, theta_bad),
-            se_kernel_deriv_FF(x1_val, xs[1], sigma2_bad, theta_bad),
+            se_kernel_deriv_GE(x1_val, xs[0], sigma2_bad, theta_bad),
+            se_kernel_deriv_GE(x1_val, xs[1], sigma2_bad, theta_bad),
+            se_kernel_deriv_GG(x1_val, xs[0], sigma2_bad, theta_bad),
+            se_kernel_deriv_GG(x1_val, xs[1], sigma2_bad, theta_bad),
         ])
         g0_pred = k_star_0 @ alpha
         g1_pred = k_star_1 @ alpha

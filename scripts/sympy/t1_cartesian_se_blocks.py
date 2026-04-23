@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Derive EE, EF, FE, FF covariance blocks for the CartesianSE kernel.
+"""Derive EE, EG, GE, GG covariance blocks for the CartesianSE kernel.
 
 Tutorial T1 (GP Basics): verifies the analytical kernel block expressions
 used in kernel.rs::cartesian_kernel_blocks_and_hypergrads.
@@ -8,12 +8,12 @@ Kernel: k(x,y) = sigma^2 * exp(-theta^2 * ||x - y||^2)
 
 The four blocks arise from differentiating the energy-energy kernel:
   k_ee(x,y) = k(x,y)
-  k_ef(x,y) = dk/dy       (energy at x, force at y)
-  k_fe(x,y) = dk/dx       (force at x, energy at y)
-  k_ff(x,y) = d^2k/dxdy   (force at x, force at y)
+  k_ef(x,y) = dk/dy       (energy at x, gradient at y)
+  k_fe(x,y) = dk/dx       (gradient at x, energy at y)
+  k_ff(x,y) = d^2k/dxdy   (gradient at x, gradient at y)
 
-Note: forces are negative gradients, but the GP models the gradient directly.
-The sign convention is handled at the oracle interface, not in the kernel.
+ChemGP's kernel layer is written in energy/gradient form. Atomic forces are
+introduced later through F = -∇V at the oracle and optimizer interfaces.
 """
 import sympy as sp
 
@@ -41,13 +41,13 @@ print("=" * 60)
 k_ee = k
 print(f"\nk_ee = {sp.simplify(k_ee)}")
 
-# k_ef[d] = dk/dy_d
+# k_ef[d] = d k / d y_d   (energy-gradient cross-covariance)
 k_ef = [sp.diff(k, y[d]) for d in range(D)]
 print("\nk_ef:")
 for d in range(D):
     print(f"  [{d}] = {sp.simplify(k_ef[d])}")
 
-# k_fe[d] = dk/dx_d
+# k_fe[d] = d k / d x_d   (gradient-energy cross-covariance)
 k_fe = [sp.diff(k, x[d]) for d in range(D)]
 print("\nk_fe:")
 for d in range(D):
@@ -86,16 +86,16 @@ for di in range(D):
             print(f"  k_ff[{di},{dj}] matches -4*theta^4*r_di*r_dj*k: {check == 0}")
 
 # Correspondence to Rust code:
-#   kernel.rs, cartesian_kernel_blocks_and_hypergrads (lines ~618-698)
+#   kernel.rs, cartesian_kernel_blocks_and_hypergrads
 #   kval = sigma2 * exp(-theta^2 * d2)
-#   k_ef[d] = -2 * theta^2 * r[d] * kval   (where r = x - y)
-#   k_fe[d] =  2 * theta^2 * r[d] * kval
+#   k_ef[d] = +2 * theta^2 * r[d] * kval   (where r = x - y)
+#   k_fe[d] = -2 * theta^2 * r[d] * kval
 #   k_ff[d,d] = 2 * theta^2 * kval * (1 - 2*theta^2*r[d]^2)
 #   k_ff[di,dj] = -4 * theta^4 * r[di]*r[dj] * kval   (di != dj)
 print("\n--- Closed-form summary ---")
 print("Let r_d = x_d - y_d, kval = sigma^2 * exp(-theta^2 * sum(r_d^2))")
 print("k_ee = kval")
-print("k_ef[d] = -2 * theta^2 * r_d * kval")
-print("k_fe[d] = +2 * theta^2 * r_d * kval")
+print("k_ef[d] = +2 * theta^2 * r_d * kval")
+print("k_fe[d] = -2 * theta^2 * r_d * kval")
 print("k_ff[d,d] = 2 * theta^2 * kval * (1 - 2*theta^2*r_d^2)")
 print("k_ff[di,dj] = -4 * theta^4 * r_di * r_dj * kval  (di != dj)")
