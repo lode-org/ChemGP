@@ -5,6 +5,16 @@ on:
     branches: [main]
     tags: ["*"]
   pull_request:
+  workflow_dispatch:
+    inputs:
+      build_figures:
+        description: "Regenerate PET-MAD/RPC tutorial figures before building docs"
+        required: false
+        default: "false"
+        type: choice
+        options:
+          - "false"
+          - "true"
 
 permissions:
   contents: write
@@ -26,6 +36,7 @@ jobs:
           environments: dev docs rpc
 
       - name: Download PET-MAD model
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.build_figures == 'true' }}
         run: |
           mkdir -p models
           uvx --from 'metatrain>=2026.2.1' mtt export \
@@ -33,6 +44,7 @@ jobs:
             -o models/pet-mad-xs-v1.5.0.pt
 
       - name: Start PET-MAD server
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.build_figures == 'true' }}
         run: |
           pixi run -e rpc eonclient -p metatomic \
             --config config/eon_serve_petmad.ini &
@@ -55,10 +67,19 @@ jobs:
           fi
 
       - name: Generate all figures
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.build_figures == 'true' }}
         run: pixi run -e dev snakemake -j4 -s scripts/figures/Snakefile --resources rpc_slot=1
 
       - name: Stop server
+        if: ${{ always() && github.event_name == 'workflow_dispatch' && inputs.build_figures == 'true' }}
         run: kill %1 || true
+
+      - name: Restore published figure assets
+        if: ${{ !(github.event_name == 'workflow_dispatch' && inputs.build_figures == 'true') }}
+        run: |
+          mkdir -p docs/source
+          git fetch --depth=1 origin gh-pages
+          git archive origin/gh-pages _static/figures | tar -x -C docs/source
 
       - name: Build documentation
         run: pixi run -e docs docbld
