@@ -1,9 +1,9 @@
 use std::env;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::Command;
 
-fn first_glob(root: &PathBuf, pattern: &str) -> Option<PathBuf> {
-    let mut current = vec![root.clone()];
+fn first_glob(root: &Path, pattern: &str) -> Option<PathBuf> {
+    let mut current = vec![root.to_path_buf()];
     for part in pattern.split('/') {
         let mut next = Vec::new();
         if part.contains('*') {
@@ -32,7 +32,7 @@ fn first_glob(root: &PathBuf, pattern: &str) -> Option<PathBuf> {
     current.into_iter().find(|path| path.exists())
 }
 
-fn query_rgpot_libdirs(rgpot_root: &PathBuf) -> Vec<PathBuf> {
+fn query_rgpot_libdirs(rgpot_root: &Path) -> Vec<PathBuf> {
     let python = rgpot_root.join(".pixi/envs/metatomicbld/bin/python");
     if !python.exists() {
         return Vec::new();
