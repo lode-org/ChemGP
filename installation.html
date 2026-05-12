@@ -22,18 +22,20 @@
   <meta property="og:url" content="chemgp.rgoswami.me/installation.html"/>
   <meta property="og:title" content="Installation"/>
     <meta name="twitter:card" content="summary"/>
-  <!-- Plausible injection -->
-<script
-  defer
-  data-domain="chemgp.rgoswami.me"
-  src="https://analytics.turtletech.us/js/script.hash.outbound-links.js"
-></script>
+  <!-- antics analytics (privacy-first; no cookies, no fingerprinting) -->
 <script>
-  window.plausible =
-    window.plausible ||
-    function () {
-      (window.plausible.q = window.plausible.q || []).push(arguments);
-    };
+(function () {
+  var tracker = document.createElement("script");
+  tracker.defer = true;
+  tracker.src = "https://antics-api.turtletech.us/antics.js";
+  if (
+    location.hostname === "lode-org.github.io" &&
+    location.pathname.replace(/\/+$/, "").toLowerCase().startsWith("/chemgp")
+  ) {
+    tracker.dataset.token = "317f37c4e08948f29e273217acdf4ab0";
+  }
+  document.head.appendChild(tracker);
+})();
 </script></head>
 <body><div class="sy-head">
   <div class="sy-head-blur"></div>
@@ -310,7 +312,7 @@ connecting to external potential energy calculators.</p>
 </a></div>
     </div>
     <div class="sy-foot-reserved" style="text-align: center; font-size: 0.85em; padding-top: 0.5em;">
-      Analytics by <a href="https://plausible.io" rel="noopener">Plausible</a>
+      Analytics by <a href="https://antics.turtletech.us" rel="noopener">Antics</a>
       provided by <a href="https://turtletech.is" rel="noopener">TurtleTech ehf</a>
       | <a href="https://rgoswami.me" rel="noopener">Rohit Goswami</a>
     </div>
