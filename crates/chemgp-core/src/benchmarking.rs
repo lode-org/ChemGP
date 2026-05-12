@@ -1,11 +1,12 @@
 //! Shared helpers for benchmark-oriented examples and workflow runners.
 
-use crate::prior_mean::{
-    select_best_candidate_by_gradient_match, PriorCandidate, PriorMeanConfig,
-};
+use crate::prior_mean::{select_best_candidate_by_gradient_match, PriorCandidate, PriorMeanConfig};
 use crate::types::TrainingData;
 use rand::rngs::StdRng;
 use rand::{Rng, SeedableRng};
+
+pub type EnergyGradientOracle = dyn Fn(&[f64]) -> (f64, Vec<f64>);
+pub type SeedObservation = (Vec<f64>, f64, Vec<f64>);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BenchmarkVariant {
@@ -88,7 +89,7 @@ pub fn linear_prior_candidates(
 }
 
 pub fn sampled_taylor_prior(
-    oracle: &dyn Fn(&[f64]) -> (f64, Vec<f64>),
+    oracle: &EnergyGradientOracle,
     points: &[Vec<f64>],
     label_prefix: &str,
 ) -> PriorMeanConfig {
@@ -97,12 +98,7 @@ pub fn sampled_taylor_prior(
         .enumerate()
         .map(|(idx, x)| {
             let (energy, gradient) = oracle(x);
-            PriorCandidate::linear(
-                format!("{label_prefix}_{idx}"),
-                x.clone(),
-                energy,
-                gradient,
-            )
+            PriorCandidate::linear(format!("{label_prefix}_{idx}"), x.clone(), energy, gradient)
         })
         .collect();
     PriorMeanConfig::NearestTaylor { candidates }
@@ -185,9 +181,15 @@ mod tests {
     #[test]
     fn benchmark_variant_env_aliases_work() {
         std::env::set_var("CHEMGP_BENCH_VARIANT", "meta_gp");
-        assert_eq!(BenchmarkVariant::from_env(), BenchmarkVariant::RecycledLocalPes);
+        assert_eq!(
+            BenchmarkVariant::from_env(),
+            BenchmarkVariant::RecycledLocalPes
+        );
         std::env::set_var("CHEMGP_BENCH_VARIANT", "physical-prior");
-        assert_eq!(BenchmarkVariant::from_env(), BenchmarkVariant::PhysicalPrior);
+        assert_eq!(
+            BenchmarkVariant::from_env(),
+            BenchmarkVariant::PhysicalPrior
+        );
         std::env::remove_var("CHEMGP_BENCH_VARIANT");
     }
 
@@ -197,10 +199,7 @@ mod tests {
             &[0.0],
             1.0,
             &[2.0],
-            &[
-                ("good", &[0.0], 1.0, &[2.0]),
-                ("bad", &[0.0], 0.0, &[0.0]),
-            ],
+            &[("good", &[0.0], 1.0, &[2.0]), ("bad", &[0.0], 0.0, &[0.0])],
         );
         assert_eq!(label, "good");
         match cfg {
@@ -234,12 +233,12 @@ mod tests {
 }
 
 pub fn seed_training_data(
-    oracle: &dyn Fn(&[f64]) -> (f64, Vec<f64>),
+    oracle: &EnergyGradientOracle,
     x_init: &[f64],
     n_initial_perturb: usize,
     perturb_scale: f64,
     seed: u64,
-) -> (TrainingData, Vec<(Vec<f64>, f64, Vec<f64>)>) {
+) -> (TrainingData, Vec<SeedObservation>) {
     let mut td = TrainingData::new(x_init.len());
     let mut observations = Vec::with_capacity(n_initial_perturb + 1);
 

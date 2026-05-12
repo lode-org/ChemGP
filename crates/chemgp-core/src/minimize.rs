@@ -3,7 +3,7 @@
 //! Ports `minimize.jl`: the main outer loop.
 
 use crate::distances::euclidean_distance;
-use crate::internal_coords::{CoordinateMode, RedundantInverseDistance};
+use crate::internal_coords::{CoordinateMode, InternalStepOptions, RedundantInverseDistance};
 use crate::kernel::Kernel;
 use crate::optim_step::clip_to_max_move;
 use crate::predict::build_pred_model_with_prior;
@@ -141,7 +141,8 @@ pub fn gp_minimize(
         }
 
         let (e, g) = oracle(x_init);
-        td.add_point(x_init, e, &g).expect("add_point failed: invalid data");
+        td.add_point(x_init, e, &g)
+            .expect("add_point failed: invalid data");
         trajectory.push(x_init.to_vec());
         all_energies.push(e);
 
@@ -150,10 +151,15 @@ pub fn gp_minimize(
             let perturb: Vec<f64> = (0..d)
                 .map(|_| (rng.random::<f64>() - 0.5) * cfg.perturb_scale)
                 .collect();
-            let x_p: Vec<f64> = x_init.iter().zip(perturb.iter()).map(|(a, b)| a + b).collect();
+            let x_p: Vec<f64> = x_init
+                .iter()
+                .zip(perturb.iter())
+                .map(|(a, b)| a + b)
+                .collect();
             let (e_p, g_p) = oracle(&x_p);
             if e_p.is_finite() && e_p < 1e6 {
-                td.add_point(&x_p, e_p, &g_p).expect("add_point failed: invalid data");
+                td.add_point(&x_p, e_p, &g_p)
+                    .expect("add_point failed: invalid data");
                 trajectory.push(x_p);
                 all_energies.push(e_p);
             }
@@ -170,7 +176,7 @@ pub fn gp_minimize(
     let mut current_true_g = td.gradients[0..d].to_vec();
     let internal_system = match cfg.coordinate_mode {
         CoordinateMode::Cartesian => None,
-        CoordinateMode::CompleteRedundantInvDist if d >= 6 && d % 3 == 0 => {
+        CoordinateMode::CompleteRedundantInvDist if d >= 6 && d.is_multiple_of(3) => {
             Some(RedundantInverseDistance::new(d / 3))
         }
         CoordinateMode::CompleteRedundantInvDist => None,
@@ -188,8 +194,13 @@ pub fn gp_minimize(
         };
 
         let td_sub = if cfg.fps_history > 0 && td.npoints() > cfg.fps_history {
-            let sub_idx =
-                select_optim_subset(&td, &x_curr, cfg.fps_history, cfg.fps_latest_points, &dist_fn);
+            let sub_idx = select_optim_subset(
+                &td,
+                &x_curr,
+                cfg.fps_history,
+                cfg.fps_latest_points,
+                &dist_fn,
+            );
             td.extract_subset(&sub_idx)
         } else {
             td.clone()
@@ -258,7 +269,8 @@ pub fn gp_minimize(
             .iter()
             .enumerate()
             .min_by(|(_, a), (_, b)| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal))
-            .map(|(i, _)| i).unwrap_or(0);  // Safe fallback: use first point
+            .map(|(i, _)| i)
+            .unwrap_or(0); // Safe fallback: use first point
         let x_start = if td.energies[best_idx] < *all_energies.last().unwrap_or(&f64::INFINITY) {
             td.col(best_idx).to_vec()
         } else {
@@ -334,10 +346,12 @@ pub fn gp_minimize(
                     &x_opt,
                     &grad,
                     step_size,
-                    cfg.internal_damping,
-                    cfg.internal_backtransform_iter,
-                    cfg.internal_backtransform_tol,
-                    cfg.max_move,
+                    InternalStepOptions {
+                        damping: cfg.internal_damping,
+                        max_backtransform_iter: cfg.internal_backtransform_iter,
+                        backtransform_tol: cfg.internal_backtransform_tol,
+                        max_cart_step: cfg.max_move,
+                    },
                 );
             } else {
                 // L-BFGS direction (track inner iterates, not outer x_prev)
@@ -386,11 +400,7 @@ pub fn gp_minimize(
                 .map(|(a, b)| a - b)
                 .collect();
             remove_rigid_body_modes(&mut step, &x_prev, n_at);
-            x_curr = x_prev
-                .iter()
-                .zip(step.iter())
-                .map(|(a, b)| a + b)
-                .collect();
+            x_curr = x_prev.iter().zip(step.iter()).map(|(a, b)| a + b).collect();
         }
 
         // Per-atom max-move clip (only for 3D molecular coordinates)
@@ -434,8 +444,7 @@ pub fn gp_minimize(
             (0..n_atoms)
                 .map(|a| {
                     let off = 3 * a;
-                    (g_true[off].powi(2) + g_true[off + 1].powi(2) + g_true[off + 2].powi(2))
-                        .sqrt()
+                    (g_true[off].powi(2) + g_true[off + 1].powi(2) + g_true[off + 2].powi(2)).sqrt()
                 })
                 .fold(0.0f64, f64::max)
         } else {
@@ -462,7 +471,8 @@ pub fn gp_minimize(
                 .iter()
                 .enumerate()
                 .min_by(|(_, a), (_, b)| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal))
-                .map(|(i, _)| i).unwrap_or(0);  // Safe fallback: use first point
+                .map(|(i, _)| i)
+                .unwrap_or(0); // Safe fallback: use first point
             let mut rng = StdRng::seed_from_u64(cfg.seed.wrapping_add(outer_step as u64));
             x_curr = td.col(best_idx).to_vec();
             for xc in x_curr.iter_mut().take(d) {
@@ -479,7 +489,8 @@ pub fn gp_minimize(
             .iter()
             .enumerate()
             .min_by(|(_, a), (_, b)| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal))
-            .map(|(i, _)| i).unwrap_or(0);  // Safe fallback: use first point
+            .map(|(i, _)| i)
+            .unwrap_or(0); // Safe fallback: use first point
         let e_best = td.energies[best_idx];
         let regress_tol = if cfg.energy_regression_tol > 0.0 {
             cfg.energy_regression_tol
@@ -499,7 +510,8 @@ pub fn gp_minimize(
         if e_true > e_best + regress_tol && g_norm > cfg.conv_tol * 10.0 {
             trajectory.push(x_curr.clone());
             all_energies.push(e_true);
-            td.add_point(&x_curr, e_true, &g_true).expect("add_point failed: invalid data");
+            td.add_point(&x_curr, e_true, &g_true)
+                .expect("add_point failed: invalid data");
             x_curr = td.col(best_idx).to_vec();
             current_true_e = td.energies[best_idx];
             current_true_g = td.gradients[best_idx * d..(best_idx + 1) * d].to_vec();
@@ -508,7 +520,8 @@ pub fn gp_minimize(
 
         trajectory.push(x_curr.clone());
         all_energies.push(e_true);
-        td.add_point(&x_curr, e_true, &g_true).expect("add_point failed: invalid data");
+        td.add_point(&x_curr, e_true, &g_true)
+            .expect("add_point failed: invalid data");
 
         if cfg.max_training_points > 0 {
             let dist_fn = |a: &[f64], b: &[f64]| euclidean_distance(a, b);

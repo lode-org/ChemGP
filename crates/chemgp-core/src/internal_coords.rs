@@ -5,22 +5,25 @@
 
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub enum CoordinateMode {
+    #[default]
     Cartesian,
     CompleteRedundantInvDist,
-}
-
-impl Default for CoordinateMode {
-    fn default() -> Self {
-        Self::Cartesian
-    }
 }
 
 #[derive(Debug, Clone)]
 pub struct RedundantInverseDistance {
     pub n_atoms: usize,
     pub pairs: Vec<(usize, usize)>,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct InternalStepOptions {
+    pub damping: f64,
+    pub max_backtransform_iter: usize,
+    pub backtransform_tol: f64,
+    pub max_cart_step: f64,
 }
 
 impl RedundantInverseDistance {
@@ -106,7 +109,11 @@ impl RedundantInverseDistance {
     ) -> Vec<f64> {
         let d = 3 * self.n_atoms;
         assert_eq!(x_start.len(), d, "coordinate dimension mismatch");
-        assert_eq!(q_target.len(), self.pairs.len(), "internal dimension mismatch");
+        assert_eq!(
+            q_target.len(),
+            self.pairs.len(),
+            "internal dimension mismatch"
+        );
         let mut x = x_start.to_vec();
 
         for _ in 0..max_iter.max(1) {
@@ -172,13 +179,10 @@ impl RedundantInverseDistance {
         x: &[f64],
         grad_x: &[f64],
         step_size: f64,
-        damping: f64,
-        max_backtransform_iter: usize,
-        backtransform_tol: f64,
-        max_cart_step: f64,
+        options: InternalStepOptions,
     ) -> Vec<f64> {
         let q = self.values(x);
-        let grad_q = self.cartesian_to_internal_gradient(x, grad_x, damping);
+        let grad_q = self.cartesian_to_internal_gradient(x, grad_x, options.damping);
         let q_target: Vec<f64> = q
             .iter()
             .zip(grad_q.iter())
@@ -187,10 +191,10 @@ impl RedundantInverseDistance {
         self.backtransform_target(
             x,
             &q_target,
-            damping,
-            max_backtransform_iter,
-            backtransform_tol,
-            max_cart_step,
+            options.damping,
+            options.max_backtransform_iter,
+            options.backtransform_tol,
+            options.max_cart_step,
         )
     }
 }
@@ -292,7 +296,10 @@ mod tests {
             for row in 0..q0.len() {
                 let fd = (qp[row] - q0[row]) / h;
                 let an = b[row * x.len() + col];
-                assert!((fd - an).abs() < 1e-4, "row {row} col {col}: fd={fd} an={an}");
+                assert!(
+                    (fd - an).abs() < 1e-4,
+                    "row {row} col {col}: fd={fd} an={an}"
+                );
             }
         }
     }

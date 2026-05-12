@@ -81,12 +81,13 @@ impl PriorCandidate {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, serde::Serialize, serde::Deserialize)]
 pub enum PriorMeanConfig {
     /// Zero energy and zero gradient prior.
     Zero,
     /// Use the first observed training energy as a constant prior offset.
     /// This preserves the current ChemGP centering behavior by default.
+    #[default]
     Reference,
     /// User-specified constant energy prior with zero gradients.
     Constant { energy: f64 },
@@ -108,15 +109,7 @@ pub enum PriorMeanConfig {
         curvature: Vec<f64>,
     },
     /// Choose the nearest local PES prior from a candidate library.
-    NearestTaylor {
-        candidates: Vec<PriorCandidate>,
-    },
-}
-
-impl Default for PriorMeanConfig {
-    fn default() -> Self {
-        Self::Reference
-    }
+    NearestTaylor { candidates: Vec<PriorCandidate> },
 }
 
 impl PriorMeanConfig {
@@ -125,7 +118,11 @@ impl PriorMeanConfig {
             Self::Zero => (0.0, vec![0.0; x.len()]),
             Self::Reference => (reference_energy, vec![0.0; x.len()]),
             Self::Constant { energy } => (*energy, vec![0.0; x.len()]),
-            Self::Quadratic { center, energy_offset, curvature } => {
+            Self::Quadratic {
+                center,
+                energy_offset,
+                curvature,
+            } => {
                 assert_eq!(
                     center.len(),
                     x.len(),
@@ -286,9 +283,8 @@ pub fn select_best_candidate_by_gradient_match(
 #[cfg(test)]
 mod tests {
     use super::{
-        candidate_gradient_match_score, candidate_residual_score,
-        select_best_candidate, select_best_candidate_by_gradient_match, PriorCandidate,
-        PriorMeanConfig,
+        candidate_gradient_match_score, candidate_residual_score, select_best_candidate,
+        select_best_candidate_by_gradient_match, PriorCandidate, PriorMeanConfig,
     };
     use crate::types::TrainingData;
 
