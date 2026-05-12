@@ -39,10 +39,10 @@ jobs:
           SERVER_PID=$!
           
           # Wait for RPC server to be fully ready (model loaded, not just port open)
-          eprintln "Waiting for RPC server on localhost:12345..."
+          echo "Waiting for RPC server on localhost:12345..."
           for i in {1..30}; do
             if timeout 2 bash -c 'echo >/dev/tcp/localhost/12345' 2>/dev/null; then
-              eprintln "RPC server ready after ${i}s"
+              echo "RPC server ready after ${i}s"
               break
             fi
             sleep 1
