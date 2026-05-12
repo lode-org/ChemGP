@@ -51,10 +51,7 @@ pub const MULLER_BROWN_MINIMA: [[f64; 2]; 3] = [
 ];
 
 /// Known saddle points.
-pub const MULLER_BROWN_SADDLES: [[f64; 2]; 2] = [
-    [-0.822002, 0.624313],
-    [0.212487, 0.292988],
-];
+pub const MULLER_BROWN_SADDLES: [[f64; 2]; 2] = [[-0.822002, 0.624313], [0.212487, 0.292988]];
 
 /// Muller-Brown potential: E and G for 2D point [x, y].
 pub fn muller_brown_energy_gradient(xy: &[f64]) -> (f64, Vec<f64>) {
@@ -107,20 +104,14 @@ fn leps_j(r: f64, d: f64) -> (f64, f64) {
 }
 
 /// Reactant geometry: A far from B-C at equilibrium.
-pub const LEPS_REACTANT: [f64; 9] = [
-    0.0, 0.0, 0.0, LEPS_R_E, 0.0, 0.0, LEPS_R_E + 3.0, 0.0, 0.0,
-];
+pub const LEPS_REACTANT: [f64; 9] = [0.0, 0.0, 0.0, LEPS_R_E, 0.0, 0.0, LEPS_R_E + 3.0, 0.0, 0.0];
 
 /// Product geometry: A-B at equilibrium, C far away.
-pub const LEPS_PRODUCT: [f64; 9] = [
-    0.0, 0.0, 0.0, 3.0, 0.0, 0.0, 3.0 + LEPS_R_E, 0.0, 0.0,
-];
+pub const LEPS_PRODUCT: [f64; 9] = [0.0, 0.0, 0.0, 3.0, 0.0, 0.0, 3.0 + LEPS_R_E, 0.0, 0.0];
 
 /// Saddle point geometry (collinear, r_AB=1.1491, r_BC=0.8625).
 /// E = -3.177, Hessian eigenvalues: -6.10, +13.70.
-pub const LEPS_SADDLE: [f64; 9] = [
-    0.0, 0.0, 0.0, 1.149098, 0.0, 0.0, 2.011623, 0.0, 0.0,
-];
+pub const LEPS_SADDLE: [f64; 9] = [0.0, 0.0, 0.0, 1.149098, 0.0, 0.0, 2.011623, 0.0, 0.0];
 
 /// LEPS potential for 3-atom system (9D flat coordinates).
 pub fn leps_energy_gradient(x: &[f64]) -> (f64, Vec<f64>) {
@@ -286,7 +277,11 @@ mod tests {
     #[test]
     fn test_leps_reactant() {
         let (e, g) = leps_energy_gradient(&LEPS_REACTANT);
-        assert!(e < 0.0, "LEPS reactant energy should be negative, got {}", e);
+        assert!(
+            e < 0.0,
+            "LEPS reactant energy should be negative, got {}",
+            e
+        );
         // Forces should be small at near-equilibrium
         let max_f: f64 = g.iter().map(|x| x.abs()).fold(0.0f64, f64::max);
         assert!(max_f < 5.0, "LEPS reactant max force too large: {}", max_f);

@@ -17,11 +17,7 @@ use std::fs::File;
 use std::io::{BufWriter, Write};
 
 /// Known MB stationary points.
-const MINIMA: [(f64, f64); 3] = [
-    (-0.558, 1.442),
-    (0.623, 0.028),
-    (-0.050, 0.467),
-];
+const MINIMA: [(f64, f64); 3] = [(-0.558, 1.442), (0.623, 0.028), (-0.050, 0.467)];
 const SADDLES: [(f64, f64); 2] = [(-0.822, 0.624), (0.212, 0.293)];
 
 /// Sample N training points near the stationary points (clustered).
@@ -30,12 +26,36 @@ fn generate_clustered(n: usize) -> TrainingData {
 
     // Points near minima and saddles -- clustered around interesting features
     let seeds: Vec<(f64, f64)> = vec![
-        MINIMA[0], MINIMA[1], MINIMA[2], SADDLES[0], SADDLES[1],
-        (-1.0, 0.5), (0.0, 1.0), (-0.3, 0.8), (0.5, 0.3), (-0.7, 1.2),
-        (-0.2, 1.5), (0.3, 0.15), (-0.9, 0.9), (-0.4, 0.5), (0.1, 0.7),
-        (-0.6, 1.0), (-0.1, 0.3), (0.4, 0.1), (-0.5, 0.7), (-0.3, 1.3),
-        (-0.8, 1.4), (0.2, 0.5), (-0.15, 1.1), (0.55, 0.15), (-0.45, 1.6),
-        (-0.7, 0.3), (0.1, 0.1), (-0.65, 1.5), (-0.35, 0.4), (0.0, 0.6),
+        MINIMA[0],
+        MINIMA[1],
+        MINIMA[2],
+        SADDLES[0],
+        SADDLES[1],
+        (-1.0, 0.5),
+        (0.0, 1.0),
+        (-0.3, 0.8),
+        (0.5, 0.3),
+        (-0.7, 1.2),
+        (-0.2, 1.5),
+        (0.3, 0.15),
+        (-0.9, 0.9),
+        (-0.4, 0.5),
+        (0.1, 0.7),
+        (-0.6, 1.0),
+        (-0.1, 0.3),
+        (0.4, 0.1),
+        (-0.5, 0.7),
+        (-0.3, 1.3),
+        (-0.8, 1.4),
+        (0.2, 0.5),
+        (-0.15, 1.1),
+        (0.55, 0.15),
+        (-0.45, 1.6),
+        (-0.7, 0.3),
+        (0.1, 0.1),
+        (-0.65, 1.5),
+        (-0.35, 0.4),
+        (0.0, 0.6),
     ];
 
     for i in 0..n.min(seeds.len()) {
@@ -53,9 +73,13 @@ fn generate_scattered(n: usize, x_min: f64, x_max: f64, y_min: f64, y_max: f64) 
     // Simple LCG for reproducible random points
     let mut state: u64 = 42;
     for _ in 0..n {
-        state = state.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+        state = state
+            .wrapping_mul(6364136223846793005)
+            .wrapping_add(1442695040888963407);
         let u1 = (state >> 33) as f64 / (1u64 << 31) as f64;
-        state = state.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+        state = state
+            .wrapping_mul(6364136223846793005)
+            .wrapping_add(1442695040888963407);
         let u2 = (state >> 33) as f64 / (1u64 << 31) as f64;
         let x = x_min + (x_max - x_min) * u1;
         let y = y_min + (y_max - y_min) * u2;
@@ -76,16 +100,30 @@ const Y_MAX: f64 = 2.0;
 
 /// Write header (grid_meta + stationary points) to a JSONL writer.
 fn write_header(w: &mut BufWriter<File>) {
-    writeln!(w, r#"{{"type":"grid_meta","nx":{},"ny":{},"x_min":{},"x_max":{},"y_min":{},"y_max":{}}}"#,
-        NX, NY, X_MIN, X_MAX, Y_MIN, Y_MAX).expect("Failed to write to output file");
+    writeln!(
+        w,
+        r#"{{"type":"grid_meta","nx":{},"ny":{},"x_min":{},"x_max":{},"y_min":{},"y_max":{}}}"#,
+        NX, NY, X_MIN, X_MAX, Y_MIN, Y_MAX
+    )
+    .expect("Failed to write to output file");
 
     for (i, (mx, my)) in MINIMA.iter().enumerate() {
         let (e, _) = muller_brown_energy_gradient(&[*mx, *my]);
-        writeln!(w, r#"{{"type":"minimum","id":{},"x":{},"y":{},"energy":{}}}"#, i, mx, my, e).expect("Failed to write to output file");
+        writeln!(
+            w,
+            r#"{{"type":"minimum","id":{},"x":{},"y":{},"energy":{}}}"#,
+            i, mx, my, e
+        )
+        .expect("Failed to write to output file");
     }
     for (i, (sx, sy)) in SADDLES.iter().enumerate() {
         let (e, _) = muller_brown_energy_gradient(&[*sx, *sy]);
-        writeln!(w, r#"{{"type":"saddle","id":{},"x":{},"y":{},"energy":{}}}"#, i, sx, sy, e).expect("Failed to write to output file");
+        writeln!(
+            w,
+            r#"{{"type":"saddle","id":{},"x":{},"y":{},"energy":{}}}"#,
+            i, sx, sy, e
+        )
+        .expect("Failed to write to output file");
     }
 }
 
@@ -94,15 +132,20 @@ fn evaluate_gp(w: &mut BufWriter<File>, td: &TrainingData, n_train: usize) {
     // Write training points
     for i in 0..td.npoints() {
         let col = td.col(i);
-        writeln!(w, r#"{{"type":"train_point","n_train":{},"x":{},"y":{},"energy":{}}}"#,
-            n_train, col[0], col[1], td.energies[i]).expect("Failed to write to output file");
+        writeln!(
+            w,
+            r#"{{"type":"train_point","n_train":{},"x":{},"y":{},"energy":{}}}"#,
+            n_train, col[0], col[1], td.energies[i]
+        )
+        .expect("Failed to write to output file");
     }
 
     // Initialize and train GP
     let kernel = Kernel::Cartesian(CartesianSE::new(100.0, 2.0));
     let kernel = init_kernel(td, &kernel);
     let (y, _mean, _std) = td.normalize();
-    let mut gp = GPModel::new(kernel.clone(), td, y, 1e-6, 1e-4, 1e-6).expect("GPModel::new failed");
+    let mut gp =
+        GPModel::new(kernel.clone(), td, y, 1e-6, 1e-4, 1e-6).expect("GPModel::new failed");
     train_model(&mut gp, 100, false);
 
     // Build prediction model

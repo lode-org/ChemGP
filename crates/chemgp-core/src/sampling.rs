@@ -38,7 +38,8 @@ where
             .iter()
             .enumerate()
             .max_by(|(_, a), (_, b)| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal))
-            .map(|(i, _)| i).unwrap_or(0);  // Safe fallback
+            .map(|(i, _)| i)
+            .unwrap_or(0); // Safe fallback
 
         if min_dists[best_idx] <= 0.0 || min_dists[best_idx] == f64::NEG_INFINITY {
             break;

@@ -76,15 +76,28 @@ pub fn train_model(model: &mut GPModel, iterations: usize, verbose: bool) {
     let p_dof = model.prior_dof;
     let p_s2 = model.prior_s2;
     let p_mu = model.prior_mu;
-    let nll_data = NllData { x_data: &x_data, dim, n, y: &y, template: &template };
-    let nll_noise = NllNoise { noise_e, noise_g, jitter: jit, const_sigma2: const_s2 };
+    let nll_data = NllData {
+        x_data: &x_data,
+        dim,
+        n,
+        y: &y,
+        template: &template,
+    };
+    let nll_noise = NllNoise {
+        noise_e,
+        noise_g,
+        jitter: jit,
+        const_sigma2: const_s2,
+    };
     let nll_prior = NllPrior {
-        w_prior: &w_prior, prior_var: &prior_var,
-        prior_dof: p_dof, prior_s2: p_s2, prior_mu: p_mu,
+        w_prior: &w_prior,
+        prior_var: &prior_var,
+        prior_dof: p_dof,
+        prior_s2: p_s2,
+        prior_mu: p_mu,
     };
-    let mut fg = |w: &[f64]| -> (f64, Vec<f64>) {
-        nll_and_grad(w, &nll_data, &nll_noise, &nll_prior)
-    };
+    let mut fg =
+        |w: &[f64]| -> (f64, Vec<f64>) { nll_and_grad(w, &nll_data, &nll_noise, &nll_prior) };
 
     let config = ScgConfig {
         max_iter: iterations,

@@ -15,9 +15,7 @@ fn main() {
     let y_slice = 0.5;
 
     // 10 clustered training points near x in [-0.25, 0.35]
-    let train_x: Vec<f64> = vec![
-        -0.25, -0.15, -0.05, 0.0, 0.05, 0.10, 0.15, 0.20, 0.28, 0.35,
-    ];
+    let train_x: Vec<f64> = vec![-0.25, -0.15, -0.05, 0.0, 0.05, 0.10, 0.15, 0.20, 0.28, 0.35];
     let mut td = TrainingData::new(2);
     for &x in &train_x {
         let (e, g) = muller_brown_energy_gradient(&[x, y_slice]);
@@ -28,7 +26,8 @@ fn main() {
     let kernel = Kernel::Cartesian(CartesianSE::new(100.0, 2.0));
     let kernel = init_kernel(&td, &kernel);
     let (y, _mean, _std) = td.normalize();
-    let mut gp = GPModel::new(kernel, &td, y, 1e-6, 1e-4, 1e-6).expect("GPModel::new failed: invalid training data or kernel params");
+    let mut gp = GPModel::new(kernel, &td, y, 1e-6, 1e-4, 1e-6)
+        .expect("GPModel::new failed: invalid training data or kernel params");
     train_model(&mut gp, 100, false);
 
     let pred = build_pred_model(&gp.kernel, &td, 0, 42, 0.0);
@@ -44,17 +43,18 @@ fn main() {
 
     // Trust metadata
     let trust_radius = 0.4;
-    writeln!(w, r#"{{"type":"trust_meta","trust_radius":{}}}"#, trust_radius).expect("Failed to write to output file");
+    writeln!(
+        w,
+        r#"{{"type":"trust_meta","trust_radius":{}}}"#,
+        trust_radius
+    )
+    .expect("Failed to write to output file");
 
     // Training points
     for &x in &train_x {
         let (e, _) = muller_brown_energy_gradient(&[x, y_slice]);
-        writeln!(
-            w,
-            r#"{{"type":"train_point","x":{},"energy":{}}}"#,
-            x, e
-        )
-        .expect("Operation failed");
+        writeln!(w, r#"{{"type":"train_point","x":{},"energy":{}}}"#, x, e)
+            .expect("Operation failed");
     }
 
     // Predictions

@@ -185,7 +185,6 @@ pub struct OTGPDHistory {
 /// Oracle function type.
 pub type OracleFn = dyn Fn(&[f64]) -> (f64, Vec<f64>);
 
-
 /// Per-atom step limiting (C++ AtomicDimer.cpp:336-396).
 ///
 /// Checks that no atom moves more than 0.5*(1-ratio_at_limit)*min_interatomic_distance.
@@ -237,11 +236,18 @@ fn limit_per_atom_step(r: &[f64], r_new: &mut [f64], n_atoms: usize, ratio_at_li
     needs_clip
 }
 
-
 fn predict_dimer(
-    r: &[f64], orient: &[f64], sep: f64, model: &PredModel, e_ref: f64,
+    r: &[f64],
+    orient: &[f64],
+    sep: f64,
+    model: &PredModel,
+    e_ref: f64,
 ) -> (Vec<f64>, Vec<f64>, f64) {
-    let r1: Vec<f64> = r.iter().zip(orient.iter()).map(|(r, o)| r + sep * o).collect();
+    let r1: Vec<f64> = r
+        .iter()
+        .zip(orient.iter())
+        .map(|(r, o)| r + sep * o)
+        .collect();
     let pred0 = model.predict(r);
     let pred1 = model.predict(&r1);
     let g0: Vec<f64> = pred0[1..].to_vec();
@@ -281,19 +287,28 @@ fn rotate_on_gp(
         let orient_rot: Vec<f64> = f_rot.iter().map(|x| x / f_rot_norm).collect();
 
         // Trial rotation
-        let orient_trial: Vec<f64> = orient.iter().zip(orient_rot.iter())
-            .map(|(o, r)| dtheta.cos() * o + dtheta.sin() * r).collect();
+        let orient_trial: Vec<f64> = orient
+            .iter()
+            .zip(orient_rot.iter())
+            .map(|(o, r)| dtheta.cos() * o + dtheta.sin() * r)
+            .collect();
         let orient_trial = normalize_vec(&orient_trial);
 
-        let r1_trial: Vec<f64> = r.iter().zip(orient_trial.iter())
-            .map(|(r, o)| r + sep * o).collect();
+        let r1_trial: Vec<f64> = r
+            .iter()
+            .zip(orient_trial.iter())
+            .map(|(r, o)| r + sep * o)
+            .collect();
         let pred1_trial = model.predict(&r1_trial);
         let g1_trial: Vec<f64> = pred1_trial[1..].to_vec();
 
         let f_rot_trial = rotational_force(&g0, &g1_trial, &orient_trial, sep);
 
-        let orient_rot_trial: Vec<f64> = orient.iter().zip(orient_rot.iter())
-            .map(|(o, r)| -dtheta.sin() * o + dtheta.cos() * r).collect();
+        let orient_rot_trial: Vec<f64> = orient
+            .iter()
+            .zip(orient_rot.iter())
+            .map(|(o, r)| -dtheta.sin() * o + dtheta.cos() * r)
+            .collect();
         let orient_rot_trial = normalize_vec(&orient_rot_trial);
 
         let f_dtheta = vec_dot(&f_rot_trial, &orient_rot_trial);
@@ -313,7 +328,8 @@ fn rotate_on_gp(
 
         // EON-style curvature improvement check
         let mut angle_final = angle_rot;
-        let mut c_est = c0 + a1 * ((2.0 * angle_final).cos() - 1.0) + b1 * (2.0 * angle_final).sin();
+        let mut c_est =
+            c0 + a1 * ((2.0 * angle_final).cos() - 1.0) + b1 * (2.0 * angle_final).sin();
         if c_est > c0 {
             angle_final += std::f64::consts::FRAC_PI_2;
             c_est = c0 + a1 * ((2.0 * angle_final).cos() - 1.0) + b1 * (2.0 * angle_final).sin();
@@ -324,8 +340,11 @@ fn rotate_on_gp(
             break;
         }
 
-        let orient_new: Vec<f64> = orient.iter().zip(orient_rot.iter())
-            .map(|(o, r)| angle_final.cos() * o + angle_final.sin() * r).collect();
+        let orient_new: Vec<f64> = orient
+            .iter()
+            .zip(orient_rot.iter())
+            .map(|(o, r)| angle_final.cos() * o + angle_final.sin() * r)
+            .collect();
         let new_orient = normalize_vec(&orient_new);
         *orient = new_orient;
 
@@ -355,7 +374,8 @@ pub fn otgpd(
     // Initial data generation (C++ AtomicDimer::execute pattern)
     // 1. Evaluate midpoint
     let (e_r, g_r) = oracle(&r);
-    td.add_point(&r, e_r, &g_r).expect("add_point failed: invalid data");
+    td.add_point(&r, e_r, &g_r)
+        .expect("add_point failed: invalid data");
     oracle_calls += 1;
 
     // Optional random perturbations (off by default for molecular systems)
@@ -368,17 +388,22 @@ pub fn otgpd(
             let x_p: Vec<f64> = r.iter().zip(perturb.iter()).map(|(a, b)| a + b).collect();
             let (e_p, g_p) = oracle(&x_p);
             if e_p.is_finite() && e_p < 1e6 {
-                td.add_point(&x_p, e_p, &g_p).expect("add_point failed: invalid data");
+                td.add_point(&x_p, e_p, &g_p)
+                    .expect("add_point failed: invalid data");
                 oracle_calls += 1;
             }
         }
     }
 
     // 2. Evaluate image1
-    let r1: Vec<f64> = r.iter().zip(orient.iter())
-        .map(|(r, o)| r + cfg.dimer_sep * o).collect();
+    let r1: Vec<f64> = r
+        .iter()
+        .zip(orient.iter())
+        .map(|(r, o)| r + cfg.dimer_sep * o)
+        .collect();
     let (e_r1, g_r1) = oracle(&r1);
-    td.add_point(&r1, e_r1, &g_r1).expect("add_point failed: invalid data");
+    td.add_point(&r1, e_r1, &g_r1)
+        .expect("add_point failed: invalid data");
     oracle_calls += 1;
 
     // Cache midpoint gradient for initial rotation (midpoint position is fixed)
@@ -403,11 +428,15 @@ pub fn otgpd(
             }
 
             // Evaluate image1 at current orientation (1 oracle call per iteration)
-            let r1_cur: Vec<f64> = r.iter().zip(orient.iter())
-                .map(|(rv, o)| rv + cfg.dimer_sep * o).collect();
+            let r1_cur: Vec<f64> = r
+                .iter()
+                .zip(orient.iter())
+                .map(|(rv, o)| rv + cfg.dimer_sep * o)
+                .collect();
             let (e1_cur, g1_cur) = oracle(&r1_cur);
             oracle_calls += 1;
-            td.add_point(&r1_cur, e1_cur, &g1_cur).expect("add_point failed: invalid data");
+            td.add_point(&r1_cur, e1_cur, &g1_cur)
+                .expect("add_point failed: invalid data");
             g1_cached = g1_cur;
 
             // Rotate using Kastner-Sherwood parabolic fit
@@ -415,29 +444,41 @@ pub fn otgpd(
             let f_rot_norm = vec_norm(&f_rot);
             let c0 = curvature(&g0_cached, &g1_cached, &orient, cfg.dimer_sep);
 
-            if f_rot_norm < 1e-10 { break; }
+            if f_rot_norm < 1e-10 {
+                break;
+            }
 
             let dtheta = 0.5 * (0.5 * f_rot_norm / (c0.abs() + 1e-10)).atan();
             let orient_rot: Vec<f64> = f_rot.iter().map(|x| x / f_rot_norm).collect();
 
             // Trial rotation
-            let orient_trial: Vec<f64> = orient.iter().zip(orient_rot.iter())
-                .map(|(o, rv)| dtheta.cos() * o + dtheta.sin() * rv).collect();
+            let orient_trial: Vec<f64> = orient
+                .iter()
+                .zip(orient_rot.iter())
+                .map(|(o, rv)| dtheta.cos() * o + dtheta.sin() * rv)
+                .collect();
             let orient_trial = normalize_vec(&orient_trial);
 
             // Evaluate image1 at trial angle (1 oracle call)
-            let r1_trial: Vec<f64> = r.iter().zip(orient_trial.iter())
-                .map(|(rv, o)| rv + cfg.dimer_sep * o).collect();
+            let r1_trial: Vec<f64> = r
+                .iter()
+                .zip(orient_trial.iter())
+                .map(|(rv, o)| rv + cfg.dimer_sep * o)
+                .collect();
             let (e1_trial, g1_trial) = oracle(&r1_trial);
             oracle_calls += 1;
-            td.add_point(&r1_trial, e1_trial, &g1_trial).expect("add_point failed: invalid data");
+            td.add_point(&r1_trial, e1_trial, &g1_trial)
+                .expect("add_point failed: invalid data");
 
             let c_trial = curvature(&g0_cached, &g1_trial, &orient_trial, cfg.dimer_sep);
 
             // Parabolic fit for optimal angle
             let f_rot_trial = rotational_force(&g0_cached, &g1_trial, &orient_trial, cfg.dimer_sep);
-            let orient_rot_trial: Vec<f64> = orient.iter().zip(orient_rot.iter())
-                .map(|(o, rv)| -dtheta.sin() * o + dtheta.cos() * rv).collect();
+            let orient_rot_trial: Vec<f64> = orient
+                .iter()
+                .zip(orient_rot.iter())
+                .map(|(o, rv)| -dtheta.sin() * o + dtheta.cos() * rv)
+                .collect();
             let orient_rot_trial = normalize_vec(&orient_rot_trial);
 
             let f_dtheta = vec_dot(&f_rot_trial, &orient_rot_trial);
@@ -456,17 +497,20 @@ pub fn otgpd(
             let angle_rot = 0.5 * (b1 / (a1 + 1e-18)).atan();
 
             let mut angle_final = angle_rot;
-            let mut c_est = c0 + a1 * ((2.0 * angle_final).cos() - 1.0)
-                + b1 * (2.0 * angle_final).sin();
+            let mut c_est =
+                c0 + a1 * ((2.0 * angle_final).cos() - 1.0) + b1 * (2.0 * angle_final).sin();
             if c_est > c0 {
                 angle_final += std::f64::consts::FRAC_PI_2;
-                c_est = c0 + a1 * ((2.0 * angle_final).cos() - 1.0)
-                    + b1 * (2.0 * angle_final).sin();
+                c_est =
+                    c0 + a1 * ((2.0 * angle_final).cos() - 1.0) + b1 * (2.0 * angle_final).sin();
             }
 
             if c_est < c0 {
-                let orient_new: Vec<f64> = orient.iter().zip(orient_rot.iter())
-                    .map(|(o, rv)| angle_final.cos() * o + angle_final.sin() * rv).collect();
+                let orient_new: Vec<f64> = orient
+                    .iter()
+                    .zip(orient_rot.iter())
+                    .map(|(o, rv)| angle_final.cos() * o + angle_final.sin() * rv)
+                    .collect();
                 orient = normalize_vec(&orient_new);
             } else if c_trial < c0 {
                 orient = orient_trial;
@@ -480,11 +524,15 @@ pub fn otgpd(
     // final orient to get correct curvature. Without this, c_true_cached can
     // be +58 when the actual curvature is -8 (bug: stale g1/orient mismatch).
     if cfg.initial_rotation && cfg.max_initial_rot > 0 {
-        let r1_final: Vec<f64> = r.iter().zip(orient.iter())
-            .map(|(rv, o)| rv + cfg.dimer_sep * o).collect();
+        let r1_final: Vec<f64> = r
+            .iter()
+            .zip(orient.iter())
+            .map(|(rv, o)| rv + cfg.dimer_sep * o)
+            .collect();
         let (e1_final, g1_final) = oracle(&r1_final);
         oracle_calls += 1;
-        td.add_point(&r1_final, e1_final, &g1_final).expect("add_point failed: invalid data");
+        td.add_point(&r1_final, e1_final, &g1_final)
+            .expect("add_point failed: invalid data");
         g1_cached = g1_final;
     }
 
@@ -499,7 +547,10 @@ pub fn otgpd(
         history.t_gp.push(f64::NAN);
         history.sigma_perp.push(0.0);
         if cfg.verbose {
-            eprintln!("OTGPD init: E={:.6} |G|_inf={:.5} C_true={:.4} calls={}", e_r, g_inf_init, c_init, oracle_calls);
+            eprintln!(
+                "OTGPD init: E={:.6} |G|_inf={:.5} C_true={:.4} calls={}",
+                e_r, g_inf_init, c_init, oracle_calls
+            );
         }
     }
 
@@ -523,7 +574,10 @@ pub fn otgpd(
         // Restart from latest converged state (C++ defineStartPath)
         if let Some(ref rc) = r_latest_conv {
             r = rc.clone();
-            orient = orient_latest_conv.as_ref().expect("orient_latest_conv should be Some after convergence").clone();
+            orient = orient_latest_conv
+                .as_ref()
+                .expect("orient_latest_conv should be Some after convergence")
+                .clone();
         } else {
             r = r_init.clone();
             orient = orient_init.clone();
@@ -540,9 +594,7 @@ pub fn otgpd(
             let dist_fn = |a: &[f64], b: &[f64]| -> f64 {
                 trust_distance(cfg.trust_metric, &cfg.atom_types, a, b)
             };
-            let sub_idx = select_optim_subset(
-                &td, &r, fps_size, cfg.fps_latest_points, &dist_fn,
-            );
+            let sub_idx = select_optim_subset(&td, &r, fps_size, cfg.fps_latest_points, &dist_fn);
             td.extract_subset(&sub_idx)
         } else {
             td.clone()
@@ -560,8 +612,15 @@ pub fn otgpd(
         let (mut y_sub, grad_sub) = cfg.prior_mean.residualize_training_data(&td_sub);
         y_sub.extend_from_slice(&grad_sub);
 
-        let mut gp_sub = GPModel::new(kern, &td_sub, y_sub.clone(), cfg.noise_e, cfg.noise_g, cfg.jitter)
-            .expect("GPModel::new failed: invalid training data or kernel params");
+        let mut gp_sub = GPModel::new(
+            kern,
+            &td_sub,
+            y_sub.clone(),
+            cfg.noise_e,
+            cfg.noise_g,
+            cfg.jitter,
+        )
+        .expect("GPModel::new failed: invalid training data or kernel params");
         // Dynamic constSigma2 (MATLAB atomic_GP_dimer.m:453): max(1, mean_y^2)
         // Uses SHIFTED energies (y_sub[0..n]), not raw. Raw energies at -43 eV would
         // give const_sigma2 = 1849 and corrupt the covariance matrix.
@@ -579,9 +638,11 @@ pub fn otgpd(
         gp_sub.prior_mu = cfg.prior_mu;
         train_model(&mut gp_sub, train_iters, cfg.verbose);
         if cfg.verbose {
-            eprintln!("  sigma2={:.6e} inv_ls[0..3]={:?}",
+            eprintln!(
+                "  sigma2={:.6e} inv_ls[0..3]={:?}",
                 gp_sub.kernel.signal_variance(),
-                &gp_sub.kernel.inv_lengthscales()[..gp_sub.kernel.inv_lengthscales().len().min(3)]);
+                &gp_sub.kernel.inv_lengthscales()[..gp_sub.kernel.inv_lengthscales().len().min(3)]
+            );
         }
         prev_kern = Some(gp_sub.kernel.clone());
 
@@ -598,8 +659,16 @@ pub fn otgpd(
 
         // Build prediction model on full data (RFF if configured, else exact GP)
         let model = build_pred_model_full_with_prior(
-            &gp_sub.kernel, &td, cfg.rff_features, 42, const_sigma2,
-            &GPNoiseParams { noise_e: cfg.noise_e, noise_g: cfg.noise_g, jitter: cfg.jitter },
+            &gp_sub.kernel,
+            &td,
+            cfg.rff_features,
+            42,
+            const_sigma2,
+            &GPNoiseParams {
+                noise_e: cfg.noise_e,
+                noise_g: cfg.noise_g,
+                jitter: cfg.jitter,
+            },
             &cfg.prior_mean,
         );
         let e_ref = td.energies[0];
@@ -647,7 +716,10 @@ pub fn otgpd(
                 g0_inf
             };
             if cfg.verbose && inner_iter < 5 {
-                eprintln!("  inner {}: g0_inf={:.6} t_gp={:.6} c={:.4}", inner_iter, g0_inf, t_gp, c);
+                eprintln!(
+                    "  inner {}: g0_inf={:.6} t_gp={:.6} c={:.4}",
+                    inner_iter, g0_inf, t_gp, c
+                );
             }
             if g0_inf_eff < t_gp {
                 r_latest_conv = Some(r.clone());
@@ -664,7 +736,9 @@ pub fn otgpd(
                 let dir_norm = vec_norm(&dir);
                 if dir_norm > cfg.max_step {
                     let scale = cfg.max_step / dir_norm;
-                    for d in dir.iter_mut() { *d *= scale; }
+                    for d in dir.iter_mut() {
+                        *d *= scale;
+                    }
                     trans_hist.reset();
                 }
                 dir
@@ -678,7 +752,10 @@ pub fn otgpd(
                 if fn_val < 1e-12 {
                     break;
                 }
-                f_along.iter().map(|f| cfg.step_convex * f / fn_val).collect::<Vec<f64>>()
+                f_along
+                    .iter()
+                    .map(|f| cfg.step_convex * f / fn_val)
+                    .collect::<Vec<f64>>()
             };
 
             let step_norm = vec_norm(&step);
@@ -697,10 +774,9 @@ pub fn otgpd(
             let mut r_new: Vec<f64> = r.iter().zip(step_proj.iter()).map(|(a, b)| a + b).collect();
 
             // Per-atom step limiting (C++ AtomicDimer.cpp:336-396)
-            if n_atoms >= 2
-                && limit_per_atom_step(&r, &mut r_new, n_atoms, cfg.ratio_at_limit) {
-                    trans_hist.reset();
-                }
+            if n_atoms >= 2 && limit_per_atom_step(&r, &mut r_new, n_atoms, cfg.ratio_at_limit) {
+                trans_hist.reset();
+            }
 
             // Trust region check (C++ AtomicDimer.cpp:614: skip on first inner step)
             // C++ rejects the step outright and breaks (does NOT clip to boundary).
@@ -733,7 +809,11 @@ pub fn otgpd(
                     predict_dimer(&r_new, &orient, cfg.dimer_sep, &model, e_ref).0
                 };
                 let f_trans_new = translational_force(&g0_new, &orient);
-                let y: Vec<f64> = f_trans.iter().zip(f_trans_new.iter()).map(|(a, b)| a - b).collect();
+                let y: Vec<f64> = f_trans
+                    .iter()
+                    .zip(f_trans_new.iter())
+                    .map(|(a, b)| a - b)
+                    .collect();
                 trans_hist.push_pair(s, y);
             }
 
@@ -773,16 +853,21 @@ pub fn otgpd(
         // Oracle evaluation
         let (e_true, g_true) = oracle(&r);
         oracle_calls += 1;
-        td.add_point(&r, e_true, &g_true).expect("add_point failed: invalid data");
+        td.add_point(&r, e_true, &g_true)
+            .expect("add_point failed: invalid data");
         latest_g_inf = g_true.iter().map(|x| x.abs()).fold(0.0f64, f64::max);
 
         let mut c_true = f64::NAN;
         if cfg.eval_image1 {
-            let r1_cur: Vec<f64> = r.iter().zip(orient.iter())
-                .map(|(r, o)| r + cfg.dimer_sep * o).collect();
+            let r1_cur: Vec<f64> = r
+                .iter()
+                .zip(orient.iter())
+                .map(|(r, o)| r + cfg.dimer_sep * o)
+                .collect();
             let (e_r1, g_r1) = oracle(&r1_cur);
             oracle_calls += 1;
-            td.add_point(&r1_cur, e_r1, &g_r1).expect("add_point failed: invalid data");
+            td.add_point(&r1_cur, e_r1, &g_r1)
+                .expect("add_point failed: invalid data");
             // True rotation (Kastner-Sherwood ImprovedDimer) at evaluated position.
             // GP cannot resolve curvature at dimer_sep ~ 0.01A; oracle-based
             // rotation is essential for molecular systems.
@@ -790,27 +875,41 @@ pub fn otgpd(
             for _rot_iter in 0..cfg.max_rot_iter {
                 let f_rot = rotational_force(&g_true, &g1_rot, &orient, cfg.dimer_sep);
                 let f_rot_norm = vec_norm(&f_rot);
-                if f_rot_norm < 1e-10 { break; }
+                if f_rot_norm < 1e-10 {
+                    break;
+                }
 
                 let c0 = curvature(&g_true, &g1_rot, &orient, cfg.dimer_sep);
                 let dtheta = 0.5 * (0.5 * f_rot_norm / (c0.abs() + 1e-10)).atan();
-                if dtheta < cfg.t_angle_rot { break; }
+                if dtheta < cfg.t_angle_rot {
+                    break;
+                }
 
                 let theta: Vec<f64> = f_rot.iter().map(|x| x / f_rot_norm).collect();
-                let tau_trial: Vec<f64> = orient.iter().zip(theta.iter())
-                    .map(|(o, t)| dtheta.cos() * o + dtheta.sin() * t).collect();
+                let tau_trial: Vec<f64> = orient
+                    .iter()
+                    .zip(theta.iter())
+                    .map(|(o, t)| dtheta.cos() * o + dtheta.sin() * t)
+                    .collect();
                 let tau_trial = normalize_vec(&tau_trial);
 
-                let r1_trial: Vec<f64> = r.iter().zip(tau_trial.iter())
-                    .map(|(rv, o)| rv + cfg.dimer_sep * o).collect();
+                let r1_trial: Vec<f64> = r
+                    .iter()
+                    .zip(tau_trial.iter())
+                    .map(|(rv, o)| rv + cfg.dimer_sep * o)
+                    .collect();
                 let (e1_trial, g1_trial) = oracle(&r1_trial);
                 oracle_calls += 1;
-                td.add_point(&r1_trial, e1_trial, &g1_trial).expect("add_point failed: invalid data");
+                td.add_point(&r1_trial, e1_trial, &g1_trial)
+                    .expect("add_point failed: invalid data");
 
                 // Parabolic fit for optimal rotation angle
                 let f_rot_trial = rotational_force(&g_true, &g1_trial, &tau_trial, cfg.dimer_sep);
-                let theta_perp: Vec<f64> = orient.iter().zip(theta.iter())
-                    .map(|(o, t)| -dtheta.sin() * o + dtheta.cos() * t).collect();
+                let theta_perp: Vec<f64> = orient
+                    .iter()
+                    .zip(theta.iter())
+                    .map(|(o, t)| -dtheta.sin() * o + dtheta.cos() * t)
+                    .collect();
                 let theta_perp = normalize_vec(&theta_perp);
                 let f_dtheta = vec_dot(&f_rot_trial, &theta_perp);
                 let f_0 = vec_dot(&f_rot, &theta);
@@ -827,28 +926,37 @@ pub fn otgpd(
                 let a1 = (f_dtheta - f_0 * cos2) / (2.0 * sin2);
                 let b1 = -0.5 * f_0;
                 let mut angle_final = 0.5 * (b1 / (a1 + 1e-18)).atan();
-                let mut c_est = c0 + a1 * ((2.0 * angle_final).cos() - 1.0)
-                    + b1 * (2.0 * angle_final).sin();
+                let mut c_est =
+                    c0 + a1 * ((2.0 * angle_final).cos() - 1.0) + b1 * (2.0 * angle_final).sin();
                 if c_est > c0 {
                     angle_final += std::f64::consts::FRAC_PI_2;
-                    c_est = c0 + a1 * ((2.0 * angle_final).cos() - 1.0)
+                    c_est = c0
+                        + a1 * ((2.0 * angle_final).cos() - 1.0)
                         + b1 * (2.0 * angle_final).sin();
                 }
 
                 if c_est < c0 {
-                    let orient_new: Vec<f64> = orient.iter().zip(theta.iter())
-                        .map(|(o, t)| angle_final.cos() * o + angle_final.sin() * t).collect();
+                    let orient_new: Vec<f64> = orient
+                        .iter()
+                        .zip(theta.iter())
+                        .map(|(o, t)| angle_final.cos() * o + angle_final.sin() * t)
+                        .collect();
                     orient = normalize_vec(&orient_new);
                     // Interpolate g1 at optimal angle (Kastner-Sherwood Eq. 8)
                     if dtheta.abs() > 1e-15 {
-                        g1_rot = g1_rot.iter().zip(g1_trial.iter()).zip(g_true.iter())
+                        g1_rot = g1_rot
+                            .iter()
+                            .zip(g1_trial.iter())
+                            .zip(g_true.iter())
                             .map(|((g1v, g1pv), g0v)| {
                                 let sr1 = (dtheta - angle_final).sin() / dtheta.sin();
                                 let sr2 = angle_final.sin() / dtheta.sin();
-                                let cc = 1.0 - angle_final.cos()
+                                let cc = 1.0
+                                    - angle_final.cos()
                                     - angle_final.sin() * (dtheta * 0.5).tan();
                                 sr1 * g1v + sr2 * g1pv + cc * g0v
-                            }).collect();
+                            })
+                            .collect();
                     } else {
                         g1_rot = g1_trial;
                     }

@@ -41,9 +41,9 @@ pub enum Kernel {
 /// Kernel block output: (k_ee, k_ef, k_fe, k_ff).
 pub struct KernelBlocks {
     pub k_ee: f64,
-    pub k_ef: Vec<f64>,  // length D (energy-force cross-covariance row)
-    pub k_fe: Vec<f64>,  // length D (force-energy cross-covariance col)
-    pub k_ff: Mat<f64>,  // D x D force-force block
+    pub k_ef: Vec<f64>, // length D (energy-force cross-covariance row)
+    pub k_fe: Vec<f64>, // length D (force-energy cross-covariance col)
+    pub k_ff: Mat<f64>, // D x D force-force block
 }
 
 /// Kernel blocks + hyperparameter gradients.
@@ -78,7 +78,11 @@ impl MolInvDistSE {
         let n_mov = scheme.mov_types.len();
         let n_fro = scheme.fro_types.len();
         let feat_map = build_feature_map(
-            n_mov, n_fro, &scheme.mov_types, &scheme.fro_types, &scheme.pair_map,
+            n_mov,
+            n_fro,
+            &scheme.mov_types,
+            &scheme.fro_types,
+            &scheme.pair_map,
         );
         Self {
             signal_variance,
@@ -141,11 +145,17 @@ impl MolInvDistSE {
 
 impl CartesianSE {
     pub fn new(signal_variance: f64, inv_lengthscale: f64) -> Self {
-        Self { signal_variance, inv_lengthscale }
+        Self {
+            signal_variance,
+            inv_lengthscale,
+        }
     }
 
     pub fn with_params(&self, signal_variance: f64, inv_lengthscale: f64) -> Self {
-        Self { signal_variance, inv_lengthscale }
+        Self {
+            signal_variance,
+            inv_lengthscale,
+        }
     }
 
     pub fn eval(&self, x: &[f64], y: &[f64]) -> f64 {
@@ -202,7 +212,9 @@ impl Kernel {
     /// Reconstruct kernel with new log-space-derived hyperparameters.
     pub fn with_params(&self, signal_variance: f64, inv_lengthscales: Vec<f64>) -> Kernel {
         match self {
-            Kernel::MolInvDist(k) => Kernel::MolInvDist(k.with_params(signal_variance, inv_lengthscales)),
+            Kernel::MolInvDist(k) => {
+                Kernel::MolInvDist(k.with_params(signal_variance, inv_lengthscales))
+            }
             Kernel::Cartesian(_) => Kernel::Cartesian(CartesianSE {
                 signal_variance,
                 inv_lengthscale: inv_lengthscales[0],
@@ -392,7 +404,9 @@ pub fn molinvdist_kernel_blocks(k: &MolInvDistSE, x1: &[f64], x2: &[f64]) -> Ker
 
     // Per-feature theta^2
     let theta2: Vec<f64> = if !k.feature_params_map.is_empty() {
-        (0..nf).map(|i| k.inv_lengthscales[k.feature_params_map[i]].powi(2)).collect()
+        (0..nf)
+            .map(|i| k.inv_lengthscales[k.feature_params_map[i]].powi(2))
+            .collect()
     } else {
         vec![k.inv_lengthscales[0].powi(2); nf]
     };
@@ -429,7 +443,12 @@ pub fn molinvdist_kernel_blocks(k: &MolInvDistSE, x1: &[f64], x2: &[f64]) -> Ker
     let k_fe = mat_t_vec(&j1, &dk_df1);
     let k_ff = jt_h_j(&j1, &h_feat, &j2);
 
-    KernelBlocks { k_ee, k_ef, k_fe, k_ff }
+    KernelBlocks {
+        k_ee,
+        k_ef,
+        k_fe,
+        k_ff,
+    }
 }
 
 /// Backward-compatible alias.
@@ -496,7 +515,12 @@ pub fn molinvdist_kernel_blocks_and_hypergrads(
     let k_fe = mat_t_vec(&j1, &dk_df1);
     let k_ff = jt_h_j(&j1, &h_feat, &j2);
 
-    let blocks = KernelBlocks { k_ee, k_ef, k_fe, k_ff };
+    let blocks = KernelBlocks {
+        k_ee,
+        k_ef,
+        k_fe,
+        k_ff,
+    };
 
     // Hyperparameter gradients
     let mut s_vec = vec![0.0; n_ls];
@@ -542,8 +566,7 @@ pub fn molinvdist_kernel_blocks_and_hypergrads(
         let mut dh_feat = Mat::<f64>::zeros(nf, nf);
         for l in 0..nf {
             let diag_term = if fmap[l] == p { 2.0 * theta2_p } else { 0.0 };
-            dh_feat[(l, l)] =
-                -sp * h_feat[(l, l)] + 2.0 * kval * (diag_term - 4.0 * du[l] * u[l]);
+            dh_feat[(l, l)] = -sp * h_feat[(l, l)] + 2.0 * kval * (diag_term - 4.0 * du[l] * u[l]);
             for m in (l + 1)..nf {
                 let val =
                     -sp * h_feat[(l, m)] + 2.0 * kval * (-2.0 * (du[l] * u[m] + u[l] * du[m]));
@@ -562,7 +585,10 @@ pub fn molinvdist_kernel_blocks_and_hypergrads(
         });
     }
 
-    KernelBlocksWithGrads { blocks, grad_blocks }
+    KernelBlocksWithGrads {
+        blocks,
+        grad_blocks,
+    }
 }
 
 /// Backward-compatible alias.
@@ -608,7 +634,12 @@ pub fn cartesian_kernel_blocks(k: &CartesianSE, x1: &[f64], x2: &[f64]) -> Kerne
         }
     }
 
-    KernelBlocks { k_ee, k_ef, k_fe, k_ff }
+    KernelBlocks {
+        k_ee,
+        k_ef,
+        k_fe,
+        k_ff,
+    }
 }
 
 /// Compute kernel blocks AND hyperparameter gradients for CartesianSE.
@@ -674,13 +705,11 @@ pub fn cartesian_kernel_blocks_and_hypergrads(
     for i in 0..d {
         let u_i = theta2 * r[i];
         let du_i = 2.0 * theta2 * r[i];
-        dk_ff_theta[(i, i)] =
-            -sp * k_ff[(i, i)] + 2.0 * kval * (2.0 * theta2 - 4.0 * du_i * u_i);
+        dk_ff_theta[(i, i)] = -sp * k_ff[(i, i)] + 2.0 * kval * (2.0 * theta2 - 4.0 * du_i * u_i);
         for j in (i + 1)..d {
             let u_j = theta2 * r[j];
             let du_j = 2.0 * theta2 * r[j];
-            let val = -sp * k_ff[(i, j)]
-                + 2.0 * kval * (-2.0 * (du_i * u_j + u_i * du_j));
+            let val = -sp * k_ff[(i, j)] + 2.0 * kval * (-2.0 * (du_i * u_j + u_i * du_j));
             dk_ff_theta[(i, j)] = val;
             dk_ff_theta[(j, i)] = val;
         }
@@ -693,7 +722,10 @@ pub fn cartesian_kernel_blocks_and_hypergrads(
         k_ff: dk_ff_theta,
     });
 
-    KernelBlocksWithGrads { blocks, grad_blocks }
+    KernelBlocksWithGrads {
+        blocks,
+        grad_blocks,
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -797,8 +829,12 @@ mod tests {
         let b_plus = cartesian_kernel_blocks(&k_plus, &x1, &x2);
         let b_minus = cartesian_kernel_blocks(&k_minus, &x1, &x2);
         let fd_sigma = (b_plus.k_ee - b_minus.k_ee) / (2.0 * eps);
-        assert!((bg.grad_blocks[0].k_ee - fd_sigma).abs() < 1e-4,
-            "sigma2 grad: analytic={}, fd={}", bg.grad_blocks[0].k_ee, fd_sigma);
+        assert!(
+            (bg.grad_blocks[0].k_ee - fd_sigma).abs() < 1e-4,
+            "sigma2 grad: analytic={}, fd={}",
+            bg.grad_blocks[0].k_ee,
+            fd_sigma
+        );
 
         // Check d/d(log theta) via finite difference
         let k_plus = CartesianSE::new(1.5, (2.0f64.ln() + eps).exp());
@@ -806,8 +842,12 @@ mod tests {
         let b_plus = cartesian_kernel_blocks(&k_plus, &x1, &x2);
         let b_minus = cartesian_kernel_blocks(&k_minus, &x1, &x2);
         let fd_theta = (b_plus.k_ee - b_minus.k_ee) / (2.0 * eps);
-        assert!((bg.grad_blocks[1].k_ee - fd_theta).abs() < 1e-4,
-            "theta grad: analytic={}, fd={}", bg.grad_blocks[1].k_ee, fd_theta);
+        assert!(
+            (bg.grad_blocks[1].k_ee - fd_theta).abs() < 1e-4,
+            "theta grad: analytic={}, fd={}",
+            bg.grad_blocks[1].k_ee,
+            fd_theta
+        );
     }
 
     #[test]

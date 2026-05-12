@@ -20,7 +20,11 @@ pub fn build_full_covariance(
     noise: &GPNoiseParams,
     const_sigma2: f64,
 ) -> Mat<f64> {
-    let GPNoiseParams { noise_e, noise_g, jitter } = *noise;
+    let GPNoiseParams {
+        noise_e,
+        noise_g,
+        jitter,
+    } = *noise;
     let total = n * (1 + dim);
     let mut k_mat = Mat::<f64>::zeros(total, total);
 

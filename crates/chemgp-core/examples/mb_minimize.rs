@@ -54,9 +54,12 @@ fn main() {
             .expect("No benchmark observations found");
         gp_cfg.prior_mean = match variant {
             BenchmarkVariant::Chemgp => gp_cfg.prior_mean.clone(),
-            BenchmarkVariant::PhysicalPrior => {
-                linear_prior(&observations[0].0, observations[0].1, &observations[0].2, "initial")
-            }
+            BenchmarkVariant::PhysicalPrior => linear_prior(
+                &observations[0].0,
+                observations[0].1,
+                &observations[0].2,
+                "initial",
+            ),
             BenchmarkVariant::AdaptivePrior => {
                 gp_cfg.adaptive_prior_candidates = linear_prior_candidates(&[
                     (
@@ -130,7 +133,10 @@ fn main() {
         writeln!(
             f,
             r#"{{"method":"{}","step":{},"energy":{},"oracle_calls":{}}}"#,
-            gp_label, i, e, i + 1
+            gp_label,
+            i,
+            e,
+            i + 1
         )
         .expect("Operation failed");
     }
@@ -139,7 +145,9 @@ fn main() {
         writeln!(
             f,
             r#"{{"method":"classical","step":{},"energy":{},"oracle_calls":{}}}"#,
-            i, e, i + 1
+            i,
+            e,
+            i + 1
         )
         .expect("Operation failed");
     }

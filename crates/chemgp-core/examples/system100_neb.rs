@@ -28,10 +28,10 @@ use chemgp_core::minimize::{gp_minimize, MinimizationConfig};
 use chemgp_core::neb::{gp_neb_aie, neb_optimize, NEBResult};
 use chemgp_core::neb_oie::gp_neb_oie;
 use chemgp_core::neb_path::{linear_interpolation, AcquisitionStrategy, NEBConfig};
-#[cfg(feature = "rgpot_local")]
-use chemgp_core::oracle::{LocalMetatomicConfig, LocalMetatomicOracle};
 #[cfg(feature = "rgpot")]
 use chemgp_core::oracle::RpcOracle;
+#[cfg(feature = "rgpot_local")]
+use chemgp_core::oracle::{LocalMetatomicConfig, LocalMetatomicOracle};
 
 #[derive(Debug, Clone, ValueEnum)]
 enum Method {
@@ -50,7 +50,10 @@ enum Method {
 }
 
 #[derive(Parser, Debug)]
-#[command(name = "system100_neb", about = "GP-NEB benchmark on system100 cycloaddition")]
+#[command(
+    name = "system100_neb",
+    about = "GP-NEB benchmark on system100 cycloaddition"
+)]
 struct Args {
     /// NEB method to run
     #[arg(short, long, value_enum, default_value = "all")]
@@ -100,7 +103,10 @@ fn parse_acquisition(s: &str) -> AcquisitionStrategy {
         "ucb" => AcquisitionStrategy::Ucb,
         "ei" => AcquisitionStrategy::ExpectedImprovement,
         "thompson" | "ts" => AcquisitionStrategy::ThompsonSampling,
-        _ => panic!("Unknown acquisition strategy: {}. Options: ucb, ei, thompson, max-force, max-variance", s),
+        _ => panic!(
+            "Unknown acquisition strategy: {}. Options: ucb, ei, thompson, max-force, max-variance",
+            s
+        ),
     }
 }
 
@@ -109,7 +115,7 @@ fn base_neb_config(images: usize, conv_tol: f64) -> NEBConfig {
     let mut cfg = NEBConfig::default();
     cfg.images = images;
     cfg.max_iter = 1000;
-    cfg.conv_tol = conv_tol;         // molecular CI force threshold
+    cfg.conv_tol = conv_tol; // molecular CI force threshold
     cfg.climbing_image = true;
     cfg.ci_activation_tol = 0.5;
     cfg.ci_trigger_rel = 0.8;
@@ -140,9 +146,15 @@ pub fn main() {
     let atomic_numbers = reactant.atomic_numbers.clone();
     let n_atoms = atomic_numbers.len();
     let box_matrix = [
-        reactant.cell[0][0], reactant.cell[0][1], reactant.cell[0][2],
-        reactant.cell[1][0], reactant.cell[1][1], reactant.cell[1][2],
-        reactant.cell[2][0], reactant.cell[2][1], reactant.cell[2][2],
+        reactant.cell[0][0],
+        reactant.cell[0][1],
+        reactant.cell[0][2],
+        reactant.cell[1][0],
+        reactant.cell[1][1],
+        reactant.cell[1][2],
+        reactant.cell[2][0],
+        reactant.cell[2][1],
+        reactant.cell[2][2],
     ];
 
     #[cfg(feature = "rgpot_local")]
@@ -162,7 +174,10 @@ pub fn main() {
 
     eprintln!("System100 cycloaddition NEB");
     eprintln!("  atoms: {} ({:?})", n_atoms, atomic_numbers);
-    eprintln!("  box: [{:.1}, {:.1}, {:.1}]", box_matrix[0], box_matrix[4], box_matrix[8]);
+    eprintln!(
+        "  box: [{:.1}, {:.1}, {:.1}]",
+        box_matrix[0], box_matrix[4], box_matrix[8]
+    );
     eprintln!("  method: {:?}", args.method);
     #[cfg(feature = "rgpot")]
     eprintln!("  connecting to {}:{}", args.host, args.port);
@@ -232,7 +247,11 @@ pub fn main() {
 
     // Kernel with proper pair types from atomic numbers
     let kernel = Kernel::MolInvDist(MolInvDistSE::from_atomic_numbers(
-        &atomic_numbers, vec![], &[], 1.0, 1.0,
+        &atomic_numbers,
+        vec![],
+        &[],
+        1.0,
+        1.0,
     ));
     eprintln!("  Kernel pair types from {:?}", atomic_numbers);
     let prior_path = linear_interpolation(&x_start, &x_end, args.images.max(5));
@@ -267,16 +286,24 @@ pub fn main() {
 
         eprintln!("GP-minimizing reactant endpoint...");
         let r_min = gp_minimize(&oracle, &x_start, &kernel, &min_cfg, None);
-        eprintln!("  Reactant: {} calls, E = {:.6}, |G| = {:.4}, conv = {}",
-            r_min.oracle_calls, r_min.e_final,
-            r_min.g_final.iter().map(|v| v*v).sum::<f64>().sqrt(), r_min.converged);
+        eprintln!(
+            "  Reactant: {} calls, E = {:.6}, |G| = {:.4}, conv = {}",
+            r_min.oracle_calls,
+            r_min.e_final,
+            r_min.g_final.iter().map(|v| v * v).sum::<f64>().sqrt(),
+            r_min.converged
+        );
         x_start = r_min.x_final;
 
         eprintln!("GP-minimizing product endpoint...");
         let p_min = gp_minimize(&oracle, &x_end, &kernel, &min_cfg, None);
-        eprintln!("  Product: {} calls, E = {:.6}, |G| = {:.4}, conv = {}",
-            p_min.oracle_calls, p_min.e_final,
-            p_min.g_final.iter().map(|v| v*v).sum::<f64>().sqrt(), p_min.converged);
+        eprintln!(
+            "  Product: {} calls, E = {:.6}, |G| = {:.4}, conv = {}",
+            p_min.oracle_calls,
+            p_min.e_final,
+            p_min.g_final.iter().map(|v| v * v).sum::<f64>().sqrt(),
+            p_min.converged
+        );
         x_end = p_min.x_final;
 
         min_calls += r_min.oracle_calls + p_min.oracle_calls;
@@ -285,7 +312,7 @@ pub fn main() {
 
     let run_neb = matches!(args.method, Method::Neb | Method::All);
     let run_aie = matches!(args.method, Method::Aie | Method::All);
-    let run_oie = matches!(args.method, Method::Oie);  // baseline only on explicit request
+    let run_oie = matches!(args.method, Method::Oie); // baseline only on explicit request
     let run_oie_enh = matches!(args.method, Method::OieEnhanced | Method::All);
     let run_oie_compare = matches!(args.method, Method::OieCompare);
 
@@ -296,8 +323,10 @@ pub fn main() {
         let r = neb_optimize(&oracle, &x_start, &x_end, &neb_cfg);
         eprintln!(
             "  NEB: {} calls, {} iters, max|F| = {:.5}, stop = {:?}",
-            r.oracle_calls, r.history.max_force.len(),
-            r.history.max_force.last().unwrap_or(&f64::NAN), r.stop_reason
+            r.oracle_calls,
+            r.history.max_force.len(),
+            r.history.max_force.last().unwrap_or(&f64::NAN),
+            r.stop_reason
         );
         Some(r)
     } else {
@@ -312,7 +341,10 @@ pub fn main() {
         let max_outer = args
             .max_outer
             .unwrap_or_else(|| ((neb_calls.saturating_sub(12)) / n_img).min(40));
-        eprintln!("  Budget: {} outer iters (from {} NEB calls)", max_outer, neb_calls);
+        eprintln!(
+            "  Budget: {} outer iters (from {} NEB calls)",
+            max_outer, neb_calls
+        );
 
         let mut cfg = base_neb_config(n_img, args.conv_tol);
         cfg.max_outer_iter = max_outer;
@@ -320,7 +352,7 @@ pub fn main() {
         cfg.max_move = 0.1;
         cfg.gp_train_iter = 150;
         cfg.max_gp_points = 20;
-        cfg.rff_features = 0;  // exact GP for this system size
+        cfg.rff_features = 0; // exact GP for this system size
         cfg.fps_history = 30;
         cfg.fps_latest_points = 3;
         cfg.trust_radius = 0.1;
@@ -334,7 +366,9 @@ pub fn main() {
         let r = gp_neb_aie(&oracle, &x_start, &x_end, &kernel, &cfg);
         eprintln!(
             "  AIE: {} calls, max|F| = {:.5}, stop = {:?}",
-            r.oracle_calls, r.history.max_force.last().unwrap_or(&f64::NAN), r.stop_reason
+            r.oracle_calls,
+            r.history.max_force.last().unwrap_or(&f64::NAN),
+            r.stop_reason
         );
         Some(r)
     } else {
@@ -346,23 +380,26 @@ pub fn main() {
     let oie_result: Option<NEBResult> = if run_oie {
         eprintln!("\n=== GP-NEB OIE (baseline) ===");
         let max_outer = args.max_outer.unwrap_or_else(|| neb_calls.min(400));
-        eprintln!("  Budget: {} outer iters (1 call/iter, cap from {} NEB calls)", max_outer, neb_calls);
+        eprintln!(
+            "  Budget: {} outer iters (1 call/iter, cap from {} NEB calls)",
+            max_outer, neb_calls
+        );
 
         let mut cfg = base_neb_config(args.images, args.conv_tol);
         cfg.max_outer_iter = max_outer;
         cfg.max_iter = 1000;
         cfg.max_move = 0.05;
         cfg.gp_train_iter = 150;
-        cfg.max_gp_points = 0;        // no FPS, use all data
-        cfg.rff_features = 0;         // exact GP
-        cfg.ci_force_tol = -1.0;      // use conv_tol
+        cfg.max_gp_points = 0; // no FPS, use all data
+        cfg.rff_features = 0; // exact GP
+        cfg.ci_force_tol = -1.0; // use conv_tol
         cfg.inner_ci_threshold = 0.5;
-        cfg.gp_tol_divisor = 10;      // adaptive inner tolerance
+        cfg.gp_tol_divisor = 10; // adaptive inner tolerance
         cfg.max_step_frac = 0.5;
         cfg.bond_stretch_limit = 2.0 / 3.0;
-        cfg.lcb_kappa = 0.0;          // unused for MaxVariance
+        cfg.lcb_kappa = 0.0; // unused for MaxVariance
         cfg.acquisition = AcquisitionStrategy::MaxVariance;
-        cfg.trust_radius = 0.0;       // no EMD trust
+        cfg.trust_radius = 0.0; // no EMD trust
         cfg.use_quickmin = true;
         cfg.qm_dt = 0.1;
         cfg.atom_types = atomic_numbers.clone();
@@ -374,7 +411,9 @@ pub fn main() {
         let r = gp_neb_oie(&oracle, &x_start, &x_end, &kernel, &cfg);
         eprintln!(
             "  OIE (baseline): {} calls, max|F| = {:.5}, stop = {:?}",
-            r.oracle_calls, r.history.max_force.last().unwrap_or(&f64::NAN), r.stop_reason
+            r.oracle_calls,
+            r.history.max_force.last().unwrap_or(&f64::NAN),
+            r.stop_reason
         );
         Some(r)
     } else {
@@ -385,15 +424,18 @@ pub fn main() {
     let oie_enh_result: Option<NEBResult> = if run_oie_enh {
         eprintln!("\n=== GP-NEB OIE (enhanced) ===");
         let max_outer = args.max_outer.unwrap_or_else(|| neb_calls.min(400));
-        eprintln!("  Budget: {} outer iters, cap from {} NEB calls", max_outer, neb_calls);
+        eprintln!(
+            "  Budget: {} outer iters, cap from {} NEB calls",
+            max_outer, neb_calls
+        );
 
         let mut cfg = base_neb_config(args.images, args.conv_tol);
         cfg.max_outer_iter = max_outer;
-        cfg.max_iter = 100;             // match AIE: enough inner iters for GP relaxation
+        cfg.max_iter = 100; // match AIE: enough inner iters for GP relaxation
         cfg.max_move = 0.05;
-        cfg.gp_train_iter = 150;        // match AIE: thorough hyperparameter training
-        cfg.max_gp_points = 20;         // match AIE: FPS subset for exact GP
-        cfg.rff_features = 0;           // exact GP (RFF too approximate for 27D TS)
+        cfg.gp_train_iter = 150; // match AIE: thorough hyperparameter training
+        cfg.max_gp_points = 20; // match AIE: FPS subset for exact GP
+        cfg.rff_features = 0; // exact GP (RFF too approximate for 27D TS)
         cfg.ci_force_tol = -1.0;
         cfg.inner_ci_threshold = 0.5;
         cfg.gp_tol_divisor = 5;
@@ -401,13 +443,13 @@ pub fn main() {
         cfg.bond_stretch_limit = 2.0 / 3.0;
         cfg.fps_history = 30;
         cfg.fps_latest_points = 3;
-        cfg.trust_radius = 0.1;         // match AIE
+        cfg.trust_radius = 0.1; // match AIE
         cfg.trust_metric = chemgp_core::trust::TrustMetric::Emd;
         cfg.atom_types = atomic_numbers.clone();
         cfg.unc_convergence = 0.0;
-        cfg.evals_per_iter = 3;         // triplet {i-1, i, i+1}
+        cfg.evals_per_iter = 3; // triplet {i-1, i, i+1}
         cfg.use_adaptive_triplet_exploration = false;
-        cfg.max_pred_points = 0;        // no KNN: use full FPS subset for prediction
+        cfg.max_pred_points = 0; // no KNN: use full FPS subset for prediction
         cfg.unc_revert_tol = 0.0;
         cfg.hod_max_history = 80;
         cfg.const_sigma2 = 1.0;
@@ -423,7 +465,9 @@ pub fn main() {
         let r = gp_neb_oie(&oracle, &x_start, &x_end, &kernel, &cfg);
         eprintln!(
             "  OIE (enhanced): {} calls, max|F| = {:.5}, stop = {:?}",
-            r.oracle_calls, r.history.max_force.last().unwrap_or(&f64::NAN), r.stop_reason
+            r.oracle_calls,
+            r.history.max_force.last().unwrap_or(&f64::NAN),
+            r.stop_reason
         );
         Some(r)
     } else {
@@ -472,7 +516,8 @@ pub fn main() {
             let r = gp_neb_oie(&oracle, &x_start, &x_end, &kernel, &cfg);
             eprintln!(
                 "  OIE ({}): {} calls, max|F| = {:.5}, stop = {:?}",
-                name, r.oracle_calls,
+                name,
+                r.oracle_calls,
                 r.history.max_force.last().unwrap_or(&f64::NAN),
                 r.stop_reason
             );
@@ -488,12 +533,20 @@ pub fn main() {
 
     // Helper to write convergence records (includes CI force when available)
     let write_convergence = |f: &mut std::fs::File, method: &str, result: &NEBResult| {
-        for (i, (&mf, &oc)) in result.history.max_force.iter()
-            .zip(result.history.oracle_calls.iter()).enumerate()
+        for (i, (&mf, &oc)) in result
+            .history
+            .max_force
+            .iter()
+            .zip(result.history.oracle_calls.iter())
+            .enumerate()
         {
             let ci_f = result.history.ci_force.get(i).copied().unwrap_or(f64::NAN);
-            writeln!(f, r#"{{"method":"{}","step":{},"max_force":{},"ci_force":{},"oracle_calls":{}}}"#,
-                method, i, mf, ci_f, oc).expect("Failed to write to output file");
+            writeln!(
+                f,
+                r#"{{"method":"{}","step":{},"max_force":{},"ci_force":{},"oracle_calls":{}}}"#,
+                method, i, mf, ci_f, oc
+            )
+            .expect("Failed to write to output file");
         }
     };
 
@@ -516,8 +569,12 @@ pub fn main() {
     // Path energies for each method
     let write_path_energies = |f: &mut std::fs::File, method: &str, result: &NEBResult| {
         for (img, e) in result.path.energies.iter().enumerate() {
-            writeln!(f, r#"{{"type":"path_energy","method":"{}","image":{},"energy":{}}}"#,
-                method, img, e).expect("Failed to write to output file");
+            writeln!(
+                f,
+                r#"{{"type":"path_energy","method":"{}","image":{},"energy":{}}}"#,
+                method, img, e
+            )
+            .expect("Failed to write to output file");
         }
     };
     if let Some(ref r) = neb_result {
@@ -536,7 +593,11 @@ pub fn main() {
     // Write .con + .dat for rgpycrumbs
     let cell = reactant.cell;
     let write_path = |label: &str, r: &NEBResult| {
-        let configs: Vec<MolConfig> = r.path.images.iter().zip(r.path.energies.iter())
+        let configs: Vec<MolConfig> = r
+            .path
+            .images
+            .iter()
+            .zip(r.path.energies.iter())
             .map(|(pos, &e)| MolConfig {
                 positions: pos.clone(),
                 atomic_numbers: atomic_numbers.clone(),
@@ -550,13 +611,21 @@ pub fn main() {
         write_con(&con_path, &configs).unwrap_or_else(|e| eprintln!("  warn: {}", e));
 
         let dat_path = artifact_path(&format!("system100_neb_{}.dat", label));
-        write_neb_dat(&dat_path, &r.path.images, &r.path.energies, &r.path.gradients)
-            .unwrap_or_else(|e| eprintln!("  warn: {}", e));
+        write_neb_dat(
+            &dat_path,
+            &r.path.images,
+            &r.path.energies,
+            &r.path.gradients,
+        )
+        .unwrap_or_else(|e| eprintln!("  warn: {}", e));
 
         eprintln!("  wrote {} + {}", con_path, dat_path);
 
         // Write SP .con (highest-energy image = climbing image saddle)
-        let sp_idx = r.path.energies.iter()
+        let sp_idx = r
+            .path
+            .energies
+            .iter()
             .enumerate()
             .max_by(|(_, a), (_, b)| a.partial_cmp(b).unwrap())
             .map(|(i, _)| i)
@@ -573,14 +642,22 @@ pub fn main() {
         eprintln!("  wrote {} (image {})", sp_path, sp_idx);
     };
 
-    for (label, res) in [("neb", &neb_result), ("aie", &aie_result), ("oie", &oie_result), ("oie", &oie_enh_result)] {
+    for (label, res) in [
+        ("neb", &neb_result),
+        ("aie", &aie_result),
+        ("oie", &oie_result),
+        ("oie", &oie_enh_result),
+    ] {
         if let Some(ref r) = res {
             write_path(label, r);
         }
     }
 
     // Summary
-    let oie_calls = oie_enh_result.as_ref().or(oie_result.as_ref()).map_or(0, |r| r.oracle_calls);
+    let oie_calls = oie_enh_result
+        .as_ref()
+        .or(oie_result.as_ref())
+        .map_or(0, |r| r.oracle_calls);
     let base_cfg = base_neb_config(args.images, args.conv_tol);
     writeln!(f, r#"{{"summary":true,"variant":"{}","conv_tol":{},"neb_calls":{},"neb_converged":{},"neb_max_force":{},"neb_ci_force":{},"aie_calls":{},"aie_converged":{},"aie_max_force":{},"aie_ci_force":{},"oie_calls":{},"oie_converged":{},"oie_max_force":{},"oie_ci_force":{}}}"#,
         variant.label(),
@@ -610,30 +687,51 @@ pub fn main() {
             .unwrap_or(f64::NAN),
     ).expect("Operation failed");
     for (name, ref r) in &compare_results {
-        writeln!(f, r#"{{"summary_acq":"{}","calls":{},"converged":{},"final_max_f":{},"final_ci_f":{}}}"#,
-            name, r.oracle_calls, r.converged,
+        writeln!(
+            f,
+            r#"{{"summary_acq":"{}","calls":{},"converged":{},"final_max_f":{},"final_ci_f":{}}}"#,
+            name,
+            r.oracle_calls,
+            r.converged,
             r.history.max_force.last().unwrap_or(&f64::NAN),
             r.history.ci_force.last().unwrap_or(&f64::NAN),
-        ).expect("Operation failed");
+        )
+        .expect("Operation failed");
     }
 
     eprintln!("\n=== Summary ===");
     if let Some(ref r) = neb_result {
-        eprintln!("  NEB:      {} calls, converged = {}", r.oracle_calls, r.converged);
+        eprintln!(
+            "  NEB:      {} calls, converged = {}",
+            r.oracle_calls, r.converged
+        );
     }
     if let Some(ref r) = aie_result {
-        eprintln!("  AIE:      {} calls, converged = {}", r.oracle_calls, r.converged);
+        eprintln!(
+            "  AIE:      {} calls, converged = {}",
+            r.oracle_calls, r.converged
+        );
     }
     if let Some(ref r) = oie_result {
-        eprintln!("  OIE:      {} calls, converged = {}", r.oracle_calls, r.converged);
+        eprintln!(
+            "  OIE:      {} calls, converged = {}",
+            r.oracle_calls, r.converged
+        );
     }
     if let Some(ref r) = oie_enh_result {
-        eprintln!("  OIE:      {} calls, converged = {}", r.oracle_calls, r.converged);
+        eprintln!(
+            "  OIE:      {} calls, converged = {}",
+            r.oracle_calls, r.converged
+        );
     }
     for (name, ref r) in &compare_results {
-        eprintln!("  OIE-{}:  {} calls, converged = {}, max|F| = {:.5}",
-            name, r.oracle_calls, r.converged,
-            r.history.max_force.last().unwrap_or(&f64::NAN));
+        eprintln!(
+            "  OIE-{}:  {} calls, converged = {}, max|F| = {:.5}",
+            name,
+            r.oracle_calls,
+            r.converged,
+            r.history.max_force.last().unwrap_or(&f64::NAN)
+        );
     }
     eprintln!("Output: {}", output_path);
 }

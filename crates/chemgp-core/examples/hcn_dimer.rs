@@ -50,9 +50,15 @@ fn main() {
     let atomic_numbers = pos.atomic_numbers.clone();
     let n_atoms = atomic_numbers.len();
     let box_matrix = [
-        pos.cell[0][0], pos.cell[0][1], pos.cell[0][2],
-        pos.cell[1][0], pos.cell[1][1], pos.cell[1][2],
-        pos.cell[2][0], pos.cell[2][1], pos.cell[2][2],
+        pos.cell[0][0],
+        pos.cell[0][1],
+        pos.cell[0][2],
+        pos.cell[1][0],
+        pos.cell[1][1],
+        pos.cell[1][2],
+        pos.cell[2][0],
+        pos.cell[2][1],
+        pos.cell[2][2],
     ];
 
     eprintln!("d_000 (C3H5) dimer search (PET-MAD via RPC)");
@@ -89,7 +95,11 @@ fn main() {
     }
 
     let kernel = Kernel::MolInvDist(MolInvDistSE::from_atomic_numbers(
-        &atomic_numbers, vec![], &[], 1.0, 1.0,
+        &atomic_numbers,
+        vec![],
+        &[],
+        1.0,
+        1.0,
     ));
 
     // Match gprdzbl config: dimer_separation = 0.01, max_step_size = 0.05
@@ -140,20 +150,20 @@ fn main() {
     // --- GP-Dimer ---
     if run_dimer {
         let mut cfg = DimerConfig::default();
-        cfg.t_force_true = 0.01;       // gprdzbl: converged_force = 0.01
+        cfg.t_force_true = 0.01; // gprdzbl: converged_force = 0.01
         cfg.t_force_gp = 0.001;
-        cfg.trust_radius = 0.05;       // gprdzbl: max_step_size = 0.05
+        cfg.trust_radius = 0.05; // gprdzbl: max_step_size = 0.05
         cfg.max_outer_iter = 30;
         cfg.max_oracle_calls = 30;
-        cfg.max_rot_iter = 0;          // GP rotation breaks molecular systems (degenerate features)
-        cfg.gp_train_iter = 400;       // gprdzbl: opt_max_iterations = 400
-        cfg.fps_history = 10;          // gprdzbl: fps_history = 10
+        cfg.max_rot_iter = 0; // GP rotation breaks molecular systems (degenerate features)
+        cfg.gp_train_iter = 400; // gprdzbl: opt_max_iterations = 400
+        cfg.fps_history = 10; // gprdzbl: fps_history = 10
         cfg.fps_latest_points = 3;
         cfg.trust_metric = TrustMetric::Emd;
         cfg.atom_types = atomic_numbers.clone();
         cfg.const_sigma2 = 1.0;
         cfg.translation_method = "lbfgs".to_string();
-        cfg.lbfgs_memory = 25;        // gprdzbl: lbfgs_memory = 25
+        cfg.lbfgs_memory = 25; // gprdzbl: lbfgs_memory = 25
 
         eprintln!("Running GP-Dimer...");
         let result = gp_dimer(&oracle, &x_start, &orient, &kernel, &cfg, None, dimer_sep);
@@ -187,16 +197,16 @@ fn main() {
     // --- OTGPD ---
     if run_otgpd {
         let mut cfg = OTGPDConfig::default();
-        cfg.t_dimer = 0.01;           // gprdzbl: converged_force = 0.01
+        cfg.t_dimer = 0.01; // gprdzbl: converged_force = 0.01
         cfg.divisor_t_dimer_gp = 3.0; // Molecular: looser inner threshold (2D: 10)
-        cfg.trust_radius = 0.05;       // gprdzbl: max_step_size = 0.05
+        cfg.trust_radius = 0.05; // gprdzbl: max_step_size = 0.05
         cfg.max_outer_iter = 30;
         cfg.dimer_sep = dimer_sep;
-        cfg.max_rot_iter = 0;          // GP rotation breaks molecular systems
+        cfg.max_rot_iter = 0; // GP rotation breaks molecular systems
         cfg.max_initial_rot = 0;
         cfg.initial_rotation = false;
-        cfg.gp_train_iter = 400;       // gprdzbl: opt_max_iterations = 400
-        cfg.fps_history = 10;          // gprdzbl: fps_history = 10
+        cfg.gp_train_iter = 400; // gprdzbl: opt_max_iterations = 400
+        cfg.fps_history = 10; // gprdzbl: fps_history = 10
         cfg.fps_latest_points = 3;
         cfg.trust_metric = TrustMetric::Emd;
         cfg.atom_types = atomic_numbers.clone();
@@ -205,9 +215,9 @@ fn main() {
         cfg.hod_monitoring_window = 5;
         cfg.hod_max_history = 60;
         cfg.translation_method = "lbfgs".to_string();
-        cfg.lbfgs_memory = 25;        // gprdzbl: lbfgs_memory = 25
+        cfg.lbfgs_memory = 25; // gprdzbl: lbfgs_memory = 25
         cfg.use_adaptive_threshold = true;
-        cfg.rff_features = 500;        // Smooths GP surface for inner loop
+        cfg.rff_features = 500; // Smooths GP surface for inner loop
         cfg.max_inner_iter = 200;
 
         eprintln!("Running OTGPD...");

@@ -103,8 +103,7 @@ impl HodState {
 
         let flip_ratio = n_flips as f64 / n_pairs as f64;
         if flip_ratio > cfg.flip_threshold {
-            let new_size =
-                (self.current_fps_history + cfg.history_increment).min(cfg.max_history);
+            let new_size = (self.current_fps_history + cfg.history_increment).min(cfg.max_history);
             if new_size > self.current_fps_history {
                 self.current_fps_history = new_size;
                 return true;

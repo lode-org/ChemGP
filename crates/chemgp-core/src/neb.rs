@@ -47,15 +47,27 @@ fn init_neb_images(cfg: &NEBConfig, x_start: &[f64], x_end: &[f64]) -> Vec<Vec<f
     match cfg.initializer.as_str() {
         "sidpp" => {
             let idpp_cfg = IdppConfig {
-                n_images: n_total, n_coords_per_atom: 3, max_iter: 200,
-                max_move: 0.1, force_tol: 0.01, lbfgs_memory: 10,
+                n_images: n_total,
+                n_coords_per_atom: 3,
+                max_iter: 200,
+                max_move: 0.1,
+                force_tol: 0.01,
+                lbfgs_memory: 10,
             };
             sidpp_interpolation(x_start, x_end, &idpp_cfg, cfg.spring_constant, 0.3)
-        },
-        "idpp" => idpp_interpolation(x_start, x_end, &IdppConfig {
-            n_images: n_total, n_coords_per_atom: 3, max_iter: 200,
-            max_move: 0.1, force_tol: 0.01, lbfgs_memory: 10,
-        }),
+        }
+        "idpp" => idpp_interpolation(
+            x_start,
+            x_end,
+            &IdppConfig {
+                n_images: n_total,
+                n_coords_per_atom: 3,
+                max_iter: 200,
+                max_move: 0.1,
+                force_tol: 0.01,
+                lbfgs_memory: 10,
+            },
+        ),
         _ => linear_interpolation(x_start, x_end, n_total),
     }
 }
@@ -188,7 +200,10 @@ pub fn neb_optimize(
                 neb_forces.max_f,
                 neb_forces.ci_f,
                 ci_on,
-                path.energies.iter().cloned().fold(f64::NEG_INFINITY, f64::max)
+                path.energies
+                    .iter()
+                    .cloned()
+                    .fold(f64::NEG_INFINITY, f64::max)
             );
         }
 
@@ -223,8 +238,12 @@ pub fn neb_optimize(
     }
 
     let i_max = (1..n - 1)
-        .max_by(|&a, &b| energies[a].partial_cmp(&energies[b]).unwrap_or(std::cmp::Ordering::Equal))
-        .unwrap_or(1);  // Must be intermediate image (not endpoint)
+        .max_by(|&a, &b| {
+            energies[a]
+                .partial_cmp(&energies[b])
+                .unwrap_or(std::cmp::Ordering::Equal)
+        })
+        .unwrap_or(1); // Must be intermediate image (not endpoint)
 
     NEBResult {
         path,
@@ -255,8 +274,10 @@ pub fn gp_neb_aie(
     let mut oracle_calls = 2;
 
     let mut td = TrainingData::new(d);
-    td.add_point(x_start, e_start, &g_start).expect("add_point failed: invalid data");
-    td.add_point(x_end, e_end, &g_end).expect("add_point failed: invalid data");
+    td.add_point(x_start, e_start, &g_start)
+        .expect("add_point failed: invalid data");
+    td.add_point(x_end, e_end, &g_end)
+        .expect("add_point failed: invalid data");
 
     // Virtual Hessian points
     let mut hess_calls = 0;
@@ -287,7 +308,8 @@ pub fn gp_neb_aie(
         let (e, g) = oracle(&images[i]);
         energies[i] = e;
         gradients[i] = g.clone();
-        td.add_point(&images[i], e, &g).expect("add_point failed: invalid data");
+        td.add_point(&images[i], e, &g)
+            .expect("add_point failed: invalid data");
         oracle_calls += 1;
     }
 
@@ -393,7 +415,11 @@ pub fn gp_neb_aie(
                 trust_distance(cfg.trust_metric, &cfg.atom_types, a, b)
             };
             let sub_idx = select_optim_subset(
-                &td, &images[n / 2], fps_size, cfg.fps_latest_points, &dist_fn,
+                &td,
+                &images[n / 2],
+                fps_size,
+                cfg.fps_latest_points,
+                &dist_fn,
             );
             td.extract_subset(&sub_idx)
         } else {
@@ -450,7 +476,11 @@ pub fn gp_neb_aie(
         // - Otherwise: exact GP (Cholesky cost acceptable for small molecular NEB)
         let td_pred = if cfg.max_pred_points > 0 && td.npoints() > cfg.max_pred_points {
             bead_local_subset(
-                &td, cfg.max_pred_points, &images, cfg.trust_metric, &cfg.atom_types,
+                &td,
+                cfg.max_pred_points,
+                &images,
+                cfg.trust_metric,
+                &cfg.atom_types,
             )
         } else {
             td.clone()
@@ -475,9 +505,13 @@ pub fn gp_neb_aie(
             .max(cfg.conv_tol / 10.0);
         let (new_images, _early_stopped) = gp_inner_relax(
             &InnerRelaxCtx {
-                model: &pred_model, images: &images,
-                energies: &energies, gradients: &gradients,
-                td: &td, gp_tol, path_scale,
+                model: &pred_model,
+                images: &images,
+                energies: &energies,
+                gradients: &gradients,
+                td: &td,
+                gp_tol,
+                path_scale,
             },
             cfg,
             ci_on,
@@ -504,7 +538,8 @@ pub fn gp_neb_aie(
             energies[i] = e;
             gradients[i] = g.clone();
             oracle_calls += 1;
-            td.add_point(&images[i], e, &g).expect("add_point failed: invalid data");
+            td.add_point(&images[i], e, &g)
+                .expect("add_point failed: invalid data");
         }
 
         path.images = images.clone();
@@ -513,8 +548,12 @@ pub fn gp_neb_aie(
     }
 
     let i_max = (1..n - 1)
-        .max_by(|&a, &b| energies[a].partial_cmp(&energies[b]).unwrap_or(std::cmp::Ordering::Equal))
-        .unwrap_or(1);  // Must be intermediate image (not endpoint)
+        .max_by(|&a, &b| {
+            energies[a]
+                .partial_cmp(&energies[b])
+                .unwrap_or(std::cmp::Ordering::Equal)
+        })
+        .unwrap_or(1); // Must be intermediate image (not endpoint)
 
     NEBResult {
         path,
@@ -541,12 +580,16 @@ struct InnerRelaxCtx<'a> {
     path_scale: f64,
 }
 
-fn gp_inner_relax(
-    ctx: &InnerRelaxCtx,
-    cfg: &NEBConfig,
-    ci_on: bool,
-) -> (Vec<Vec<f64>>, bool) {
-    let InnerRelaxCtx { model, images, energies, gradients, td, gp_tol, path_scale } = ctx;
+fn gp_inner_relax(ctx: &InnerRelaxCtx, cfg: &NEBConfig, ci_on: bool) -> (Vec<Vec<f64>>, bool) {
+    let InnerRelaxCtx {
+        model,
+        images,
+        energies,
+        gradients,
+        td,
+        gp_tol,
+        path_scale,
+    } = ctx;
     let (gp_tol, path_scale) = (*gp_tol, *path_scale);
     let n = images.len();
     let d = images[0].len();
@@ -582,7 +625,12 @@ fn gp_inner_relax(
         // Concatenate movable images
         let mut cur_x = Vec::with_capacity(n_mov * d);
         let mut cur_force = Vec::with_capacity(n_mov * d);
-        for (gi, fi) in gp_images.iter().zip(gp_forces.forces.iter()).take(n_mov + 1).skip(1) {
+        for (gi, fi) in gp_images
+            .iter()
+            .zip(gp_forces.forces.iter())
+            .take(n_mov + 1)
+            .skip(1)
+        {
             cur_x.extend_from_slice(gi);
             cur_force.extend_from_slice(fi);
         }

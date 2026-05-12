@@ -18,8 +18,8 @@ fn main() {
     let atomic_numbers = vec![18, 18]; // Ar-Ar
     let box_matrix = [20.0, 0.0, 0.0, 0.0, 20.0, 0.0, 0.0, 0.0, 20.0];
 
-    let mut oracle = RpcOracle::new(&host, port, atomic_numbers, box_matrix)
-        .expect("Failed to connect");
+    let mut oracle =
+        RpcOracle::new(&host, port, atomic_numbers, box_matrix).expect("Failed to connect");
 
     // Two Ar atoms at r = 3.4 Angstrom (near LJ minimum)
     let positions = vec![0.0, 0.0, 0.0, 3.4, 0.0, 0.0];
@@ -28,17 +28,31 @@ fn main() {
 
     eprintln!("Energy: {:.6} eV", energy);
     eprintln!("Gradient: {:?}", gradient);
-    eprintln!("Force on atom 1: [{:.6}, {:.6}, {:.6}]",
-        -gradient[0], -gradient[1], -gradient[2]);
-    eprintln!("Force on atom 2: [{:.6}, {:.6}, {:.6}]",
-        -gradient[3], -gradient[4], -gradient[5]);
+    eprintln!(
+        "Force on atom 1: [{:.6}, {:.6}, {:.6}]",
+        -gradient[0], -gradient[1], -gradient[2]
+    );
+    eprintln!(
+        "Force on atom 2: [{:.6}, {:.6}, {:.6}]",
+        -gradient[3], -gradient[4], -gradient[5]
+    );
 
     // Sanity checks
     assert!(energy.is_finite(), "Energy should be finite");
-    assert!(gradient.iter().all(|g| g.is_finite()), "Gradients should be finite");
+    assert!(
+        gradient.iter().all(|g| g.is_finite()),
+        "Gradients should be finite"
+    );
     // Forces should be equal and opposite (Newton's 3rd law)
-    let f_diff: f64 = (0..3).map(|i| (gradient[i] + gradient[3+i]).powi(2)).sum::<f64>().sqrt();
-    assert!(f_diff < 1e-10, "Newton's 3rd law violated: f_diff = {}", f_diff);
+    let f_diff: f64 = (0..3)
+        .map(|i| (gradient[i] + gradient[3 + i]).powi(2))
+        .sum::<f64>()
+        .sqrt();
+    assert!(
+        f_diff < 1e-10,
+        "Newton's 3rd law violated: f_diff = {}",
+        f_diff
+    );
 
     eprintln!("RPC smoke test PASSED");
 }

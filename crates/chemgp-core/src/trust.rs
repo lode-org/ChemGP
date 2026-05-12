@@ -159,7 +159,14 @@ pub fn clip_point_to_trust(
     let d = x.len();
     let n_atoms = d / 3;
     let thresh = params.threshold(td.npoints(), n_atoms);
-    let dist = trust_min_distance(x, &td.data, d, td.npoints(), params.trust_metric, params.atom_types);
+    let dist = trust_min_distance(
+        x,
+        &td.data,
+        d,
+        td.npoints(),
+        params.trust_metric,
+        params.atom_types,
+    );
     if dist > thresh {
         let nearest_idx = (0..td.npoints())
             .min_by(|&i, &j| {
@@ -197,13 +204,20 @@ pub fn clip_images_to_trust(
 
     for image in images.iter_mut().take(n - 1).skip(1) {
         let dist = trust_min_distance(
-            image, &td.data, d, td.npoints(), params.trust_metric, params.atom_types,
+            image,
+            &td.data,
+            d,
+            td.npoints(),
+            params.trust_metric,
+            params.atom_types,
         );
         if dist > thresh {
             let nearest_idx = (0..td.npoints())
                 .min_by(|&a, &b| {
-                    let da = trust_distance(params.trust_metric, params.atom_types, image, td.col(a));
-                    let db = trust_distance(params.trust_metric, params.atom_types, image, td.col(b));
+                    let da =
+                        trust_distance(params.trust_metric, params.atom_types, image, td.col(a));
+                    let db =
+                        trust_distance(params.trust_metric, params.atom_types, image, td.col(b));
                     da.partial_cmp(&db).unwrap_or(std::cmp::Ordering::Equal)
                 })
                 .unwrap_or(0);
@@ -229,7 +243,14 @@ pub fn exceeds_trust_radius(
     let d = x.len();
     let n_atoms = d / 3;
     let thresh = params.threshold(td.npoints(), n_atoms);
-    let dist = trust_min_distance(x, &td.data, d, td.npoints(), params.trust_metric, params.atom_types);
+    let dist = trust_min_distance(
+        x,
+        &td.data,
+        d,
+        td.npoints(),
+        params.trust_metric,
+        params.atom_types,
+    );
     dist > thresh
 }
 

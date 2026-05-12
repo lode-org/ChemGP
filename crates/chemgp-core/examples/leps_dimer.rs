@@ -63,8 +63,10 @@ fn main() {
     );
     // Print first 5 curvatures
     for (i, c) in std_result.history.curv_true.iter().take(5).enumerate() {
-        eprintln!("    step {}: C = {:+.4e}, |F| = {:.5}", i,
-            c, std_result.history.f_true[i]);
+        eprintln!(
+            "    step {}: C = {:+.4e}, |F| = {:.5}",
+            i, c, std_result.history.f_true[i]
+        );
     }
 
     // GP-Dimer (with FPS subset)
@@ -103,9 +105,12 @@ fn main() {
             .expect("No benchmark observations found");
         dimer_cfg.prior_mean = match variant {
             BenchmarkVariant::Chemgp => dimer_cfg.prior_mean.clone(),
-            BenchmarkVariant::PhysicalPrior => {
-                linear_prior(&observations[0].0, observations[0].1, &observations[0].2, "initial")
-            }
+            BenchmarkVariant::PhysicalPrior => linear_prior(
+                &observations[0].0,
+                observations[0].1,
+                &observations[0].2,
+                "initial",
+            ),
             BenchmarkVariant::AdaptivePrior => select_adaptive_prior(
                 observations[0].0.as_slice(),
                 observations[0].1,
@@ -208,10 +213,7 @@ fn main() {
         writeln!(
             f,
             r#"{{"method":"classical","step":{},"energy":{},"force":{},"oracle_calls":{}}}"#,
-            i,
-            e,
-            fv,
-            std_result.history.oracle_calls[i]
+            i, e, fv, std_result.history.oracle_calls[i]
         )
         .expect("Operation failed");
     }

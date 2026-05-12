@@ -19,7 +19,7 @@ pub struct CachedGpModel {
     pub x_data: Vec<f64>,
     pub dim: usize,
     pub n_train: usize,
-    pub alpha: Mat<f64>,  // K^{-1} y, shape (train_len, 1)
+    pub alpha: Mat<f64>,    // K^{-1} y, shape (train_len, 1)
     pub l_factor: Mat<f64>, // Lower Cholesky factor of K, shape (train_len, train_len)
     pub const_sigma2: f64,
 }
@@ -32,7 +32,11 @@ impl CachedGpModel {
             &model.x_data,
             model.dim,
             model.n_train,
-            &GPNoiseParams { noise_e: model.noise_var, noise_g: model.grad_noise_var, jitter: model.jitter },
+            &GPNoiseParams {
+                noise_e: model.noise_var,
+                noise_g: model.grad_noise_var,
+                jitter: model.jitter,
+            },
             model.const_sigma2,
         );
         let llt = robust_cholesky(&k_train, 8).expect("Cholesky failed in CachedGpModel");
@@ -82,12 +86,20 @@ pub enum PredModel {
 impl PredModel {
     pub fn predict(&self, x: &[f64]) -> Vec<f64> {
         match self {
-            PredModel::Gp { model, prior_mean, reference_energy } => {
+            PredModel::Gp {
+                model,
+                prior_mean,
+                reference_energy,
+            } => {
                 let mut pred = cached_predict(model, x, 1);
                 apply_prior_to_prediction(&mut pred, x, prior_mean, *reference_energy);
                 pred
             }
-            PredModel::Rff { model, prior_mean, reference_energy } => {
+            PredModel::Rff {
+                model,
+                prior_mean,
+                reference_energy,
+            } => {
                 let mut pred = rff_predict(model, x, 1);
                 apply_prior_to_prediction(&mut pred, x, prior_mean, *reference_energy);
                 pred
@@ -97,12 +109,20 @@ impl PredModel {
 
     pub fn predict_with_variance(&self, x: &[f64]) -> (Vec<f64>, Vec<f64>) {
         match self {
-            PredModel::Gp { model, prior_mean, reference_energy } => {
+            PredModel::Gp {
+                model,
+                prior_mean,
+                reference_energy,
+            } => {
                 let (mut mu, var) = cached_predict_with_variance(model, x, 1);
                 apply_prior_to_prediction(&mut mu, x, prior_mean, *reference_energy);
                 (mu, var)
             }
-            PredModel::Rff { model, prior_mean, reference_energy } => {
+            PredModel::Rff {
+                model,
+                prior_mean,
+                reference_energy,
+            } => {
                 let (mut mu, var) = rff_predict_with_variance(model, x, 1);
                 apply_prior_to_prediction(&mut mu, x, prior_mean, *reference_energy);
                 (mu, var)
@@ -123,9 +143,18 @@ pub fn build_pred_model(
     seed: u64,
     const_sigma2: f64,
 ) -> PredModel {
-    build_pred_model_full(kernel, td, rff_features, seed, const_sigma2, &GPNoiseParams {
-        noise_e: 1e-6, noise_g: 1e-4, jitter: 1e-6,
-    })
+    build_pred_model_full(
+        kernel,
+        td,
+        rff_features,
+        seed,
+        const_sigma2,
+        &GPNoiseParams {
+            noise_e: 1e-6,
+            noise_g: 1e-4,
+            jitter: 1e-6,
+        },
+    )
 }
 
 // Re-export for convenience (defined in types.rs).
@@ -142,7 +171,11 @@ pub fn build_pred_model_full(
     const_sigma2: f64,
     noise: &GPNoiseParams,
 ) -> PredModel {
-    let GPNoiseParams { noise_e, noise_g, jitter } = *noise;
+    let GPNoiseParams {
+        noise_e,
+        noise_g,
+        jitter,
+    } = *noise;
     let e_ref = td.energies[0];
     if rff_features > 0 {
         let mut y_rff: Vec<f64> = td.energies.iter().map(|e| e - e_ref).collect();
@@ -197,7 +230,11 @@ pub fn build_pred_model_with_prior(
         rff_features,
         seed,
         const_sigma2,
-        &GPNoiseParams { noise_e: 1e-6, noise_g: 1e-4, jitter: 1e-6 },
+        &GPNoiseParams {
+            noise_e: 1e-6,
+            noise_g: 1e-4,
+            jitter: 1e-6,
+        },
         prior_mean,
     )
 }
@@ -212,7 +249,11 @@ pub fn build_pred_model_full_with_prior(
     noise: &GPNoiseParams,
     prior_mean: &PriorMeanConfig,
 ) -> PredModel {
-    let GPNoiseParams { noise_e, noise_g, jitter } = *noise;
+    let GPNoiseParams {
+        noise_e,
+        noise_g,
+        jitter,
+    } = *noise;
     let reference_energy = td.energies.first().copied().unwrap_or(0.0);
     let (residual_energies, residual_gradients) = prior_mean.residualize_training_data(td);
 
@@ -269,12 +310,7 @@ fn apply_prior_to_prediction(
 }
 
 /// Build k_star row for one test point (shared between predict and predict_with_variance).
-fn build_k_star_row(
-    model: &CachedGpModel,
-    xt: &[f64],
-    row_offset: usize,
-    k_star: &mut Mat<f64>,
-) {
+fn build_k_star_row(model: &CachedGpModel, xt: &[f64], row_offset: usize, k_star: &mut Mat<f64>) {
     let d = model.dim;
     let n_train = model.n_train;
 
@@ -357,7 +393,9 @@ fn cached_predict_with_variance(
             k_star_t[(j, i)] = k_star[(i, j)];
         }
     }
-    model.l_factor.solve_lower_triangular_in_place(&mut k_star_t);
+    model
+        .l_factor
+        .solve_lower_triangular_in_place(&mut k_star_t);
 
     let mut variance = vec![0.0; n_out];
 
@@ -439,7 +477,11 @@ pub fn predict(model: &GPModel, x_test: &[f64], n_test: usize) -> Vec<f64> {
         &model.x_data,
         d,
         n_train,
-        &GPNoiseParams { noise_e: model.noise_var, noise_g: model.grad_noise_var, jitter: model.jitter },
+        &GPNoiseParams {
+            noise_e: model.noise_var,
+            noise_g: model.grad_noise_var,
+            jitter: model.jitter,
+        },
         model.const_sigma2,
     );
 
@@ -505,7 +547,11 @@ pub fn predict_with_variance(
         &model.x_data,
         d,
         n_train,
-        &GPNoiseParams { noise_e: model.noise_var, noise_g: model.grad_noise_var, jitter: model.jitter },
+        &GPNoiseParams {
+            noise_e: model.noise_var,
+            noise_g: model.grad_noise_var,
+            jitter: model.jitter,
+        },
         model.const_sigma2,
     );
 

@@ -14,9 +14,7 @@ fn main() {
     let y_slice = 0.5;
 
     // Training data: 10 quasi-uniform points along x at y=0.5
-    let train_x: Vec<f64> = vec![
-        -1.3, -1.0, -0.7, -0.4, -0.1, 0.2, 0.4, 0.6, 0.8, 1.1,
-    ];
+    let train_x: Vec<f64> = vec![-1.3, -1.0, -0.7, -0.4, -0.1, 0.2, 0.4, 0.6, 0.8, 1.1];
     let mut td = TrainingData::new(2);
     for &x in &train_x {
         let (e, g) = muller_brown_energy_gradient(&[x, y_slice]);
@@ -64,8 +62,16 @@ fn main() {
 
             // Build prediction model (exact GP, no RFF)
             let pred = build_pred_model_full(
-                &gp.kernel, &td, 0, 42, 0.0,
-                &GPNoiseParams { noise_e: gp.noise_var, noise_g: gp.grad_noise_var, jitter: 1e-6 },
+                &gp.kernel,
+                &td,
+                0,
+                42,
+                0.0,
+                &GPNoiseParams {
+                    noise_e: gp.noise_var,
+                    noise_g: gp.grad_noise_var,
+                    jitter: 1e-6,
+                },
             );
 
             for &x in &x_pred {

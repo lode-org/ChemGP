@@ -51,12 +51,7 @@ pub(crate) fn curvature(g0: &[f64], g1: &[f64], orient: &[f64], dimer_sep: f64) 
 }
 
 /// Rotational force perpendicular to the dimer.
-pub(crate) fn rotational_force(
-    g0: &[f64],
-    g1: &[f64],
-    orient: &[f64],
-    dimer_sep: f64,
-) -> Vec<f64> {
+pub(crate) fn rotational_force(g0: &[f64], g1: &[f64], orient: &[f64], dimer_sep: f64) -> Vec<f64> {
     let g_diff: Vec<f64> = g1
         .iter()
         .zip(g0.iter())

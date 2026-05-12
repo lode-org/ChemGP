@@ -88,7 +88,11 @@ impl TrainingData {
         }
 
         let y_mean: f64 = self.energies.iter().sum::<f64>() / n as f64;
-        let variance: f64 = self.energies.iter().map(|e| (e - y_mean).powi(2)).sum::<f64>()
+        let variance: f64 = self
+            .energies
+            .iter()
+            .map(|e| (e - y_mean).powi(2))
+            .sum::<f64>()
             / (n as f64 - 1.0).max(1.0);
         let y_std = variance.sqrt().max(1e-10);
 
@@ -167,17 +171,20 @@ impl GPModel {
         if td.npoints() == 0 {
             return Err(GpError::EmptyTrainingData);
         }
-        
+
         // Validate y targets
         if y.is_empty() {
             return Err(GpError::EmptyTargets);
         }
         for (i, &val) in y.iter().enumerate() {
             if !val.is_finite() {
-                return Err(GpError::NonFiniteTargets { index: i, value: val });
+                return Err(GpError::NonFiniteTargets {
+                    index: i,
+                    value: val,
+                });
             }
         }
-        
+
         // Validate kernel parameters
         let sigma2 = kernel.signal_variance();
         if sigma2 <= 0.0 || !sigma2.is_finite() {
@@ -262,10 +269,7 @@ pub fn init_mol_invdist_se(
         .iter()
         .cloned()
         .fold(f64::NEG_INFINITY, f64::max)
-        - td.energies
-            .iter()
-            .cloned()
-            .fold(f64::INFINITY, f64::min);
+        - td.energies.iter().cloned().fold(f64::INFINITY, f64::min);
     let range_y = range_y.max(1e-10);
 
     // sqrt(2) factor from MATLAB dist_at
@@ -292,7 +296,8 @@ pub fn init_cartesian_se(
     let mut max_dist = 0.0f64;
     for i in 0..n {
         for j in (i + 1)..n {
-            let d: f64 = td.col(i)
+            let d: f64 = td
+                .col(i)
                 .iter()
                 .zip(td.col(j).iter())
                 .map(|(a, b)| (a - b).powi(2))
@@ -307,10 +312,7 @@ pub fn init_cartesian_se(
         .iter()
         .cloned()
         .fold(f64::NEG_INFINITY, f64::max)
-        - td.energies
-            .iter()
-            .cloned()
-            .fold(f64::INFINITY, f64::min);
+        - td.energies.iter().cloned().fold(f64::INFINITY, f64::min);
     let range_y = range_y.max(1e-10);
 
     let range_x = (2.0f64).sqrt() * max_dist.max(1e-10);
@@ -337,8 +339,10 @@ mod tests {
     #[test]
     fn test_training_data() {
         let mut td = TrainingData::new(3);
-        td.add_point(&[1.0, 2.0, 3.0], 0.5, &[0.1, 0.2, 0.3]).expect("test setup: add_point should succeed with valid data");
-        td.add_point(&[4.0, 5.0, 6.0], 1.5, &[0.4, 0.5, 0.6]).expect("test setup: add_point should succeed with valid data");
+        td.add_point(&[1.0, 2.0, 3.0], 0.5, &[0.1, 0.2, 0.3])
+            .expect("test setup: add_point should succeed with valid data");
+        td.add_point(&[4.0, 5.0, 6.0], 1.5, &[0.4, 0.5, 0.6])
+            .expect("test setup: add_point should succeed with valid data");
         assert_eq!(td.npoints(), 2);
         assert_eq!(td.col(0), &[1.0, 2.0, 3.0]);
         assert_eq!(td.col(1), &[4.0, 5.0, 6.0]);
@@ -347,8 +351,10 @@ mod tests {
     #[test]
     fn test_normalize() {
         let mut td = TrainingData::new(2);
-        td.add_point(&[0.0, 0.0], 1.0, &[0.1, 0.2]).expect("test setup: add_point should succeed with valid data");
-        td.add_point(&[1.0, 1.0], 3.0, &[0.3, 0.4]).expect("test setup: add_point should succeed with valid data");
+        td.add_point(&[0.0, 0.0], 1.0, &[0.1, 0.2])
+            .expect("test setup: add_point should succeed with valid data");
+        td.add_point(&[1.0, 1.0], 3.0, &[0.3, 0.4])
+            .expect("test setup: add_point should succeed with valid data");
         let (y, mean, std) = td.normalize();
         assert!((mean - 2.0).abs() < 1e-10);
         assert!(std > 0.0);
@@ -360,14 +366,14 @@ mod tests {
     fn test_validation_zero_dim_panics() {
         // Test empty dimension causes panic
         let _td = TrainingData::new(0);
-        
+
         // Test NaN rejection
         let mut td = TrainingData::new(2);
         assert!(matches!(
             td.add_point(&[f64::NAN, 1.0], 0.5, &[0.1, 0.2]),
             Err(GpError::NonFiniteData { .. })
         ));
-        
+
         // Test dimension mismatch
         assert!(matches!(
             td.add_point(&[1.0], 0.5, &[0.1, 0.2]),

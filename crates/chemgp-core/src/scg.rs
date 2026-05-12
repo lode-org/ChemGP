@@ -87,7 +87,11 @@ where
 
             let sigma = config.sigma0 / kappa.sqrt();
 
-            let w_new: Vec<f64> = w.iter().zip(p.iter()).map(|(wi, pi)| wi + sigma * pi).collect();
+            let w_new: Vec<f64> = w
+                .iter()
+                .zip(p.iter())
+                .map(|(wi, pi)| wi + sigma * pi)
+                .collect();
             let (f_new_val, g_plus) = fg(&w_new);
             if !f_new_val.is_finite() {
                 lambda *= 4.0;
@@ -106,7 +110,11 @@ where
 
         let alpha = -mu / delta;
 
-        let w_new: Vec<f64> = w.iter().zip(p.iter()).map(|(wi, pi)| wi + alpha * pi).collect();
+        let w_new: Vec<f64> = w
+            .iter()
+            .zip(p.iter())
+            .map(|(wi, pi)| wi + alpha * pi)
+            .collect();
         let (f_new, g_new) = fg(&w_new);
 
         if !f_new.is_finite() {
@@ -157,7 +165,11 @@ where
             // Polak-Ribiere update
             let beta = (dot(&g_new, &g_new) - dot(&g_new, &r)) / (-mu);
             r = g_new;
-            p = r.iter().zip(p.iter()).map(|(ri, pi)| -ri + beta * pi).collect();
+            p = r
+                .iter()
+                .zip(p.iter())
+                .map(|(ri, pi)| -ri + beta * pi)
+                .collect();
 
             nsuccess += 1;
             if nsuccess >= n {

@@ -10,7 +10,10 @@ use std::collections::{BTreeMap, BTreeSet};
 /// Features are ordered: MM upper triangle (j < i), then MF (all combos).
 /// Total features: N_mov*(N_mov-1)/2 + N_mov*N_fro.
 pub fn compute_inverse_distances(x_flat: &[f64], frozen_flat: &[f64]) -> Vec<f64> {
-    assert!(x_flat.len().is_multiple_of(3), "Moving coordinates must be 3D");
+    assert!(
+        x_flat.len().is_multiple_of(3),
+        "Moving coordinates must be 3D"
+    );
     let n_mov = x_flat.len() / 3;
     let n_fro = frozen_flat.len() / 3;
 
@@ -95,10 +98,7 @@ pub struct PairScheme {
 ///
 /// Only pair types that actually appear in the feature set get assigned
 /// parameter indices.
-pub fn build_pair_scheme(
-    atomic_numbers_mov: &[i32],
-    atomic_numbers_fro: &[i32],
-) -> PairScheme {
+pub fn build_pair_scheme(atomic_numbers_mov: &[i32], atomic_numbers_fro: &[i32]) -> PairScheme {
     let mut all_species: Vec<i32> = atomic_numbers_mov
         .iter()
         .chain(atomic_numbers_fro.iter())
@@ -144,11 +144,7 @@ pub fn build_pair_scheme(
     // Moving-Frozen
     for mt in mov_types.iter().take(n_mov) {
         for ft in fro_types.iter().take(n_fro) {
-            let (t1, t2) = if *mt <= *ft {
-                (*mt, *ft)
-            } else {
-                (*ft, *mt)
-            };
+            let (t1, t2) = if *mt <= *ft { (*mt, *ft) } else { (*ft, *mt) };
             used_pairs.insert((t1, t2));
         }
     }

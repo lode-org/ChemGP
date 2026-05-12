@@ -21,7 +21,9 @@ fn main() {
 
     // Simple LCG for reproducible perturbations
     let next_rand = |state: &mut u64| -> f64 {
-        *state = state.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+        *state = state
+            .wrapping_mul(6364136223846793005)
+            .wrapping_add(1442695040888963407);
         ((*state >> 33) as f64 / (1u64 << 31) as f64) - 1.0
     };
 
@@ -47,7 +49,10 @@ fn main() {
     let n_cand = candidates.len();
     let n_select = 20;
 
-    eprintln!("Generated {} candidates, selecting {} via FPS", n_cand, n_select);
+    eprintln!(
+        "Generated {} candidates, selecting {} via FPS",
+        n_cand, n_select
+    );
 
     // Flatten candidates for FPS
     let flat_cand: Vec<f64> = candidates.iter().flat_map(|c| c.iter().copied()).collect();
@@ -55,12 +60,15 @@ fn main() {
     // Seed FPS with reactant configuration
     let seed = LEPS_REACTANT.to_vec();
     let euclidean = |a: &[f64], b: &[f64]| -> f64 {
-        a.iter().zip(b).map(|(x, y)| (x - y) * (x - y)).sum::<f64>().sqrt()
+        a.iter()
+            .zip(b)
+            .map(|(x, y)| (x - y) * (x - y))
+            .sum::<f64>()
+            .sqrt()
     };
 
-    let selected_idx = farthest_point_sampling(
-        &flat_cand, dim, n_cand, &seed, 1, n_select, &euclidean,
-    );
+    let selected_idx =
+        farthest_point_sampling(&flat_cand, dim, n_cand, &seed, 1, n_select, &euclidean);
 
     let mut is_selected = vec![false; n_cand];
     for &idx in &selected_idx {
@@ -74,7 +82,9 @@ fn main() {
     writeln!(
         f,
         r#"{{"type":"fps_meta","n_candidates":{},"n_selected":{},"feature_dim":{}}}"#,
-        n_cand, selected_idx.len(), dim
+        n_cand,
+        selected_idx.len(),
+        dim
     )
     .expect("Operation failed");
 

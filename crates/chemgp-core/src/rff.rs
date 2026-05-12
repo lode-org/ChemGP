@@ -20,13 +20,13 @@ pub enum FeatureMode {
 
 /// RFF model for fast GP prediction.
 pub struct RffModel {
-    pub w: Mat<f64>,      // (d_rff, d_feat)
-    pub b: Vec<f64>,      // (d_rff,)
-    pub c: f64,           // sigma * sqrt(2/d_rff)
+    pub w: Mat<f64>, // (d_rff, d_feat)
+    pub b: Vec<f64>, // (d_rff,)
+    pub c: f64,      // sigma * sqrt(2/d_rff)
     pub feature_mode: FeatureMode,
-    pub alpha: Vec<f64>,  // (d_eff,) where d_eff = d_rff + 1 (constant feature)
-    pub a_chol: Mat<f64>, // Lower-triangular Cholesky factor of regularized Gram
-    pub dim: usize,       // Coordinate dimension D
+    pub alpha: Vec<f64>,   // (d_eff,) where d_eff = d_rff + 1 (constant feature)
+    pub a_chol: Mat<f64>,  // Lower-triangular Cholesky factor of regularized Gram
+    pub dim: usize,        // Coordinate dimension D
     pub const_sigma2: f64, // Constant kernel variance
 }
 
@@ -37,9 +37,7 @@ impl RffModel {
         let d_rff = self.w.nrows();
 
         let (phi, j_phi) = match &self.feature_mode {
-            FeatureMode::InverseDistances { frozen } => {
-                crate::kernel::invdist_jacobian(x, frozen)
-            }
+            FeatureMode::InverseDistances { frozen } => crate::kernel::invdist_jacobian(x, frozen),
             FeatureMode::Cartesian => {
                 // Features = coordinates, Jacobian = identity
                 let phi = x.to_vec();
@@ -113,8 +111,16 @@ pub struct RffConfig<'a> {
 /// Build an RFF model from a trained kernel and all training data.
 pub fn build_rff(cfg: &RffConfig) -> RffModel {
     let RffConfig {
-        kernel, x_train, dim, n, y_train,
-        d_rff, noise_var, grad_noise_var, seed, const_sigma2,
+        kernel,
+        x_train,
+        dim,
+        n,
+        y_train,
+        d_rff,
+        noise_var,
+        grad_noise_var,
+        seed,
+        const_sigma2,
     } = cfg;
     let (dim, n, d_rff) = (*dim, *n, *d_rff);
     let (noise_var, grad_noise_var, const_sigma2) = (*noise_var, *grad_noise_var, *const_sigma2);

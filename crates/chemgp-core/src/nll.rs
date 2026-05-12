@@ -69,10 +69,27 @@ pub fn nll_and_grad(
     noise: &NllNoise,
     prior: &NllPrior,
 ) -> (f64, Vec<f64>) {
-    let NllData { x_data, dim, n, y, template } = data;
+    let NllData {
+        x_data,
+        dim,
+        n,
+        y,
+        template,
+    } = data;
     let (dim, n) = (*dim, *n);
-    let NllNoise { noise_e, noise_g, jitter, const_sigma2 } = *noise;
-    let NllPrior { w_prior, prior_var, prior_dof, prior_s2, prior_mu } = *prior;
+    let NllNoise {
+        noise_e,
+        noise_g,
+        jitter,
+        const_sigma2,
+    } = *noise;
+    let NllPrior {
+        w_prior,
+        prior_var,
+        prior_dof,
+        prior_s2,
+        prior_mu,
+    } = *prior;
     let sigma2 = w[0].exp();
     let inv_ls: Vec<f64> = w[1..].iter().map(|v| v.exp()).collect();
     let n_params = w.len();
@@ -209,7 +226,8 @@ pub fn nll_and_grad(
         let sqrt_s2 = sigma2.sqrt();
         let nu = prior_dof;
         let diff = sqrt_s2 - prior_mu;
-        let lp = ln_gamma((nu + 1.0) / 2.0) - ln_gamma(nu / 2.0)
+        let lp = ln_gamma((nu + 1.0) / 2.0)
+            - ln_gamma(nu / 2.0)
             - 0.5 * (nu * PI * prior_s2).ln()
             - (nu + 1.0) / 2.0 * (1.0 + diff * diff / (nu * prior_s2)).ln()
             - (2.0 * sqrt_s2).ln()
@@ -270,9 +288,8 @@ pub fn nll_and_grad(
         let nu = prior_dof;
         let diff = sqrt_s2 - prior_mu;
         // d(sqrtt_log_prior)/d(sigma2)
-        let dsqrtt = 0.5 / sqrt_s2
-            * (-(nu + 1.0) * diff / (nu * prior_s2 + diff * diff))
-            - 0.5 / sigma2;
+        let dsqrtt =
+            0.5 / sqrt_s2 * (-(nu + 1.0) * diff / (nu * prior_s2 + diff * diff)) - 0.5 / sigma2;
         // Chain: d/dw[0] = dsqrtt * sigma2 + 1.0 (Jacobian)
         let dlp_dw0 = dsqrtt * sigma2 + 1.0;
         grad[0] -= dlp_dw0;

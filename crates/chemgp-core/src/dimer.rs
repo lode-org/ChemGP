@@ -184,7 +184,6 @@ fn dimer_images(state: &DimerState) -> (Vec<f64>, Vec<f64>) {
     (r1, r2)
 }
 
-
 // ============================================================================
 // GP prediction helpers
 // ============================================================================
@@ -221,7 +220,6 @@ fn predict_dimer_gradients_with_variance(
 
     (g0, g1, e0, var0)
 }
-
 
 // ============================================================================
 // Rotation with modified Newton (parabolic fit)
@@ -417,9 +415,7 @@ fn rotate_dimer_lbfgs(
         let c_est = rotate_dimer_newton(state, model, &f_rot_oriented, config, y_std);
 
         if let Some(_c) = c_est {
-            let dtheta = vec_dot(&orient_prev, &state.orient)
-                .clamp(-1.0, 1.0)
-                .acos();
+            let dtheta = vec_dot(&orient_prev, &state.orient).clamp(-1.0, 1.0).acos();
             if dtheta < config.t_angle_rot {
                 break;
             }
@@ -536,12 +532,14 @@ pub fn gp_dimer(
 
         // Evaluate midpoint
         let (e, g) = oracle(x_init);
-        td.add_point(x_init, e, &g).expect("add_point failed: invalid data");
+        td.add_point(x_init, e, &g)
+            .expect("add_point failed: invalid data");
 
         // Evaluate image1 along initial orientation (C++ always evaluates this)
         let (r1_init, _) = dimer_images(&state);
         let (e1, g1) = oracle(&r1_init);
-        td.add_point(&r1_init, e1, &g1).expect("add_point failed: invalid data");
+        td.add_point(&r1_init, e1, &g1)
+            .expect("add_point failed: invalid data");
 
         // Optional perturbations
         let mut rng = StdRng::seed_from_u64(cfg.seed);
@@ -549,10 +547,15 @@ pub fn gp_dimer(
             let perturb: Vec<f64> = (0..d)
                 .map(|_| (rng.random::<f64>() - 0.5) * cfg.perturb_scale)
                 .collect();
-            let x_p: Vec<f64> = x_init.iter().zip(perturb.iter()).map(|(a, b)| a + b).collect();
+            let x_p: Vec<f64> = x_init
+                .iter()
+                .zip(perturb.iter())
+                .map(|(a, b)| a + b)
+                .collect();
             let (e_p, g_p) = oracle(&x_p);
             if e_p.is_finite() && e_p < 1e6 {
-                td.add_point(&x_p, e_p, &g_p).expect("add_point failed: invalid data");
+                td.add_point(&x_p, e_p, &g_p)
+                    .expect("add_point failed: invalid data");
             }
         }
     }
@@ -626,8 +629,15 @@ pub fn gp_dimer(
             Some(k) => k.clone(),
         };
 
-        let mut gp_sub = GPModel::new(kern, &td_sub, y_sub.clone(), cfg.noise_e, cfg.noise_g, cfg.jitter)
-            .expect("GPModel::new failed: invalid training data or kernel params");
+        let mut gp_sub = GPModel::new(
+            kern,
+            &td_sub,
+            y_sub.clone(),
+            cfg.noise_e,
+            cfg.noise_g,
+            cfg.jitter,
+        )
+        .expect("GPModel::new failed: invalid training data or kernel params");
         // Dynamic constSigma2 (MATLAB atomic_GP_dimer.m:453): max(1, mean_y^2)
         // Uses SHIFTED energies (y_sub[0..n]), not raw.
         let const_sigma2 = if cfg.const_sigma2 > 0.0 {
@@ -648,8 +658,16 @@ pub fn gp_dimer(
         // Build prediction model on full data (RFF if configured, else exact GP)
         let y_std = 1.0;
         let model = build_pred_model_full_with_prior(
-            &gp_sub.kernel, &td, cfg.rff_features, 42, const_sigma2,
-            &GPNoiseParams { noise_e: cfg.noise_e, noise_g: cfg.noise_g, jitter: cfg.jitter },
+            &gp_sub.kernel,
+            &td,
+            cfg.rff_features,
+            42,
+            const_sigma2,
+            &GPNoiseParams {
+                noise_e: cfg.noise_e,
+                noise_g: cfg.noise_g,
+                jitter: cfg.jitter,
+            },
             &cfg.prior_mean,
         );
 
@@ -679,11 +697,7 @@ pub fn gp_dimer(
 
                 // Update L-BFGS history
                 if !f_trans_prev.is_empty() {
-                    let s: Vec<f64> = rn
-                        .iter()
-                        .zip(state.r.iter())
-                        .map(|(a, b)| a - b)
-                        .collect();
+                    let s: Vec<f64> = rn.iter().zip(state.r.iter()).map(|(a, b)| a - b).collect();
                     let y: Vec<f64> = ft
                         .iter()
                         .zip(f_trans_prev.iter())
@@ -800,7 +814,8 @@ pub fn gp_dimer(
         // GP rotation and GP curvature are used for orient and curvature tracking.
         let (e_true, g_true) = oracle(&state.r);
         oracle_calls += 1;
-        td.add_point(&state.r, e_true, &g_true).expect("add_point failed: invalid data");
+        td.add_point(&state.r, e_true, &g_true)
+            .expect("add_point failed: invalid data");
 
         let f_trans_true = translational_force(&g_true, &state.orient);
         let f_norm_true = vec_norm(&f_trans_true);
@@ -874,7 +889,11 @@ pub fn standard_dimer(
     #[allow(unused_assignments)]
     let mut stop_reason = StopReason::MaxIterations;
     let max_step = config.max_step.max(0.05);
-    let call_cap = if config.max_oracle_calls > 0 { config.max_oracle_calls } else { 600 };
+    let call_cap = if config.max_oracle_calls > 0 {
+        config.max_oracle_calls
+    } else {
+        600
+    };
 
     let use_lbfgs = config.translation_method == "lbfgs";
     let mut trans_hist = LbfgsHistory::new(config.lbfgs_memory);
@@ -892,8 +911,11 @@ pub fn standard_dimer(
         oracle_calls += 1;
 
         // Evaluate at image 1 (along current orient)
-        let r1: Vec<f64> = r.iter().zip(orient.iter())
-            .map(|(r, o)| r + dimer_sep * o).collect();
+        let r1: Vec<f64> = r
+            .iter()
+            .zip(orient.iter())
+            .map(|(r, o)| r + dimer_sep * o)
+            .collect();
         let (_e1, g1) = oracle(&r1);
         oracle_calls += 1;
 
@@ -908,43 +930,74 @@ pub fn standard_dimer(
         let mut orient_prev: Vec<f64> = Vec::new();
 
         for _rot_iter in 0..max_rots {
-            if oracle_calls >= call_cap { break; }
+            if oracle_calls >= call_cap {
+                break;
+            }
 
             let f_rot = rotational_force(&g0, &g1_cur, &orient, dimer_sep);
             let f_rot_norm = vec_norm(&f_rot);
-            if f_rot_norm < 1e-10 { break; }
+            if f_rot_norm < 1e-10 {
+                break;
+            }
 
             // L-BFGS direction for rotation (matches eOn ImprovedDimer)
             let theta = if !f_rot_prev.is_empty() {
-                let s: Vec<f64> = orient.iter().zip(orient_prev.iter()).map(|(a, b)| a - b).collect();
-                let y: Vec<f64> = f_rot.iter().zip(f_rot_prev.iter()).map(|(a, b)| -(a - b)).collect();
+                let s: Vec<f64> = orient
+                    .iter()
+                    .zip(orient_prev.iter())
+                    .map(|(a, b)| a - b)
+                    .collect();
+                let y: Vec<f64> = f_rot
+                    .iter()
+                    .zip(f_rot_prev.iter())
+                    .map(|(a, b)| -(a - b))
+                    .collect();
                 rot_lbfgs.push_pair(s, y);
 
                 let neg_f: Vec<f64> = f_rot.iter().map(|x| -x).collect();
                 let mut dir = rot_lbfgs.compute_direction(&neg_f);
                 // Project perpendicular to orient
                 let sd_dot = vec_dot(&dir, &orient);
-                for (d, o) in dir.iter_mut().zip(orient.iter()) { *d -= sd_dot * o; }
+                for (d, o) in dir.iter_mut().zip(orient.iter()) {
+                    *d -= sd_dot * o;
+                }
                 let sn = vec_norm(&dir);
-                if sn < 1e-12 { normalize_vec(&f_rot) }
-                else { dir.iter().map(|x| x / sn).collect() }
+                if sn < 1e-12 {
+                    normalize_vec(&f_rot)
+                } else {
+                    dir.iter().map(|x| x / sn).collect()
+                }
             } else {
                 normalize_vec(&f_rot)
             };
 
             // Curvature derivative for trial angle estimate
-            let d_c_d_phi = 2.0 * g1_cur.iter().zip(g0.iter()).zip(theta.iter())
-                .map(|((g1v, g0v), tv)| (g1v - g0v) * tv).sum::<f64>() / dimer_sep;
+            let d_c_d_phi = 2.0
+                * g1_cur
+                    .iter()
+                    .zip(g0.iter())
+                    .zip(theta.iter())
+                    .map(|((g1v, g0v), tv)| (g1v - g0v) * tv)
+                    .sum::<f64>()
+                / dimer_sep;
             let phi_prime = -0.5 * (d_c_d_phi / (2.0 * c_cur.abs() + 1e-10)).atan();
 
-            if phi_prime.abs() < phi_tol_rad { break; }
+            if phi_prime.abs() < phi_tol_rad {
+                break;
+            }
 
             // Evaluate at trial rotation
-            let tau_prime: Vec<f64> = orient.iter().zip(theta.iter())
-                .map(|(o, t)| phi_prime.cos() * o + phi_prime.sin() * t).collect();
+            let tau_prime: Vec<f64> = orient
+                .iter()
+                .zip(theta.iter())
+                .map(|(o, t)| phi_prime.cos() * o + phi_prime.sin() * t)
+                .collect();
             let tau_prime = normalize_vec(&tau_prime);
-            let r1_trial: Vec<f64> = r.iter().zip(tau_prime.iter())
-                .map(|(r, o)| r + dimer_sep * o).collect();
+            let r1_trial: Vec<f64> = r
+                .iter()
+                .zip(tau_prime.iter())
+                .map(|(r, o)| r + dimer_sep * o)
+                .collect();
             let (_, g1_trial) = oracle(&r1_trial);
             oracle_calls += 1;
 
@@ -952,8 +1005,8 @@ pub fn standard_dimer(
 
             // Parabolic fit for optimal angle (Kastner-Sherwood Eq. 4-6)
             let b1 = 0.5 * d_c_d_phi;
-            let a1 = (c_cur - c_trial + b1 * (2.0 * phi_prime).sin())
-                / (1.0 - (2.0 * phi_prime).cos());
+            let a1 =
+                (c_cur - c_trial + b1 * (2.0 * phi_prime).sin()) / (1.0 - (2.0 * phi_prime).cos());
             let phi_min = 0.5 * (b1 / a1).atan();
 
             let a0 = 2.0 * (c_cur - a1);
@@ -970,26 +1023,35 @@ pub fn standard_dimer(
                 phi_final -= std::f64::consts::PI;
             }
 
-            if c_min >= c_cur { break; }
+            if c_min >= c_cur {
+                break;
+            }
 
             // Accept rotation
             f_rot_prev = f_rot;
             orient_prev = orient.clone();
 
-            orient = orient.iter().zip(theta.iter())
-                .map(|(o, t)| phi_final.cos() * o + phi_final.sin() * t).collect();
+            orient = orient
+                .iter()
+                .zip(theta.iter())
+                .map(|(o, t)| phi_final.cos() * o + phi_final.sin() * t)
+                .collect();
             orient = normalize_vec(&orient);
             orient = normalize_vec(&orient);
 
             // Interpolate g1 at optimal angle (Kastner-Sherwood Eq. 8)
             if phi_prime.abs() > 1e-15 {
-                g1_cur = g1_cur.iter().zip(g1_trial.iter()).zip(g0.iter())
+                g1_cur = g1_cur
+                    .iter()
+                    .zip(g1_trial.iter())
+                    .zip(g0.iter())
                     .map(|((g1v, g1pv), g0v)| {
                         let sr1 = (phi_prime - phi_final).sin() / phi_prime.sin();
                         let sr2 = phi_final.sin() / phi_prime.sin();
                         let cc = 1.0 - phi_final.cos() - phi_final.sin() * (phi_prime * 0.5).tan();
                         sr1 * g1v + sr2 * g1pv + cc * g0v
-                    }).collect();
+                    })
+                    .collect();
             } else {
                 g1_cur = g1_trial;
             }
@@ -1025,8 +1087,11 @@ pub fn standard_dimer(
                 // Update L-BFGS history and compute auto-scaled H0
                 if !f_trans_prev.is_empty() {
                     let dr: Vec<f64> = r.iter().zip(r_prev.iter()).map(|(a, b)| a - b).collect();
-                    let df: Vec<f64> = f_trans_prev.iter().zip(f_trans_proj.iter())
-                        .map(|(fp, fc)| fp - fc).collect();
+                    let df: Vec<f64> = f_trans_prev
+                        .iter()
+                        .zip(f_trans_proj.iter())
+                        .map(|(fp, fc)| fp - fc)
+                        .collect();
                     let dr_dot_df: f64 = dr.iter().zip(df.iter()).map(|(a, b)| a * b).sum();
                     let df_dot_df: f64 = df.iter().map(|x| x * x).sum();
 
@@ -1037,10 +1102,12 @@ pub fn standard_dimer(
                         } else {
                             // Negative curvature: reset, take max move step
                             trans_hist.reset();
-                            let scaled_f: Vec<f64> = f_trans_proj.iter()
-                                .map(|x| 1000.0 * x).collect();
+                            let scaled_f: Vec<f64> =
+                                f_trans_proj.iter().map(|x| 1000.0 * x).collect();
                             let step = max_atom_motion_applied(&scaled_f, max_step, n_atoms);
-                            for j in 0..d { r[j] += step[j]; }
+                            for j in 0..d {
+                                r[j] += step[j];
+                            }
                             r_prev = r.clone();
                             f_trans_prev = f_trans_proj.clone();
                             continue;
@@ -1061,11 +1128,12 @@ pub fn standard_dimer(
                 let max_atom = max_atom_motion(&d_vec, n_atoms);
                 if max_atom >= max_step {
                     trans_hist.reset();
-                    let fallback: Vec<f64> = f_trans_proj.iter()
-                        .map(|x| h0 * x).collect();
+                    let fallback: Vec<f64> = f_trans_proj.iter().map(|x| h0 * x).collect();
                     let step = max_atom_motion_applied(&fallback, max_step, n_atoms);
                     r_prev = r.clone();
-                    for j in 0..d { r[j] += step[j]; }
+                    for j in 0..d {
+                        r[j] += step[j];
+                    }
                     f_trans_prev = f_trans_proj.clone();
                     continue;
                 }
@@ -1074,15 +1142,20 @@ pub fn standard_dimer(
                 let d_norm = vec_norm(&d_vec);
                 let f_norm_local = vec_norm(&f_trans_proj);
                 if d_norm > 1e-18 && f_norm_local > 1e-18 {
-                    let cos_angle: f64 = d_vec.iter().zip(f_trans_proj.iter())
-                        .map(|(a, b)| a * b).sum::<f64>() / (d_norm * f_norm_local);
+                    let cos_angle: f64 = d_vec
+                        .iter()
+                        .zip(f_trans_proj.iter())
+                        .map(|(a, b)| a * b)
+                        .sum::<f64>()
+                        / (d_norm * f_norm_local);
                     if cos_angle.clamp(-1.0, 1.0).acos() > std::f64::consts::FRAC_PI_2 {
                         trans_hist.reset();
-                        let fallback: Vec<f64> = f_trans_proj.iter()
-                            .map(|x| h0 * x).collect();
+                        let fallback: Vec<f64> = f_trans_proj.iter().map(|x| h0 * x).collect();
                         let step = max_atom_motion_applied(&fallback, max_step, n_atoms);
                         r_prev = r.clone();
-                        for j in 0..d { r[j] += step[j]; }
+                        for j in 0..d {
+                            r[j] += step[j];
+                        }
                         f_trans_prev = f_trans_proj.clone();
                         continue;
                     }
@@ -1091,7 +1164,9 @@ pub fn standard_dimer(
                 // Per-atom clipping on final step
                 let step = max_atom_motion_applied(&d_vec, max_step, n_atoms);
                 r_prev = r.clone();
-                for j in 0..d { r[j] += step[j]; }
+                for j in 0..d {
+                    r[j] += step[j];
+                }
                 f_trans_prev = f_trans_proj.clone();
             } else {
                 let step_size = max_step / f_norm.max(1e-18);
@@ -1116,7 +1191,11 @@ pub fn standard_dimer(
     }
 
     DimerResult {
-        state: DimerState { r, orient, dimer_sep },
+        state: DimerState {
+            r,
+            orient,
+            dimer_sep,
+        },
         converged: stop_reason == StopReason::Converged,
         stop_reason,
         oracle_calls,

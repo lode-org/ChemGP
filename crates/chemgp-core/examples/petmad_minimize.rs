@@ -16,16 +16,16 @@ use std::io::Write;
 
 use chemgp_core::benchmarking::{
     linear_prior, linear_prior_candidates, load_prior_library, nearest_linear_prior,
-    nearest_prior_library_label, output_path, prior_library_from_training_data,
-    save_prior_library, seed_training_data, select_adaptive_prior_with_label, BenchmarkVariant,
+    nearest_prior_library_label, output_path, prior_library_from_training_data, save_prior_library,
+    seed_training_data, select_adaptive_prior_with_label, BenchmarkVariant,
 };
-use chemgp_core::kernel::{Kernel, MolInvDistSE};
 use chemgp_core::internal_coords::CoordinateMode;
+use chemgp_core::kernel::{Kernel, MolInvDistSE};
 use chemgp_core::minimize::{gp_minimize, MinimizationConfig};
-#[cfg(feature = "rgpot_local")]
-use chemgp_core::oracle::{LocalMetatomicConfig, LocalMetatomicOracle};
 #[cfg(feature = "rgpot")]
 use chemgp_core::oracle::RpcOracle;
+#[cfg(feature = "rgpot_local")]
+use chemgp_core::oracle::{LocalMetatomicConfig, LocalMetatomicOracle};
 use chemgp_core::prior_mean::PriorMeanConfig;
 
 /// System100 reactant (9-atom organic fragment from ORCA).
@@ -166,7 +166,12 @@ pub fn main() {
             BenchmarkVariant::Chemgp => gp_cfg.prior_mean.clone(),
             BenchmarkVariant::PhysicalPrior => {
                 prior_label = "initial".to_string();
-                linear_prior(&observations[0].0, observations[0].1, &observations[0].2, "initial")
+                linear_prior(
+                    &observations[0].0,
+                    observations[0].1,
+                    &observations[0].2,
+                    "initial",
+                )
             }
             BenchmarkVariant::AdaptivePrior => {
                 gp_cfg.coordinate_mode = CoordinateMode::CompleteRedundantInvDist;
@@ -293,10 +298,12 @@ pub fn main() {
 
         for pt in &gp_result.trajectory {
             let (_, grad) = oracle(pt);
-            let max_f = (0..n_atoms).map(|a| {
-                let off = a * 3;
-                grad[off..off + 3].iter().map(|v| v * v).sum::<f64>().sqrt()
-            }).fold(0.0f64, f64::max);
+            let max_f = (0..n_atoms)
+                .map(|a| {
+                    let off = a * 3;
+                    grad[off..off + 3].iter().map(|v| v * v).sum::<f64>().sqrt()
+                })
+                .fold(0.0f64, f64::max);
             gp_max_fatom.push(max_f);
         }
         gp_result_opt = Some(gp_result);
@@ -332,10 +339,16 @@ pub fn main() {
         direct_calls += 1;
         // Oracle returns gradient; negate for forces
         let forces: Vec<f64> = grad.iter().map(|v| -v).collect();
-        let max_fatom = (0..n_atoms).map(|a| {
-            let off = a * 3;
-            forces[off..off + 3].iter().map(|v| v * v).sum::<f64>().sqrt()
-        }).fold(0.0f64, f64::max);
+        let max_fatom = (0..n_atoms)
+            .map(|a| {
+                let off = a * 3;
+                forces[off..off + 3]
+                    .iter()
+                    .map(|v| v * v)
+                    .sum::<f64>()
+                    .sqrt()
+            })
+            .fold(0.0f64, f64::max);
         direct_data.push((direct_calls, e, max_fatom));
 
         if max_fatom < 0.01 {
@@ -350,7 +363,9 @@ pub fn main() {
             let sy: f64 = dot(&s, &y);
             if sy > 1e-18 {
                 if s_buf.len() >= lbfgs_memory {
-                    s_buf.remove(0); y_buf.remove(0); rho_buf.remove(0);
+                    s_buf.remove(0);
+                    y_buf.remove(0);
+                    rho_buf.remove(0);
                 }
                 rho_buf.push(1.0 / sy);
                 s_buf.push(s);
@@ -368,14 +383,18 @@ pub fn main() {
             let mut alpha_vec = vec![0.0; m];
             for i in (0..m).rev() {
                 alpha_vec[i] = rho_buf[i] * dot(&s_buf[i], &q);
-                for j in 0..n_dof { q[j] -= alpha_vec[i] * y_buf[i][j]; }
+                for j in 0..n_dof {
+                    q[j] -= alpha_vec[i] * y_buf[i][j];
+                }
             }
 
             let mut z: Vec<f64> = q.iter().map(|v| h0 * v).collect();
 
             for i in 0..m {
                 let beta = rho_buf[i] * dot(&y_buf[i], &z);
-                for j in 0..n_dof { z[j] += (alpha_vec[i] - beta) * s_buf[i][j]; }
+                for j in 0..n_dof {
+                    z[j] += (alpha_vec[i] - beta) * s_buf[i][j];
+                }
             }
 
             z.iter().map(|v| -v).collect::<Vec<f64>>()
@@ -387,9 +406,13 @@ pub fn main() {
         let s_norm2: f64 = step.iter().map(|v| v * v).sum();
         let cos_angle = if f_norm2 > 0.0 && s_norm2 > 0.0 {
             step_dot_f / (f_norm2.sqrt() * s_norm2.sqrt())
-        } else { 1.0 };
+        } else {
+            1.0
+        };
         let step = if cos_angle < 0.0 && !s_buf.is_empty() {
-            s_buf.clear(); y_buf.clear(); rho_buf.clear();
+            s_buf.clear();
+            y_buf.clear();
+            rho_buf.clear();
             forces.iter().map(|v| h0 * v).collect::<Vec<f64>>()
         } else {
             step
@@ -398,10 +421,16 @@ pub fn main() {
         // Distance reset: if step > max_move, reset and use SD
         let max_disp = max_atom_motion(&step);
         let step = if max_disp > max_move && !s_buf.is_empty() {
-            s_buf.clear(); y_buf.clear(); rho_buf.clear();
+            s_buf.clear();
+            y_buf.clear();
+            rho_buf.clear();
             let sd: Vec<f64> = forces.iter().map(|v| h0 * v).collect();
             let sd_disp = max_atom_motion(&sd);
-            let sc = if sd_disp > max_move { max_move / sd_disp } else { 1.0 };
+            let sc = if sd_disp > max_move {
+                max_move / sd_disp
+            } else {
+                1.0
+            };
             sd.iter().map(|v| sc * v).collect::<Vec<f64>>()
         } else if max_disp > max_move {
             let sc = max_move / max_disp;
@@ -412,7 +441,9 @@ pub fn main() {
 
         prev_x = Some(x.clone());
         prev_forces = Some(forces);
-        for j in 0..n_dof { x[j] += step[j]; }
+        for j in 0..n_dof {
+            x[j] += step[j];
+        }
     }
 
     // Write JSONL
@@ -420,11 +451,20 @@ pub fn main() {
     let mut f = std::fs::File::create(&outfile).expect("Failed to create output file");
 
     if let Some(ref gp_result) = gp_result_opt {
-        for (i, (e, max_f)) in gp_result.energies.iter().zip(gp_max_fatom.iter()).enumerate() {
+        for (i, (e, max_f)) in gp_result
+            .energies
+            .iter()
+            .zip(gp_max_fatom.iter())
+            .enumerate()
+        {
             writeln!(
                 f,
                 r#"{{"method":"{}","step":{},"energy":{},"max_fatom":{},"oracle_calls":{}}}"#,
-                gp_label, i, e, max_f, i + 1
+                gp_label,
+                i,
+                e,
+                max_f,
+                i + 1
             )
             .expect("Operation failed");
         }

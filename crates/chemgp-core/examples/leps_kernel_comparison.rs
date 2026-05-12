@@ -37,13 +37,27 @@ fn main() {
         mol_forces.push(max_f);
     }
 
-    for (i, (e, max_f)) in result_mol.energies.iter().zip(mol_forces.iter()).enumerate() {
-        writeln!(f, r#"{{"kernel":"MolInvDistSE","step":{},"energy":{},"max_fatom":{},"oracle_calls":{}}}"#,
-            i, e, max_f, i + 1).expect("Failed to write to output file");
+    for (i, (e, max_f)) in result_mol
+        .energies
+        .iter()
+        .zip(mol_forces.iter())
+        .enumerate()
+    {
+        writeln!(
+            f,
+            r#"{{"kernel":"MolInvDistSE","step":{},"energy":{},"max_fatom":{},"oracle_calls":{}}}"#,
+            i,
+            e,
+            max_f,
+            i + 1
+        )
+        .expect("Failed to write to output file");
     }
 
-    eprintln!("MolInvDistSE: {} oracle calls, E = {:.6}, converged = {}",
-        result_mol.oracle_calls, result_mol.e_final, result_mol.converged);
+    eprintln!(
+        "MolInvDistSE: {} oracle calls, E = {:.6}, converged = {}",
+        result_mol.oracle_calls, result_mol.e_final, result_mol.converged
+    );
 
     // --- CartesianSE (non-invariant kernel) ---
     // LEPS is 3 atoms in 3D = 9 Cartesian coords.
@@ -65,13 +79,27 @@ fn main() {
         cart_forces.push(max_f);
     }
 
-    for (i, (e, max_f)) in result_cart.energies.iter().zip(cart_forces.iter()).enumerate() {
-        writeln!(f, r#"{{"kernel":"CartesianSE","step":{},"energy":{},"max_fatom":{},"oracle_calls":{}}}"#,
-            i, e, max_f, i + 1).expect("Failed to write to output file");
+    for (i, (e, max_f)) in result_cart
+        .energies
+        .iter()
+        .zip(cart_forces.iter())
+        .enumerate()
+    {
+        writeln!(
+            f,
+            r#"{{"kernel":"CartesianSE","step":{},"energy":{},"max_fatom":{},"oracle_calls":{}}}"#,
+            i,
+            e,
+            max_f,
+            i + 1
+        )
+        .expect("Failed to write to output file");
     }
 
-    eprintln!("CartesianSE:  {} oracle calls, E = {:.6}, converged = {}",
-        result_cart.oracle_calls, result_cart.e_final, result_cart.converged);
+    eprintln!(
+        "CartesianSE:  {} oracle calls, E = {:.6}, converged = {}",
+        result_cart.oracle_calls, result_cart.e_final, result_cart.converged
+    );
 
     eprintln!("\nThe MolInvDistSE kernel exploits rotational and translational");
     eprintln!("invariance via inverse distance features, converging faster on");

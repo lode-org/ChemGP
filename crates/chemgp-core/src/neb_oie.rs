@@ -8,11 +8,11 @@
 use crate::distances::euclidean_distance;
 use crate::hod::{HodConfig, HodState};
 use crate::kernel::Kernel;
+use crate::neb::{NEBHistory, NEBResult, OracleFn};
 use crate::neb_path::{
     compute_all_neb_forces, get_hessian_points, linear_interpolation, max_atom_force, path_tangent,
     AcquisitionStrategy, NEBConfig, NEBPath,
 };
-use crate::neb::{NEBHistory, NEBResult, OracleFn};
 use crate::optim_step::OptimState;
 use crate::predict::{build_pred_model_with_prior, PredModel};
 use crate::train::{adaptive_train_iters, train_model};
@@ -29,15 +29,27 @@ fn init_neb_images(cfg: &NEBConfig, x_start: &[f64], x_end: &[f64]) -> Vec<Vec<f
     match cfg.initializer.as_str() {
         "sidpp" => {
             let idpp_cfg = IdppConfig {
-                n_images: n_total, n_coords_per_atom: 3, max_iter: 200,
-                max_move: 0.1, force_tol: 0.01, lbfgs_memory: 10,
+                n_images: n_total,
+                n_coords_per_atom: 3,
+                max_iter: 200,
+                max_move: 0.1,
+                force_tol: 0.01,
+                lbfgs_memory: 10,
             };
             sidpp_interpolation(x_start, x_end, &idpp_cfg, cfg.spring_constant, 0.3)
-        },
-        "idpp" => idpp_interpolation(x_start, x_end, &IdppConfig {
-            n_images: n_total, n_coords_per_atom: 3, max_iter: 200,
-            max_move: 0.1, force_tol: 0.01, lbfgs_memory: 10,
-        }),
+        }
+        "idpp" => idpp_interpolation(
+            x_start,
+            x_end,
+            &IdppConfig {
+                n_images: n_total,
+                n_coords_per_atom: 3,
+                max_iter: 200,
+                max_move: 0.1,
+                force_tol: 0.01,
+                lbfgs_memory: 10,
+            },
+        ),
         _ => linear_interpolation(x_start, x_end, n_total),
     }
 }
@@ -190,7 +202,14 @@ fn select_image(
     cfg: &NEBConfig,
     rng: &mut impl rand::Rng,
 ) -> usize {
-    let SelectionState { images, energies, uneval, cached_model, cached_forces, d } = state;
+    let SelectionState {
+        images,
+        energies,
+        uneval,
+        cached_model,
+        cached_forces,
+        d,
+    } = state;
     let d = *d;
     let n = images.len();
 
@@ -207,44 +226,50 @@ fn select_image(
     if cfg.unc_convergence > 0.0 {
         let grad_unc = |i: usize| -> f64 {
             let (_, var) = cached_model.predict_with_variance(&images[i]);
-            var[1..].iter().map(|v| v.max(0.0).sqrt()).fold(0.0f64, f64::max)
+            var[1..]
+                .iter()
+                .map(|v| v.max(0.0).sqrt())
+                .fold(0.0f64, f64::max)
         };
-        let max_unc = candidates.iter().map(|&i| grad_unc(i)).fold(0.0f64, f64::max);
+        let max_unc = candidates
+            .iter()
+            .map(|&i| grad_unc(i))
+            .fold(0.0f64, f64::max);
 
         if max_unc > cfg.unc_convergence {
             return candidates
                 .iter()
                 .copied()
                 .max_by(|&a, &b| {
-                    grad_unc(a).partial_cmp(&grad_unc(b)).unwrap_or(std::cmp::Ordering::Equal)
+                    grad_unc(a)
+                        .partial_cmp(&grad_unc(b))
+                        .unwrap_or(std::cmp::Ordering::Equal)
                 })
-                .unwrap_or(1);  // Must be intermediate image (not endpoint)
+                .unwrap_or(1); // Must be intermediate image (not endpoint)
         }
     }
 
     match strategy {
-        AcquisitionStrategy::MaxVariance => {
-            candidates
-                .iter()
-                .copied()
-                .max_by(|&a, &b| {
-                    let (_, va) = cached_model.predict_with_variance(&images[a]);
-                    let (_, vb) = cached_model.predict_with_variance(&images[b]);
-                    va[0].partial_cmp(&vb[0]).unwrap_or(std::cmp::Ordering::Equal)
-                })
-                .unwrap_or(1)
-        }
-        AcquisitionStrategy::MaxForce => {
-            candidates
-                .iter()
-                .copied()
-                .max_by(|&a, &b| {
-                    let fa = image_force_norm(&cached_forces.forces[a], d);
-                    let fb = image_force_norm(&cached_forces.forces[b], d);
-                    fa.partial_cmp(&fb).unwrap_or(std::cmp::Ordering::Equal)
-                })
-                .unwrap_or(1)
-        }
+        AcquisitionStrategy::MaxVariance => candidates
+            .iter()
+            .copied()
+            .max_by(|&a, &b| {
+                let (_, va) = cached_model.predict_with_variance(&images[a]);
+                let (_, vb) = cached_model.predict_with_variance(&images[b]);
+                va[0]
+                    .partial_cmp(&vb[0])
+                    .unwrap_or(std::cmp::Ordering::Equal)
+            })
+            .unwrap_or(1),
+        AcquisitionStrategy::MaxForce => candidates
+            .iter()
+            .copied()
+            .max_by(|&a, &b| {
+                let fa = image_force_norm(&cached_forces.forces[a], d);
+                let fb = image_force_norm(&cached_forces.forces[b], d);
+                fa.partial_cmp(&fb).unwrap_or(std::cmp::Ordering::Equal)
+            })
+            .unwrap_or(1),
         AcquisitionStrategy::Ucb => {
             let mut best_score = f64::NEG_INFINITY;
             let mut best_i = candidates[0];
@@ -327,16 +352,12 @@ fn select_image(
 ///
 /// Projects velocity onto force direction; zeros if antiparallel.
 /// Returns updated velocity.
-fn qm_vv_update_velocity(
-    v: &mut [f64],
-    force: &[f64],
-    force_old: &[f64],
-    dt: f64,
-    zero_v: bool,
-) {
+fn qm_vv_update_velocity(v: &mut [f64], force: &[f64], force_old: &[f64], dt: f64, zero_v: bool) {
     let d = v.len();
     if zero_v {
-        for vi in v.iter_mut().take(d) { *vi = 0.0; }
+        for vi in v.iter_mut().take(d) {
+            *vi = 0.0;
+        }
     } else {
         // Velocity Verlet half-step: v += dt/2 * (F_old + F_new)
         for i in 0..d {
@@ -347,11 +368,17 @@ fn qm_vv_update_velocity(
     // Quick-min: project v onto F direction
     let f_norm_sq: f64 = force.iter().map(|x| x * x).sum();
     if f_norm_sq > 1e-30 {
-        let p: f64 = v.iter().zip(force.iter()).map(|(vi, fi)| vi * fi).sum::<f64>()
+        let p: f64 = v
+            .iter()
+            .zip(force.iter())
+            .map(|(vi, fi)| vi * fi)
+            .sum::<f64>()
             / f_norm_sq.sqrt();
         if p < 0.0 {
             // Velocity antiparallel to force: zero it
-            for vi in v.iter_mut().take(d) { *vi = 0.0; }
+            for vi in v.iter_mut().take(d) {
+                *vi = 0.0;
+            }
         } else {
             // Project velocity onto force direction
             let inv_fn = 1.0 / f_norm_sq.sqrt();
@@ -381,7 +408,15 @@ fn oie_inner_relax(
     cfg: &NEBConfig,
     ci_on_outer: bool,
 ) -> (Vec<Vec<f64>>, usize, usize) {
-    let InnerRelaxCtx { model, images, energies, gradients, td, gp_tol, path_scale } = ctx;
+    let InnerRelaxCtx {
+        model,
+        images,
+        energies,
+        gradients,
+        td,
+        gp_tol,
+        path_scale,
+    } = ctx;
     let (gp_tol, path_scale) = (*gp_tol, *path_scale);
     let n = images.len();
     let d = images[0].len();
@@ -417,7 +452,10 @@ fn oie_inner_relax(
             let (_, var) = model.predict_with_variance(&gp_images[i]);
             // Max gradient uncertainty (not energy) -- NEB forces need
             // accurate gradients; energy sigma can be misleadingly low.
-            var[1..].iter().map(|v| v.max(0.0).sqrt()).fold(0.0f64, f64::max)
+            var[1..]
+                .iter()
+                .map(|v| v.max(0.0).sqrt())
+                .fold(0.0f64, f64::max)
         })
         .collect();
     let sigma_min = unc_scales.iter().cloned().fold(f64::INFINITY, f64::min);
@@ -445,7 +483,9 @@ fn oie_inner_relax(
         let mut gp_forces = compute_all_neb_forces(&gp_path, cfg, ci_on);
 
         // CI activation mid-relaxation
-        if !ci_on && ci_on_outer && cfg.inner_ci_threshold > 0.0
+        if !ci_on
+            && ci_on_outer
+            && cfg.inner_ci_threshold > 0.0
             && gp_forces.max_f < cfg.inner_ci_threshold
         {
             ci_on = true;
@@ -475,23 +515,23 @@ fn oie_inner_relax(
                 let excess = (unc_scales[im] - sigma_min).max(0.0);
                 let scale = 1.0 / (1.0 + excess / sigma_ref);
                 let force = &gp_forces.forces[im + 1];
-                qm_vv_update_velocity(
-                    &mut velocities[im], force, &prev_forces[im], dt, zero_v,
-                );
+                qm_vv_update_velocity(&mut velocities[im], force, &prev_forces[im], dt, zero_v);
                 // R_new = R + dt * V + dt^2/2 * F
                 for dd in 0..d {
-                    gp_images[im + 1][dd] += scale * (dt * velocities[im][dd]
-                        + 0.5 * dt * dt * force[dd]);
+                    gp_images[im + 1][dd] +=
+                        scale * (dt * velocities[im][dd] + 0.5 * dt * dt * force[dd]);
                 }
                 // Clip max per-image displacement
-                let disp: Vec<f64> = gp_images[im + 1].iter()
+                let disp: Vec<f64> = gp_images[im + 1]
+                    .iter()
                     .zip(pre_step_images[im + 1].iter())
-                    .map(|(a, b)| a - b).collect();
+                    .map(|(a, b)| a - b)
+                    .collect();
                 let dn: f64 = disp.iter().map(|x| x * x).sum::<f64>().sqrt();
                 if dn > cfg.max_move {
                     for dd in 0..d {
-                        gp_images[im + 1][dd] = pre_step_images[im + 1][dd]
-                            + disp[dd] * (cfg.max_move / dn);
+                        gp_images[im + 1][dd] =
+                            pre_step_images[im + 1][dd] + disp[dd] * (cfg.max_move / dn);
                     }
                 }
                 prev_forces[im] = force.clone();
@@ -501,7 +541,12 @@ fn oie_inner_relax(
             // L-BFGS with displacement trust clip
             let mut cur_x = Vec::with_capacity(n_mov * d);
             let mut cur_force = Vec::with_capacity(n_mov * d);
-            for (gi, fi) in gp_images.iter().zip(gp_forces.forces.iter()).take(n_mov + 1).skip(1) {
+            for (gi, fi) in gp_images
+                .iter()
+                .zip(gp_forces.forces.iter())
+                .take(n_mov + 1)
+                .skip(1)
+            {
                 cur_x.extend_from_slice(gi);
                 cur_force.extend_from_slice(fi);
             }
@@ -553,7 +598,10 @@ fn oie_inner_relax(
             let max_sigma = (1..n - 1)
                 .map(|i| {
                     let (_, var) = model.predict_with_variance(&gp_images[i]);
-                    var[1..].iter().map(|v| v.max(0.0).sqrt()).fold(0.0f64, f64::max)
+                    var[1..]
+                        .iter()
+                        .map(|v| v.max(0.0).sqrt())
+                        .fold(0.0f64, f64::max)
                 })
                 .fold(0.0f64, f64::max);
             if max_sigma > cfg.unc_convergence {
@@ -574,7 +622,7 @@ fn oie_inner_relax(
             };
             ea.partial_cmp(&eb).unwrap_or(std::cmp::Ordering::Equal)
         })
-        .unwrap_or(1);  // Must be intermediate image (not endpoint)
+        .unwrap_or(1); // Must be intermediate image (not endpoint)
 
     (gp_images, ci_idx, early_stop_image)
 }
@@ -615,15 +663,18 @@ pub fn gp_neb_oie(
     let mut oracle_calls = 2;
 
     let mut td = TrainingData::new(d);
-    td.add_point(x_start, e_start, &g_start).expect("add_point failed: invalid data");
-    td.add_point(x_end, e_end, &g_end).expect("add_point failed: invalid data");
+    td.add_point(x_start, e_start, &g_start)
+        .expect("add_point failed: invalid data");
+    td.add_point(x_end, e_end, &g_end)
+        .expect("add_point failed: invalid data");
 
     // Virtual Hessian points
     if cfg.num_hess_iter > 0 {
         let hpts = get_hessian_points(x_start, x_end, cfg.eps_hess);
         for pt in &hpts {
             let (e, g) = oracle(pt);
-            td.add_point(pt, e, &g).expect("add_point failed: invalid data");
+            td.add_point(pt, e, &g)
+                .expect("add_point failed: invalid data");
             oracle_calls += 1;
         }
     }
@@ -653,12 +704,14 @@ pub fn gp_neb_oie(
             energies[i] = e;
             gradients[i] = g.clone();
             uneval[i] = false;
-            td.add_point(&images[i], e, &g).expect("add_point failed: invalid data");
+            td.add_point(&images[i], e, &g)
+                .expect("add_point failed: invalid data");
         }
         if cfg.verbose {
             eprintln!(
                 "  Seeded GP with {} path evaluations ({} total calls)",
-                n - 2, oracle_calls,
+                n - 2,
+                oracle_calls,
             );
         }
     }
@@ -747,7 +800,11 @@ pub fn gp_neb_oie(
 
         // Find current CI image (highest energy intermediate)
         let i_ci = (1..n - 1)
-            .max_by(|&a, &b| energies[a].partial_cmp(&energies[b]).unwrap_or(std::cmp::Ordering::Equal))
+            .max_by(|&a, &b| {
+                energies[a]
+                    .partial_cmp(&energies[b])
+                    .unwrap_or(std::cmp::Ordering::Equal)
+            })
             .unwrap_or(n / 2);
 
         // CI-force-driven adaptive acquisition (triplet mode only).
@@ -766,7 +823,8 @@ pub fn gp_neb_oie(
                 eprintln!("  CI focus: triplet on CI image {} (force rising)", i_ci);
             }
             cfg.acquisition.clone()
-        } else if cfg.use_adaptive_triplet_exploration && cfg.evals_per_iter >= 3 && outer_iter > 3 {
+        } else if cfg.use_adaptive_triplet_exploration && cfg.evals_per_iter >= 3 && outer_iter > 3
+        {
             // Triplet mode (molecular): explore with Thompson sampling
             if cfg.verbose {
                 eprintln!("  Exploration: Thompson sampling");
@@ -789,8 +847,12 @@ pub fn gp_neb_oie(
             i_eval = i_ci;
             eval_next_ci = false;
             let sel_state = SelectionState {
-                images: &images, energies: &energies, uneval: &uneval,
-                cached_model: &cached_model, cached_forces: &cached_forces, d,
+                images: &images,
+                energies: &energies,
+                uneval: &uneval,
+                cached_model: &cached_model,
+                cached_forces: &cached_forces,
+                d,
             };
             let i_acq = select_image(&effective_acq, &sel_state, cfg, &mut rng);
             if i_acq != i_eval {
@@ -799,8 +861,12 @@ pub fn gp_neb_oie(
         } else {
             // Priority 4: Thompson exploration or normal acquisition
             let sel_state = SelectionState {
-                images: &images, energies: &energies, uneval: &uneval,
-                cached_model: &cached_model, cached_forces: &cached_forces, d,
+                images: &images,
+                energies: &energies,
+                uneval: &uneval,
+                cached_model: &cached_model,
+                cached_forces: &cached_forces,
+                d,
             };
             i_eval = select_image(&effective_acq, &sel_state, cfg, &mut rng);
         }
@@ -821,7 +887,8 @@ pub fn gp_neb_oie(
             let mut candidates: Vec<(usize, f64)> = (1..n - 1)
                 .map(|i| {
                     let (_, var) = cached_model.predict_with_variance(&images[i]);
-                    let sigma_g = var[1..].iter()
+                    let sigma_g = var[1..]
+                        .iter()
                         .map(|v| v.max(0.0).sqrt())
                         .fold(0.0f64, f64::max);
                     (i, sigma_g)
@@ -888,7 +955,8 @@ pub fn gp_neb_oie(
             gradients[idx] = g.clone();
             uneval[idx] = false;
 
-            td.add_point(&images[idx], e, &g).expect("add_point failed: invalid data");
+            td.add_point(&images[idx], e, &g)
+                .expect("add_point failed: invalid data");
         }
 
         // Budget exhaustion check
@@ -898,7 +966,7 @@ pub fn gp_neb_oie(
         }
 
         // ---- Convergence check (all images evaluated) ----
-        let n_uneval: usize = uneval[1..n-1].iter().filter(|&&u| u).count();
+        let n_uneval: usize = uneval[1..n - 1].iter().filter(|&&u| u).count();
         if n_uneval == 0 {
             path.images = images.clone();
             path.energies = energies.clone();
@@ -906,7 +974,11 @@ pub fn gp_neb_oie(
             let all_forces = compute_all_neb_forces(&path, cfg, true);
             // eOn-style convergence: only the climbing image force matters.
             // Non-CI images are along for the ride.
-            let conv_f = if cfg.climbing_image { all_forces.ci_f } else { all_forces.max_f };
+            let conv_f = if cfg.climbing_image {
+                all_forces.ci_f
+            } else {
+                all_forces.max_f
+            };
             if conv_f < ci_tol {
                 // Uncertainty gate: require GP uncertainty below threshold.
                 let unc_ok = if cfg.unc_conv_tol > 0.0 {
@@ -925,7 +997,9 @@ pub fn gp_neb_oie(
                     history.max_force.push(all_forces.max_f);
                     history.ci_force.push(all_forces.ci_f);
                     history.oracle_calls.push(oracle_calls);
-                    history.max_energy.push(energies.iter().cloned().fold(f64::NEG_INFINITY, f64::max));
+                    history
+                        .max_energy
+                        .push(energies.iter().cloned().fold(f64::NEG_INFINITY, f64::max));
                     break;
                 }
             }
@@ -946,7 +1020,11 @@ pub fn gp_neb_oie(
                 trust_distance(cfg.trust_metric, &cfg.atom_types, a, b)
             };
             let sub_idx = crate::sampling::select_optim_subset(
-                &td, &images[n / 2], fps_size, cfg.fps_latest_points, &dist_fn,
+                &td,
+                &images[n / 2],
+                fps_size,
+                cfg.fps_latest_points,
+                &dist_fn,
             );
             td.extract_subset(&sub_idx)
         } else {
@@ -986,7 +1064,11 @@ pub fn gp_neb_oie(
         // - Otherwise: exact GP (Cholesky cost acceptable for small molecular NEB)
         let td_pred = if cfg.max_pred_points > 0 && td.npoints() > cfg.max_pred_points {
             crate::neb::bead_local_subset(
-                &td, cfg.max_pred_points, &images, cfg.trust_metric, &cfg.atom_types,
+                &td,
+                cfg.max_pred_points,
+                &images,
+                cfg.trust_metric,
+                &cfg.atom_types,
             )
         } else {
             td.clone()
@@ -1028,13 +1110,19 @@ pub fn gp_neb_oie(
         history.max_force.push(cached_forces.max_f);
         history.ci_force.push(cached_forces.ci_f);
         history.oracle_calls.push(oracle_calls);
-        history.max_energy.push(energies.iter().cloned().fold(f64::NEG_INFINITY, f64::max));
+        history
+            .max_energy
+            .push(energies.iter().cloned().fold(f64::NEG_INFINITY, f64::max));
         ci_force_history.push(cached_forces.ci_f);
 
         // eOn-style GP-based convergence: only the CI force matters.
         // Accept convergence even if some non-CI images have larger forces
         // or are still unevaluated.
-        let gp_conv_f = if cfg.climbing_image { cached_forces.ci_f } else { cached_forces.max_f };
+        let gp_conv_f = if cfg.climbing_image {
+            cached_forces.ci_f
+        } else {
+            cached_forces.max_f
+        };
         if gp_conv_f < ci_tol {
             stop_reason = StopReason::Converged;
             if cfg.verbose {
@@ -1069,8 +1157,12 @@ pub fn gp_neb_oie(
 
         // ---- STEP 4: Decide whether to relax ----
         let i_ci = (1..n - 1)
-            .max_by(|&a, &b| energies[a].partial_cmp(&energies[b]).unwrap_or(std::cmp::Ordering::Equal))
-            .unwrap_or(1);  // Must be intermediate image (not endpoint)
+            .max_by(|&a, &b| {
+                energies[a]
+                    .partial_cmp(&energies[b])
+                    .unwrap_or(std::cmp::Ordering::Equal)
+            })
+            .unwrap_or(1); // Must be intermediate image (not endpoint)
 
         let mut start_relax = false;
 
@@ -1114,9 +1206,13 @@ pub fn gp_neb_oie(
 
             let (new_images, _ci_idx, early_img) = oie_inner_relax(
                 &InnerRelaxCtx {
-                    model: &cached_model, images: &images,
-                    energies: &relax_energies, gradients: &relax_gradients,
-                    td: &td, gp_tol: gp_tol_val, path_scale,
+                    model: &cached_model,
+                    images: &images,
+                    energies: &relax_energies,
+                    gradients: &relax_gradients,
+                    td: &td,
+                    gp_tol: gp_tol_val,
+                    path_scale,
                 },
                 cfg,
                 cfg.climbing_image,
@@ -1208,8 +1304,12 @@ pub fn gp_neb_oie(
     }
 
     let i_max = (1..n - 1)
-        .max_by(|&a, &b| energies[a].partial_cmp(&energies[b]).unwrap_or(std::cmp::Ordering::Equal))
-        .unwrap_or(1);  // Must be intermediate image (not endpoint)
+        .max_by(|&a, &b| {
+            energies[a]
+                .partial_cmp(&energies[b])
+                .unwrap_or(std::cmp::Ordering::Equal)
+        })
+        .unwrap_or(1); // Must be intermediate image (not endpoint)
 
     NEBResult {
         path,
@@ -1224,7 +1324,7 @@ pub fn gp_neb_oie(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::potentials::{leps_energy_gradient, LEPS_REACTANT, LEPS_PRODUCT};
+    use crate::potentials::{leps_energy_gradient, LEPS_PRODUCT, LEPS_REACTANT};
 
     #[test]
     fn test_gp_neb_oie_leps() {

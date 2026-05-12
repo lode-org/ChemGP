@@ -136,6 +136,10 @@ mod tests {
         let x1 = vec![0.0, 0.0, 0.0, 1.0, 0.0, 0.0];
         let x2 = vec![1.0, 0.0, 0.0, 0.0, 0.0, 0.0]; // swapped
         let d = emd_distance(&x1, &x2, &[1, 1]);
-        assert!(d < 1e-15, "EMD should be 0 for permuted identical configs, got {}", d);
+        assert!(
+            d < 1e-15,
+            "EMD should be 0 for permuted identical configs, got {}",
+            d
+        );
     }
 }

@@ -55,7 +55,11 @@ impl LbfgsHistory {
         let mut rho = vec![0.0; m];
 
         for (i, rho_i) in rho.iter_mut().enumerate().take(m) {
-            let ys: f64 = self.y[i].iter().zip(self.s[i].iter()).map(|(a, b)| a * b).sum();
+            let ys: f64 = self.y[i]
+                .iter()
+                .zip(self.s[i].iter())
+                .map(|(a, b)| a * b)
+                .sum();
             *rho_i = if ys > 1e-18 { 1.0 / ys } else { 0.0 };
         }
 

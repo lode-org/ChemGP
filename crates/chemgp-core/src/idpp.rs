@@ -20,12 +20,15 @@ pub struct IdppConfig {
 }
 
 /// IDPP interpolation: per-image independent optimization.
-pub fn idpp_interpolation(
-    x_start: &[f64],
-    x_end: &[f64],
-    cfg: &IdppConfig,
-) -> Vec<Vec<f64>> {
-    let IdppConfig { n_images, n_coords_per_atom, max_iter, max_move, force_tol, lbfgs_memory } = *cfg;
+pub fn idpp_interpolation(x_start: &[f64], x_end: &[f64], cfg: &IdppConfig) -> Vec<Vec<f64>> {
+    let IdppConfig {
+        n_images,
+        n_coords_per_atom,
+        max_iter,
+        max_move,
+        force_tol,
+        lbfgs_memory,
+    } = *cfg;
     let mut images = linear_interpolation(x_start, x_end, n_images);
     let n_atoms = x_start.len() / n_coords_per_atom;
 
@@ -44,8 +47,7 @@ pub fn idpp_interpolation(
         let mut x = image.clone();
 
         for _ in 0..max_iter {
-            let (_, force) =
-                idpp_energy_force(&x, &d_target, n_atoms, n_coords_per_atom);
+            let (_, force) = idpp_energy_force(&x, &d_target, n_atoms, n_coords_per_atom);
             if max_atom_force(&force, n_atoms, n_coords_per_atom) < force_tol {
                 break;
             }
@@ -110,15 +112,21 @@ pub fn sidpp_interpolation(
             n_intermediate += 1;
         }
 
-        relax_collective_idpp(
-            &mut path, &d_init, &d_final, n_atoms, cfg, spring_constant,
-        );
+        relax_collective_idpp(&mut path, &d_init, &d_final, n_atoms, cfg, spring_constant);
     }
 
     // Final full-path relaxation
-    let final_cfg = IdppConfig { max_iter: 500, ..*cfg };
+    let final_cfg = IdppConfig {
+        max_iter: 500,
+        ..*cfg
+    };
     relax_collective_idpp(
-        &mut path, &d_init, &d_final, n_atoms, &final_cfg, spring_constant,
+        &mut path,
+        &d_init,
+        &d_final,
+        n_atoms,
+        &final_cfg,
+        spring_constant,
     );
 
     path
@@ -133,7 +141,14 @@ fn relax_collective_idpp(
     cfg: &IdppConfig,
     spring_constant: f64,
 ) {
-    let IdppConfig { n_coords_per_atom: n_coords, max_iter, max_move, force_tol, lbfgs_memory, .. } = *cfg;
+    let IdppConfig {
+        n_coords_per_atom: n_coords,
+        max_iter,
+        max_move,
+        force_tol,
+        lbfgs_memory,
+        ..
+    } = *cfg;
     let n_images = path.len();
     let n_mov = if n_images >= 2 { n_images - 2 } else { return };
     let d = path[0].len();
@@ -285,7 +300,10 @@ fn max_atom_force(force: &[f64], n_atoms: usize, n_coords: usize) -> f64 {
     let mut max_f = 0.0f64;
     for a in 0..n_atoms {
         let off = a * n_coords;
-        let f: f64 = (0..n_coords).map(|d| force[off + d].powi(2)).sum::<f64>().sqrt();
+        let f: f64 = (0..n_coords)
+            .map(|d| force[off + d].powi(2))
+            .sum::<f64>()
+            .sqrt();
         max_f = max_f.max(f);
     }
     max_f
@@ -299,9 +317,18 @@ mod tests {
     fn test_idpp_preserves_endpoints() {
         let start = vec![0.0, 0.0, 0.0, 1.0, 0.0, 0.0];
         let end = vec![0.0, 0.0, 0.0, 2.0, 0.0, 0.0];
-        let images = idpp_interpolation(&start, &end, &IdppConfig {
-            n_images: 5, n_coords_per_atom: 3, max_iter: 100, max_move: 0.1, force_tol: 0.01, lbfgs_memory: 10,
-        });
+        let images = idpp_interpolation(
+            &start,
+            &end,
+            &IdppConfig {
+                n_images: 5,
+                n_coords_per_atom: 3,
+                max_iter: 100,
+                max_move: 0.1,
+                force_tol: 0.01,
+                lbfgs_memory: 10,
+            },
+        );
         assert_eq!(images.len(), 5);
         assert!((images[0][3] - 1.0).abs() < 1e-10);
         assert!((images[4][3] - 2.0).abs() < 1e-10);

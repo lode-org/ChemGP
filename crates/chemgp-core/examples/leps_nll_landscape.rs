@@ -13,7 +13,7 @@
 
 use chemgp_core::kernel::{Kernel, MolInvDistSE};
 use chemgp_core::nll::{nll_and_grad, NllData, NllNoise, NllPrior};
-use chemgp_core::potentials::{leps_energy_gradient, LEPS_REACTANT, LEPS_PRODUCT};
+use chemgp_core::potentials::{leps_energy_gradient, LEPS_PRODUCT, LEPS_REACTANT};
 use chemgp_core::train::train_model;
 use chemgp_core::types::{init_kernel, GPModel, TrainingData};
 
@@ -31,13 +31,21 @@ fn main() {
     // Interpolate along the reaction path
     for i in 0..10 {
         let t = i as f64 / 9.0;
-        let x: Vec<f64> = x0.iter().zip(x1.iter()).map(|(a, b)| a + t * (b - a)).collect();
+        let x: Vec<f64> = x0
+            .iter()
+            .zip(x1.iter())
+            .map(|(a, b)| a + t * (b - a))
+            .collect();
         let (e, g) = oracle(&x);
         let _ = td.add_point(&x, e, &g);
     }
 
     // Off-path perturbations near transition state region
-    let x_mid: Vec<f64> = x0.iter().zip(x1.iter()).map(|(a, b)| 0.5 * (a + b)).collect();
+    let x_mid: Vec<f64> = x0
+        .iter()
+        .zip(x1.iter())
+        .map(|(a, b)| 0.5 * (a + b))
+        .collect();
     let perp_offsets: &[f64] = &[0.05, -0.05, 0.08, -0.08, 0.03];
     for (idx, &off) in perp_offsets.iter().enumerate() {
         let mut x = x_mid.clone();
@@ -63,9 +71,12 @@ fn main() {
         Kernel::MolInvDist(k) => (k.signal_variance, k.inv_lengthscales[0]),
         Kernel::Cartesian(k) => (k.signal_variance, k.inv_lengthscale),
     };
-    let opt_ls2 = sv.ln();  // log(sigma^2)
-    let opt_lt = ils.ln();  // log(theta) (isotropic: all same)
-    eprintln!("SCG MAP optimum: log_sigma2 = {:.3}, log_theta = {:.3}", opt_ls2, opt_lt);
+    let opt_ls2 = sv.ln(); // log(sigma^2)
+    let opt_lt = ils.ln(); // log(theta) (isotropic: all same)
+    eprintln!(
+        "SCG MAP optimum: log_sigma2 = {:.3}, log_theta = {:.3}",
+        opt_ls2, opt_lt
+    );
 
     // Flatten training data for NLL evaluation
     let x_data: Vec<f64> = (0..n).flat_map(|i| td.col(i).to_vec()).collect();
@@ -113,17 +124,36 @@ fn main() {
 
             let (nll, grad) = nll_and_grad(
                 &w,
-                &NllData { x_data: &x_data, dim, n, y: &y, template: &template },
-                &NllNoise { noise_e, noise_g, jitter, const_sigma2 },
-                &NllPrior { w_prior: &w_prior, prior_var: &prior_var, prior_dof: 0.0, prior_s2: 1.0, prior_mu: 0.0 },
+                &NllData {
+                    x_data: &x_data,
+                    dim,
+                    n,
+                    y: &y,
+                    template: &template,
+                },
+                &NllNoise {
+                    noise_e,
+                    noise_g,
+                    jitter,
+                    const_sigma2,
+                },
+                &NllPrior {
+                    w_prior: &w_prior,
+                    prior_var: &prior_var,
+                    prior_dof: 0.0,
+                    prior_s2: 1.0,
+                    prior_mu: 0.0,
+                },
             );
 
             if nll.is_finite() {
                 let grad_norm: f64 = grad.iter().map(|v| v * v).sum::<f64>().sqrt();
-                writeln!(f,
+                writeln!(
+                    f,
                     r#"{{"log_sigma2":{},"log_theta":{},"nll":{},"grad_norm":{}}}"#,
                     ls2, lt, nll, grad_norm
-                ).expect("Failed to write to output file");
+                )
+                .expect("Failed to write to output file");
                 n_finite += 1;
             } else {
                 n_inf += 1;
@@ -132,15 +162,23 @@ fn main() {
     }
 
     // Write SCG optimum as a separate record for the plotter
-    writeln!(f,
+    writeln!(
+        f,
         r#"{{"type":"scg_optimum","log_sigma2":{},"log_theta":{}}}"#,
         opt_ls2, opt_lt
-    ).expect("Failed to write optimum");
+    )
+    .expect("Failed to write optimum");
 
-    eprintln!("NLL landscape: {} finite points, {} infeasible (Cholesky failure or barrier)",
-        n_finite, n_inf);
-    eprintln!("Grid: log_sigma2 in [{:.1}, {:.1}], log_theta in [{:.1}, {:.1}]",
-        log_sigma2_range[0], log_sigma2_range.last().unwrap(),
-        log_theta_range[0], log_theta_range.last().unwrap());
+    eprintln!(
+        "NLL landscape: {} finite points, {} infeasible (Cholesky failure or barrier)",
+        n_finite, n_inf
+    );
+    eprintln!(
+        "Grid: log_sigma2 in [{:.1}, {:.1}], log_theta in [{:.1}, {:.1}]",
+        log_sigma2_range[0],
+        log_sigma2_range.last().unwrap(),
+        log_theta_range[0],
+        log_theta_range.last().unwrap()
+    );
     eprintln!("Output: {}", outfile);
 }

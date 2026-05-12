@@ -25,8 +25,8 @@ fn main() {
     // Generate training data: small perturbations around equilibrium
     let mut td = TrainingData::new(9);
     let perturbations: Vec<f64> = vec![
-        0.0, 0.02, -0.02, 0.05, -0.05, 0.08, -0.08, 0.1, -0.1, 0.15,
-        -0.15, 0.03, -0.03, 0.07, -0.07, 0.12, -0.12, 0.04, -0.06, 0.09,
+        0.0, 0.02, -0.02, 0.05, -0.05, 0.08, -0.08, 0.1, -0.1, 0.15, -0.15, 0.03, -0.03, 0.07,
+        -0.07, 0.12, -0.12, 0.04, -0.06, 0.09,
     ];
 
     for (i, &p) in perturbations.iter().enumerate() {
@@ -56,13 +56,11 @@ fn main() {
 
     // Generate test points (different from training)
     let test_perts: Vec<f64> = vec![
-        0.01, -0.01, 0.035, -0.035, 0.06, -0.06, 0.085, -0.085,
-        0.11, -0.11, 0.13, -0.13, 0.16, -0.16, 0.025, -0.025,
-        0.045, -0.045, 0.065, -0.065, 0.095, -0.095, 0.105, -0.105,
-        0.14, -0.14, 0.018, -0.018, 0.055, -0.055, 0.072, -0.072,
-        0.088, -0.088, 0.115, -0.115, 0.125, -0.125, 0.145, -0.145,
-        0.005, -0.005, 0.042, -0.042, 0.078, -0.078, 0.098, -0.098,
-        0.135, -0.135,
+        0.01, -0.01, 0.035, -0.035, 0.06, -0.06, 0.085, -0.085, 0.11, -0.11, 0.13, -0.13, 0.16,
+        -0.16, 0.025, -0.025, 0.045, -0.045, 0.065, -0.065, 0.095, -0.095, 0.105, -0.105, 0.14,
+        -0.14, 0.018, -0.018, 0.055, -0.055, 0.072, -0.072, 0.088, -0.088, 0.115, -0.115, 0.125,
+        -0.125, 0.145, -0.145, 0.005, -0.005, 0.042, -0.042, 0.078, -0.078, 0.098, -0.098, 0.135,
+        -0.135,
     ];
 
     // Evaluate exact GP on test points
@@ -88,16 +86,35 @@ fn main() {
     }
 
     // Exact GP error
-    let exact_e_mae: f64 = true_energies.iter().zip(exact_energies.iter())
-        .map(|(t, p)| (t - p).abs()).sum::<f64>() / true_energies.len() as f64;
-    let exact_g_mae: f64 = true_gradients.iter().zip(exact_gradients.iter())
+    let exact_e_mae: f64 = true_energies
+        .iter()
+        .zip(exact_energies.iter())
+        .map(|(t, p)| (t - p).abs())
+        .sum::<f64>()
+        / true_energies.len() as f64;
+    let exact_g_mae: f64 = true_gradients
+        .iter()
+        .zip(exact_gradients.iter())
         .map(|(tg, pg)| {
-            tg.iter().zip(pg.iter()).map(|(a, b)| (a - b).abs()).sum::<f64>() / tg.len() as f64
-        }).sum::<f64>() / true_gradients.len() as f64;
+            tg.iter()
+                .zip(pg.iter())
+                .map(|(a, b)| (a - b).abs())
+                .sum::<f64>()
+                / tg.len() as f64
+        })
+        .sum::<f64>()
+        / true_gradients.len() as f64;
 
-    writeln!(w, r#"{{"type":"exact_gp","energy_mae":{},"gradient_mae":{}}}"#,
-        exact_e_mae, exact_g_mae).expect("Failed to write to output file");
-    println!("Exact GP: energy MAE = {:.6}, gradient MAE = {:.6}", exact_e_mae, exact_g_mae);
+    writeln!(
+        w,
+        r#"{{"type":"exact_gp","energy_mae":{},"gradient_mae":{}}}"#,
+        exact_e_mae, exact_g_mae
+    )
+    .expect("Failed to write to output file");
+    println!(
+        "Exact GP: energy MAE = {:.6}, gradient MAE = {:.6}",
+        exact_e_mae, exact_g_mae
+    );
 
     // Evaluate RFF at various D_rff
     for &d_rff in &[10, 25, 50, 75, 100, 150, 200, 300, 500, 750, 1000] {
@@ -115,13 +132,21 @@ fn main() {
 
             rff_e_errors.push((true_energies[i] - rff_e).abs());
             rff_g_errors.push(
-                true_gradients[i].iter().zip(rff_g.iter())
-                    .map(|(a, b)| (a - b).abs()).sum::<f64>() / 9.0
+                true_gradients[i]
+                    .iter()
+                    .zip(rff_g.iter())
+                    .map(|(a, b)| (a - b).abs())
+                    .sum::<f64>()
+                    / 9.0,
             );
             rff_vs_gp_e_errors.push((exact_energies[i] - rff_e).abs());
             rff_vs_gp_g_errors.push(
-                exact_gradients[i].iter().zip(rff_g.iter())
-                    .map(|(a, b)| (a - b).abs()).sum::<f64>() / 9.0
+                exact_gradients[i]
+                    .iter()
+                    .zip(rff_g.iter())
+                    .map(|(a, b)| (a - b).abs())
+                    .sum::<f64>()
+                    / 9.0,
             );
         }
 
@@ -132,7 +157,10 @@ fn main() {
 
         writeln!(w, r#"{{"type":"rff","d_rff":{},"energy_mae_vs_true":{},"gradient_mae_vs_true":{},"energy_mae_vs_gp":{},"gradient_mae_vs_gp":{}}}"#,
             d_rff, e_mae, g_mae, vs_gp_e, vs_gp_g).expect("Failed to write to output file");
-        println!("D_rff={:>3}: energy MAE = {:.6}, gradient MAE = {:.6}", d_rff, e_mae, g_mae);
+        println!(
+            "D_rff={:>3}: energy MAE = {:.6}, gradient MAE = {:.6}",
+            d_rff, e_mae, g_mae
+        );
     }
 
     println!("Output: {}", outfile);

@@ -37,7 +37,11 @@ fn softest_mode(oracle: &dyn Fn(&[f64]) -> (f64, Vec<f64>), x: &[f64], h: f64) -
     let det = a * dd - b * b;
     let disc = (trace * trace - 4.0 * det).max(0.0).sqrt();
     let lam_min = 0.5 * (trace - disc);
-    eprintln!("  Hessian eigenvalues: {:.2}, {:.2}", lam_min, 0.5 * (trace + disc));
+    eprintln!(
+        "  Hessian eigenvalues: {:.2}, {:.2}",
+        lam_min,
+        0.5 * (trace + disc)
+    );
     // Eigenvector for lam_min
     let vx = b;
     let vy = lam_min - a;
@@ -56,7 +60,10 @@ fn main() {
     let s2 = MULLER_BROWN_SADDLES[1];
     eprintln!("Computing Hessian at S2 = ({:.4}, {:.4})...", s2[0], s2[1]);
     let orient_init = softest_mode(&oracle, &s2, 1e-5);
-    eprintln!("  Softest mode: ({:.4}, {:.4})", orient_init[0], orient_init[1]);
+    eprintln!(
+        "  Softest mode: ({:.4}, {:.4})",
+        orient_init[0], orient_init[1]
+    );
 
     // Displace along softest mode toward minimum B
     let dist_sp = 0.1;

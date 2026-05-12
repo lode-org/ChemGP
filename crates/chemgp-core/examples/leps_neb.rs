@@ -3,7 +3,9 @@
 //! Outputs JSONL data showing oracle call efficiency:
 //! GP OIE > GP AIE > standard NEB.
 
-use chemgp_core::benchmarking::{linear_prior, nearest_linear_prior, output_path, BenchmarkVariant};
+use chemgp_core::benchmarking::{
+    linear_prior, nearest_linear_prior, output_path, BenchmarkVariant,
+};
 use chemgp_core::kernel::{Kernel, MolInvDistSE};
 use chemgp_core::neb::gp_neb_aie;
 use chemgp_core::neb::neb_optimize;
@@ -26,7 +28,9 @@ fn main() {
     let oie_label = format!("{}_oie", variant.label());
     let neb_prior = match variant {
         BenchmarkVariant::Chemgp => None,
-        BenchmarkVariant::PhysicalPrior => Some(linear_prior(&x_start, e_start, &g_start, "reactant")),
+        BenchmarkVariant::PhysicalPrior => {
+            Some(linear_prior(&x_start, e_start, &g_start, "reactant"))
+        }
         BenchmarkVariant::AdaptivePrior | BenchmarkVariant::RecycledLocalPes => {
             Some(nearest_linear_prior(&[
                 ("reactant", x_start.as_slice(), e_start, g_start.as_slice()),
@@ -45,10 +49,12 @@ fn main() {
 
     eprintln!("Running standard NEB...");
     let neb_result = neb_optimize(&oracle, &x_start, &x_end, &neb_cfg);
-    eprintln!("  NEB: {} calls, max|F| = {:.5}, converged = {}",
+    eprintln!(
+        "  NEB: {} calls, max|F| = {:.5}, converged = {}",
         neb_result.oracle_calls,
         neb_result.history.max_force.last().unwrap_or(&f64::NAN),
-        neb_result.converged);
+        neb_result.converged
+    );
 
     // GP-NEB AIE (per-bead subset + RFF for fast inner relax)
     let mut aie_cfg = NEBConfig::default();
@@ -67,10 +73,12 @@ fn main() {
 
     eprintln!("Running GP-NEB AIE...");
     let aie_result = gp_neb_aie(&oracle, &x_start, &x_end, &kernel, &aie_cfg);
-    eprintln!("  AIE: {} calls, max|F| = {:.5}, converged = {}",
+    eprintln!(
+        "  AIE: {} calls, max|F| = {:.5}, converged = {}",
         aie_result.oracle_calls,
         aie_result.history.max_force.last().unwrap_or(&f64::NAN),
-        aie_result.converged);
+        aie_result.converged
+    );
 
     // GP-NEB OIE (one oracle call per outer iteration + RFF)
     let mut oie_cfg = NEBConfig::default();
@@ -89,37 +97,63 @@ fn main() {
 
     eprintln!("Running GP-NEB OIE...");
     let oie_result = gp_neb_oie(&oracle, &x_start, &x_end, &kernel, &oie_cfg);
-    eprintln!("  OIE: {} calls, max|F| = {:.5}, converged = {}",
+    eprintln!(
+        "  OIE: {} calls, max|F| = {:.5}, converged = {}",
         oie_result.oracle_calls,
         oie_result.history.max_force.last().unwrap_or(&f64::NAN),
-        oie_result.converged);
+        oie_result.converged
+    );
 
     // Write comparison data
     let outfile = output_path("leps_neb_comparison.jsonl");
     let mut f = std::fs::File::create(&outfile).expect("Failed to create output file");
 
     // NEB convergence history
-    for (i, (&mf, &oc)) in neb_result.history.max_force.iter()
-        .zip(neb_result.history.oracle_calls.iter()).enumerate()
+    for (i, (&mf, &oc)) in neb_result
+        .history
+        .max_force
+        .iter()
+        .zip(neb_result.history.oracle_calls.iter())
+        .enumerate()
     {
-        writeln!(f, r#"{{"method":"classical","step":{},"max_force":{},"oracle_calls":{}}}"#,
-            i, mf, oc).expect("Failed to write to output file");
+        writeln!(
+            f,
+            r#"{{"method":"classical","step":{},"max_force":{},"oracle_calls":{}}}"#,
+            i, mf, oc
+        )
+        .expect("Failed to write to output file");
     }
 
     // AIE convergence history
-    for (i, (&mf, &oc)) in aie_result.history.max_force.iter()
-        .zip(aie_result.history.oracle_calls.iter()).enumerate()
+    for (i, (&mf, &oc)) in aie_result
+        .history
+        .max_force
+        .iter()
+        .zip(aie_result.history.oracle_calls.iter())
+        .enumerate()
     {
-        writeln!(f, r#"{{"method":"{}","step":{},"max_force":{},"oracle_calls":{}}}"#,
-            aie_label, i, mf, oc).expect("Failed to write to output file");
+        writeln!(
+            f,
+            r#"{{"method":"{}","step":{},"max_force":{},"oracle_calls":{}}}"#,
+            aie_label, i, mf, oc
+        )
+        .expect("Failed to write to output file");
     }
 
     // OIE convergence history
-    for (i, (&mf, &oc)) in oie_result.history.max_force.iter()
-        .zip(oie_result.history.oracle_calls.iter()).enumerate()
+    for (i, (&mf, &oc)) in oie_result
+        .history
+        .max_force
+        .iter()
+        .zip(oie_result.history.oracle_calls.iter())
+        .enumerate()
     {
-        writeln!(f, r#"{{"method":"{}","step":{},"max_force":{},"oracle_calls":{}}}"#,
-            oie_label, i, mf, oc).expect("Failed to write to output file");
+        writeln!(
+            f,
+            r#"{{"method":"{}","step":{},"max_force":{},"oracle_calls":{}}}"#,
+            oie_label, i, mf, oc
+        )
+        .expect("Failed to write to output file");
     }
 
     // Summary
@@ -143,8 +177,12 @@ fn main() {
             let rab = rab_min + (rab_max - rab_min) * ix as f64 / (nx - 1) as f64;
             let coords = [0.0, 0.0, 0.0, rab, 0.0, 0.0, rab + rbc, 0.0, 0.0];
             let (e, _) = leps_energy_gradient(&coords);
-            writeln!(f, r#"{{"type":"grid","ix":{},"iy":{},"rAB":{},"rBC":{},"energy":{}}}"#,
-                ix, iy, rab, rbc, e).expect("Failed to write to output file");
+            writeln!(
+                f,
+                r#"{{"type":"grid","ix":{},"iy":{},"rAB":{},"rBC":{},"energy":{}}}"#,
+                ix, iy, rab, rbc, e
+            )
+            .expect("Failed to write to output file");
         }
     }
 
@@ -153,8 +191,12 @@ fn main() {
     for (i, img) in best_result.path.images.iter().enumerate() {
         let rab = img[3] - img[0]; // x_B - x_A
         let rbc = img[6] - img[3]; // x_C - x_B
-        writeln!(f, r#"{{"type":"neb_path","image":{},"rAB":{},"rBC":{}}}"#,
-            i, rab, rbc).expect("Failed to write to output file");
+        writeln!(
+            f,
+            r#"{{"type":"neb_path","image":{},"rAB":{},"rBC":{}}}"#,
+            i, rab, rbc
+        )
+        .expect("Failed to write to output file");
     }
 
     // Saddle point: highest-energy interior image from converged path
@@ -174,8 +216,12 @@ fn main() {
             let img = &images[best_idx];
             let rab = img[3] - img[0];
             let rbc = img[6] - img[3];
-            writeln!(f, r#"{{"type":"saddle","rAB":{},"rBC":{},"energy":{}}}"#,
-                rab, rbc, best_e).expect("Failed to write to output file");
+            writeln!(
+                f,
+                r#"{{"type":"saddle","rAB":{},"rBC":{},"energy":{}}}"#,
+                rab, rbc, best_e
+            )
+            .expect("Failed to write to output file");
         }
     }
 
@@ -184,12 +230,22 @@ fn main() {
     let rbc_start = x_start[6] - x_start[3];
     let rab_end = x_end[3] - x_end[0];
     let rbc_end = x_end[6] - x_end[3];
-    writeln!(f, r#"{{"type":"endpoint","label":"reactant","rAB":{},"rBC":{}}}"#,
-        rab_start, rbc_start).expect("Failed to write to output file");
-    writeln!(f, r#"{{"type":"endpoint","label":"product","rAB":{},"rBC":{}}}"#,
-        rab_end, rbc_end).expect("Failed to write to output file");
+    writeln!(
+        f,
+        r#"{{"type":"endpoint","label":"reactant","rAB":{},"rBC":{}}}"#,
+        rab_start, rbc_start
+    )
+    .expect("Failed to write to output file");
+    writeln!(
+        f,
+        r#"{{"type":"endpoint","label":"product","rAB":{},"rBC":{}}}"#,
+        rab_end, rbc_end
+    )
+    .expect("Failed to write to output file");
 
-    eprintln!("\nSummary: NEB={} calls, AIE={} calls, OIE={} calls",
-        neb_result.oracle_calls, aie_result.oracle_calls, oie_result.oracle_calls);
+    eprintln!(
+        "\nSummary: NEB={} calls, AIE={} calls, OIE={} calls",
+        neb_result.oracle_calls, aie_result.oracle_calls, oie_result.oracle_calls
+    );
     eprintln!("Output: {}", outfile);
 }

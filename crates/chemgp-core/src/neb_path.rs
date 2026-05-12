@@ -142,7 +142,11 @@ pub fn neb_force(
 ) -> Vec<f64> {
     if climbing && is_highest {
         // CI: F = -G + 2*(G.tau)*tau
-        let g_dot_t: f64 = gradient.iter().zip(tangent.iter()).map(|(g, t)| g * t).sum();
+        let g_dot_t: f64 = gradient
+            .iter()
+            .zip(tangent.iter())
+            .map(|(g, t)| g * t)
+            .sum();
         gradient
             .iter()
             .zip(tangent.iter())
@@ -150,7 +154,11 @@ pub fn neb_force(
             .collect()
     } else {
         // Standard: F = -G_perp + F_spring
-        let g_dot_t: f64 = gradient.iter().zip(tangent.iter()).map(|(g, t)| g * t).sum();
+        let g_dot_t: f64 = gradient
+            .iter()
+            .zip(tangent.iter())
+            .map(|(g, t)| g * t)
+            .sum();
         gradient
             .iter()
             .zip(tangent.iter())
@@ -181,7 +189,10 @@ pub fn max_atom_force(force: &[f64], n_atoms: usize, n_coords: usize) -> f64 {
     let mut max_f = 0.0f64;
     for a in 0..n_atoms {
         let off = a * n_coords;
-        let f: f64 = (0..n_coords).map(|d| force[off + d].powi(2)).sum::<f64>().sqrt();
+        let f: f64 = (0..n_coords)
+            .map(|d| force[off + d].powi(2))
+            .sum::<f64>()
+            .sqrt();
         max_f = max_f.max(f);
     }
     max_f
@@ -378,8 +389,12 @@ pub fn compute_all_neb_forces(path: &NEBPath, cfg: &NEBConfig, ci_on: bool) -> N
 
     // Highest energy intermediate image
     let i_max = (1..n - 1)
-        .max_by(|&a, &b| path.energies[a].partial_cmp(&path.energies[b]).unwrap_or(std::cmp::Ordering::Equal))
-        .unwrap_or(1);  // Fallback to first intermediate image
+        .max_by(|&a, &b| {
+            path.energies[a]
+                .partial_cmp(&path.energies[b])
+                .unwrap_or(std::cmp::Ordering::Equal)
+        })
+        .unwrap_or(1); // Fallback to first intermediate image
 
     let mut max_f_norm = 0.0f64;
     let mut ci_f_norm = 0.0f64;
@@ -457,11 +472,7 @@ mod tests {
 
     #[test]
     fn test_path_tangent_monotonic() {
-        let images = vec![
-            vec![0.0, 0.0],
-            vec![1.0, 0.0],
-            vec![2.0, 0.0],
-        ];
+        let images = vec![vec![0.0, 0.0], vec![1.0, 0.0], vec![2.0, 0.0]];
         let energies = vec![0.0, 1.0, 2.0];
         let tau = path_tangent(&images, &energies, 1);
         assert!((tau[0] - 1.0).abs() < 1e-12);

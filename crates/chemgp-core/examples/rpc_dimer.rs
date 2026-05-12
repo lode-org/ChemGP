@@ -31,12 +31,11 @@ use chemgp_core::benchmarking::{
 use chemgp_core::dimer::{gp_dimer, standard_dimer, DimerConfig};
 use chemgp_core::io::read_con;
 use chemgp_core::kernel::{Kernel, MolInvDistSE};
-#[cfg(feature = "rgpot_local")]
-use chemgp_core::oracle::{LocalMetatomicConfig, LocalMetatomicOracle};
 #[cfg(feature = "rgpot")]
 use chemgp_core::oracle::RpcOracle;
+#[cfg(feature = "rgpot_local")]
+use chemgp_core::oracle::{LocalMetatomicConfig, LocalMetatomicOracle};
 use chemgp_core::otgpd::{otgpd, OTGPDConfig};
-
 
 fn get_arg(args: &[String], flag: &str) -> Option<String> {
     args.iter()
@@ -49,8 +48,7 @@ pub fn main() {
     let args: Vec<String> = std::env::args().collect();
 
     let pos_path = get_arg(&args, "--pos").unwrap_or_else(|| "data/d000/pos.con".into());
-    let disp_path =
-        get_arg(&args, "--disp").unwrap_or_else(|| "data/d000/displacement.con".into());
+    let disp_path = get_arg(&args, "--disp").unwrap_or_else(|| "data/d000/displacement.con".into());
     let method = get_arg(&args, "--method").unwrap_or_else(|| "all".into());
     let max_calls: usize = get_arg(&args, "--max-calls")
         .and_then(|s| s.parse().ok())
@@ -78,7 +76,8 @@ pub fn main() {
     };
 
     // Load geometry
-    let pos_frames = read_con(&pos_path).unwrap_or_else(|e| panic!("Failed to read {}: {}", pos_path, e));
+    let pos_frames =
+        read_con(&pos_path).unwrap_or_else(|e| panic!("Failed to read {}: {}", pos_path, e));
     let disp_frames =
         read_con(&disp_path).unwrap_or_else(|e| panic!("Failed to read {}: {}", disp_path, e));
 
@@ -87,9 +86,15 @@ pub fn main() {
     let atomic_numbers = pos.atomic_numbers.clone();
     let n_atoms = atomic_numbers.len();
     let box_matrix = [
-        pos.cell[0][0], pos.cell[0][1], pos.cell[0][2],
-        pos.cell[1][0], pos.cell[1][1], pos.cell[1][2],
-        pos.cell[2][0], pos.cell[2][1], pos.cell[2][2],
+        pos.cell[0][0],
+        pos.cell[0][1],
+        pos.cell[0][2],
+        pos.cell[1][0],
+        pos.cell[1][1],
+        pos.cell[1][2],
+        pos.cell[2][0],
+        pos.cell[2][1],
+        pos.cell[2][2],
     ];
 
     eprintln!("RPC dimer search");
@@ -137,7 +142,11 @@ pub fn main() {
     }
 
     let kernel = Kernel::MolInvDist(MolInvDistSE::from_atomic_numbers(
-        &atomic_numbers, vec![], &[], 1.0, 1.0,
+        &atomic_numbers,
+        vec![],
+        &[],
+        1.0,
+        1.0,
     ));
 
     let dimer_sep = 0.01;
@@ -156,28 +165,45 @@ pub fn main() {
         let g_rms = (g0.iter().map(|x| x * x).sum::<f64>() / g0.len() as f64).sqrt();
 
         // Curvature along displacement direction (finite difference)
-        let r1: Vec<f64> = x_start.iter().zip(orient.iter())
-            .map(|(r, o)| r + dimer_sep * o).collect();
+        let r1: Vec<f64> = x_start
+            .iter()
+            .zip(orient.iter())
+            .map(|(r, o)| r + dimer_sep * o)
+            .collect();
         let (e1, g1) = oracle(&r1);
-        let c_along: f64 = g1.iter().zip(g0.iter()).zip(orient.iter())
-            .map(|((a, b), o)| (a - b) * o).sum::<f64>() / dimer_sep;
+        let c_along: f64 = g1
+            .iter()
+            .zip(g0.iter())
+            .zip(orient.iter())
+            .map(|((a, b), o)| (a - b) * o)
+            .sum::<f64>()
+            / dimer_sep;
 
         eprintln!("  Energy:         {:.8} eV", e0);
         eprintln!("  |grad|_inf:     {:.8} eV/A", g_inf);
         eprintln!("  |grad|_L2:      {:.8} eV/A", g_l2);
         eprintln!("  |grad|_RMS:     {:.8} eV/A", g_rms);
         eprintln!("  E(image1):      {:.8} eV", e1);
-        eprintln!("  Curvature:      {:+.8} eV/A^2 (along displacement)", c_along);
-        eprintln!("  Saddle sign:    {} (need C < 0 for saddle)", if c_along < 0.0 { "YES" } else { "NO" });
+        eprintln!(
+            "  Curvature:      {:+.8} eV/A^2 (along displacement)",
+            c_along
+        );
+        eprintln!(
+            "  Saddle sign:    {} (need C < 0 for saddle)",
+            if c_along < 0.0 { "YES" } else { "NO" }
+        );
 
         // Per-atom gradient norms
         eprintln!("\n  Per-atom |grad| (eV/A):");
         for i in 0..n_atoms {
-            let gx = g0[3*i];
-            let gy = g0[3*i+1];
-            let gz = g0[3*i+2];
-            let gnorm = (gx*gx + gy*gy + gz*gz).sqrt();
-            eprintln!("    atom {}: {:.6}  ({:+.4}, {:+.4}, {:+.4})", i, gnorm, gx, gy, gz);
+            let gx = g0[3 * i];
+            let gy = g0[3 * i + 1];
+            let gz = g0[3 * i + 2];
+            let gnorm = (gx * gx + gy * gy + gz * gz).sqrt();
+            eprintln!(
+                "    atom {}: {:.6}  ({:+.4}, {:+.4}, {:+.4})",
+                i, gnorm, gx, gy, gz
+            );
         }
 
         // Finite-difference gradient check (3 random components)
@@ -194,8 +220,10 @@ pub fn main() {
             let fd_grad = (e_plus - e_minus) / (2.0 * h);
             let anal_grad = g0[idx3];
             let err = (fd_grad - anal_grad).abs();
-            eprintln!("    coord[{}]: analytic={:+.6}, FD={:+.6}, |err|={:.2e}",
-                idx3, anal_grad, fd_grad, err);
+            eprintln!(
+                "    coord[{}]: analytic={:+.6}, FD={:+.6}, |err|={:.2e}",
+                idx3, anal_grad, fd_grad, err
+            );
         }
 
         eprintln!("\nOutput: (probe mode, no JSONL)");
@@ -284,9 +312,12 @@ pub fn main() {
                 .expect("No benchmark observations found");
             cfg.prior_mean = match variant {
                 BenchmarkVariant::Chemgp => cfg.prior_mean.clone(),
-                BenchmarkVariant::PhysicalPrior => {
-                    linear_prior(&observations[0].0, observations[0].1, &observations[0].2, "initial")
-                }
+                BenchmarkVariant::PhysicalPrior => linear_prior(
+                    &observations[0].0,
+                    observations[0].1,
+                    &observations[0].2,
+                    "initial",
+                ),
                 BenchmarkVariant::AdaptivePrior => select_adaptive_prior(
                     observations[0].0.as_slice(),
                     observations[0].1,
@@ -410,9 +441,12 @@ pub fn main() {
                 .expect("No benchmark observations found");
             cfg.prior_mean = match variant {
                 BenchmarkVariant::Chemgp => cfg.prior_mean.clone(),
-                BenchmarkVariant::PhysicalPrior => {
-                    linear_prior(&observations[0].0, observations[0].1, &observations[0].2, "initial")
-                }
+                BenchmarkVariant::PhysicalPrior => linear_prior(
+                    &observations[0].0,
+                    observations[0].1,
+                    &observations[0].2,
+                    "initial",
+                ),
                 BenchmarkVariant::AdaptivePrior => select_adaptive_prior(
                     observations[0].0.as_slice(),
                     observations[0].1,

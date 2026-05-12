@@ -45,7 +45,11 @@ impl fmt::Display for GpError {
         match self {
             GpError::EmptyTrainingData => write!(f, "Training data is empty"),
             GpError::NonFiniteData { index, value } => {
-                write!(f, "Non-finite value in training data at index {}: {}", index, value)
+                write!(
+                    f,
+                    "Non-finite value in training data at index {}: {}",
+                    index, value
+                )
             }
             GpError::NonFiniteEnergy { index, value } => {
                 write!(f, "Non-finite energy at index {}: {}", index, value)
@@ -57,13 +61,21 @@ impl fmt::Display for GpError {
                 write!(f, "Non-finite target at index {}: {}", index, value)
             }
             GpError::DimensionMismatch { expected, actual } => {
-                write!(f, "Dimension mismatch: expected {}, got {}", expected, actual)
+                write!(
+                    f,
+                    "Dimension mismatch: expected {}, got {}",
+                    expected, actual
+                )
             }
             GpError::InvalidKernelParams { param, value } => {
                 write!(f, "Invalid kernel parameter '{}': {}", param, value)
             }
             GpError::CholeskyFailed { attempts } => {
-                write!(f, "Cholesky decomposition failed after {} attempts", attempts)
+                write!(
+                    f,
+                    "Cholesky decomposition failed after {} attempts",
+                    attempts
+                )
             }
             GpError::ScgDidNotConverge => write!(f, "SCG optimization did not converge"),
             GpError::IndexOutOfBounds { index, max } => {
@@ -72,7 +84,11 @@ impl fmt::Display for GpError {
             GpError::NoTrainingData => write!(f, "No training data available"),
             GpError::EmptyTargets => write!(f, "Target values are empty"),
             GpError::FeatureDimensionMismatch { expected, actual } => {
-                write!(f, "Feature dimension mismatch: expected {}, got {}", expected, actual)
+                write!(
+                    f,
+                    "Feature dimension mismatch: expected {}, got {}",
+                    expected, actual
+                )
             }
             GpError::RffConstructionFailed(msg) => write!(f, "RFF construction failed: {}", msg),
             GpError::PredictionFailed(msg) => write!(f, "Prediction failed: {}", msg),
@@ -99,7 +115,10 @@ pub mod validate {
     pub fn validate_finite_slice(data: &[f64]) -> GpResult<()> {
         for (i, &val) in data.iter().enumerate() {
             if !val.is_finite() {
-                return Err(GpError::NonFiniteData { index: i, value: val });
+                return Err(GpError::NonFiniteData {
+                    index: i,
+                    value: val,
+                });
             }
         }
         Ok(())
@@ -194,7 +213,10 @@ mod tests {
         let err = GpError::EmptyTrainingData;
         assert_eq!(format!("{}", err), "Training data is empty");
 
-        let err = GpError::NonFiniteData { index: 5, value: f64::NAN };
+        let err = GpError::NonFiniteData {
+            index: 5,
+            value: f64::NAN,
+        };
         assert!(format!("{}", err).contains("index 5"));
     }
 }

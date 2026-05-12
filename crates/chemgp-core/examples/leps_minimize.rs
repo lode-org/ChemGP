@@ -45,9 +45,12 @@ fn main() {
             .expect("No benchmark observations found");
         gp_cfg.prior_mean = match variant {
             BenchmarkVariant::Chemgp => gp_cfg.prior_mean.clone(),
-            BenchmarkVariant::PhysicalPrior => {
-                linear_prior(&observations[0].0, observations[0].1, &observations[0].2, "initial")
-            }
+            BenchmarkVariant::PhysicalPrior => linear_prior(
+                &observations[0].0,
+                observations[0].1,
+                &observations[0].2,
+                "initial",
+            ),
             BenchmarkVariant::AdaptivePrior => {
                 gp_cfg.adaptive_prior_candidates = linear_prior_candidates(&[
                     (
@@ -122,7 +125,7 @@ fn main() {
         }
 
         // L-BFGS step computation
-        let grad: Vec<f64> = g.iter().map(|v| -v).collect();  // gradient = -force
+        let grad: Vec<f64> = g.iter().map(|v| -v).collect(); // gradient = -force
         let step = lbfgs.compute_direction(&grad);
 
         // Update L-BFGS history
@@ -156,14 +159,29 @@ fn main() {
 
     // GP trajectory
     for (i, (e, max_f)) in gp_result.energies.iter().zip(gp_forces.iter()).enumerate() {
-        writeln!(f, r#"{{"method":"{}","step":{},"energy":{},"max_fatom":{},"oracle_calls":{}}}"#,
-            gp_label, i, e, max_f, i + 1).expect("Failed to write to output file");
+        writeln!(
+            f,
+            r#"{{"method":"{}","step":{},"energy":{},"max_fatom":{},"oracle_calls":{}}}"#,
+            gp_label,
+            i,
+            e,
+            max_f,
+            i + 1
+        )
+        .expect("Failed to write to output file");
     }
 
     // Direct trajectory
     for (i, (e, max_f)) in direct_energies.iter().zip(direct_forces.iter()).enumerate() {
-        writeln!(f, r#"{{"method":"classical","step":{},"energy":{},"max_fatom":{},"oracle_calls":{}}}"#,
-            i, e, max_f, i + 1).expect("Failed to write to output file");
+        writeln!(
+            f,
+            r#"{{"method":"classical","step":{},"energy":{},"max_fatom":{},"oracle_calls":{}}}"#,
+            i,
+            e,
+            max_f,
+            i + 1
+        )
+        .expect("Failed to write to output file");
     }
 
     // Summary
@@ -173,9 +191,14 @@ fn main() {
         direct_calls, direct_energies.last().unwrap_or(&f64::NAN), gp_cfg.conv_tol)
         .expect("Failed to write to output file");
 
-    eprintln!("GP minimize: {} oracle calls, final E = {:.6}, converged = {}",
-        gp_result.oracle_calls, gp_result.e_final, gp_result.converged);
-    eprintln!("Direct minimize: {} oracle calls, final E = {:.6}",
-        direct_calls, direct_energies.last().unwrap_or(&f64::NAN));
+    eprintln!(
+        "GP minimize: {} oracle calls, final E = {:.6}, converged = {}",
+        gp_result.oracle_calls, gp_result.e_final, gp_result.converged
+    );
+    eprintln!(
+        "Direct minimize: {} oracle calls, final E = {:.6}",
+        direct_calls,
+        direct_energies.last().unwrap_or(&f64::NAN)
+    );
     eprintln!("Output: {}", outfile);
 }
