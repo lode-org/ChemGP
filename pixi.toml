@@ -74,8 +74,8 @@ adjustText    = ">=1.0"
 cmcrameri     = ">=1.4"
 jax           = ">=0.4"
 rich          = ">=13.0"
-rgpycrumbs    = ">=1.4.0"
-chemparseplot = ">=1.4.0"
+rgpycrumbs    = ">=1.10.4"
+chemparseplot = ">=1.9.17"
 sympy         = ">=1.13,<2"
 
 [feature.dev.tasks.test]
