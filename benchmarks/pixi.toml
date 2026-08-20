@@ -11,7 +11,7 @@ snakemake = ">=9.16.3,<10"
 pyyaml = ">=6.0"
 polars = ">=1.0,<2"
 matplotlib = ">=3.8,<4"
-readcon = ">=0.14.5"
+readcon = ">=0.14.7"
 rgpycrumbs = ">=1.10.4"
 chemparseplot = ">=1.9.17"
 
