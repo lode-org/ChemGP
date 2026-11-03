@@ -265,8 +265,10 @@ fn clip_cartesian_step(step: &mut [f64], max_cart_step: f64) {
     if max_cart_step <= 0.0 {
         return;
     }
-    let max_atom = step
-        .chunks_exact(3)
+    // A trailing partial atom is ignored, matching the previous chunks_exact split.
+    let (chunks, _remainder) = step.as_chunks::<3>();
+    let max_atom = chunks
+        .iter()
         .map(|chunk| chunk.iter().map(|v| v * v).sum::<f64>().sqrt())
         .fold(0.0f64, f64::max);
     if max_atom <= max_cart_step || max_atom == 0.0 {
