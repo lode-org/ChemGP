@@ -4,12 +4,12 @@
   "description": "GP-accelerated optimization, NEB and saddle searches for computational chemistry.",
   "folders": [
     "docs/orgmode",
-    "crates"
+    "crates",
+    "benchmarks"
   ],
   "excludeFolders": [
     "docs/source",
     "docs/newsfragments",
-    "benchmarks",
     "scripts",
     ".github",
     "data",
