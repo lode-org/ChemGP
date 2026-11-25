@@ -1,5 +1,5 @@
 [![CI](https://github.com/lode-org/ChemGP/actions/workflows/CI.yml/badge.svg?branch=main)](https://github.com/lode-org/ChemGP/actions/workflows/CI.yml?query=branch%3Amain)
-[![Documentation](https://github.com/lode-org/ChemGP/actions/workflows/Documentation.yml/badge.svg)](https://chemgp.rgoswami.me)
+[![Documentation](https://github.com/lode-org/ChemGP/actions/workflows/Documentation.yml/badge.svg)](https://lode-org.github.io/ChemGP/)
 
 Gaussian Process accelerated optimization for computational chemistry.
 ChemGP provides GP surrogate models for energy surface exploration,
@@ -93,7 +93,7 @@ reproduction without recomputation.
 pixi run -e docs docbld
 ```
 
-Or visit [chemgp.rgoswami.me](https://chemgp.rgoswami.me).
+Or visit [lode-org.github.io/ChemGP](https://lode-org.github.io/ChemGP/).
 
 # License
 
