@@ -2,24 +2,18 @@
   "$schema": "https://context7.com/schema/context7.json",
   "projectTitle": "ChemGP",
   "description": "GP-accelerated optimization, NEB and saddle searches for computational chemistry.",
-  "folders": [
-    "docs",
-    "crates",
-    "benchmarks",
-    "scripts/figures"
-  ],
   "excludeFolders": [
     "docs/source",
     "docs/newsfragments",
+    "scripts/figures/README.org",
     ".github",
+    ".snakemake",
     "data",
     "config",
-    "validation",
-    ".snakemake"
+    "validation"
   ],
   "excludeFiles": [
     "CHANGELOG.md",
-    "CODE_OF_CONDUCT.md",
     "LICENSE"
   ],
   "rules": []
